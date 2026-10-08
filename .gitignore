@@ -1,0 +1,8 @@
+node_modules
+.vercel
+.grok
+.tanstack
+artifacts
+screenshots
+dist
+.project_id
