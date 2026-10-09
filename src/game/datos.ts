@@ -177,11 +177,11 @@ export const TAREAS: Record<Tarea, TareaDef> = {
   excavar: { nombre: "Excavar", rinde: 3, peso: "pesado", lider: null, partida: "excavacion", golpe: 0.036, grupo: "pala" },
   achicar: { nombre: "Achicar", rinde: 8, peso: "pesado", lider: null, partida: "excavacion", golpe: 0.1, grupo: "pala" },
   acero: { nombre: "Armar acero", rinde: 100, peso: "medio", lider: ["varillero", "albanil"], partida: "acero", golpe: 1.2, grupo: "acero" },
-  calzos: { nombre: "Calzos", rinde: 16, peso: "liviano", lider: null, partida: "acero", golpe: 0.17, grupo: "limpiar" },
+  calzos: { nombre: "Calzos de grava (0.05 m³, separan el acero del fondo)", rinde: 16, peso: "liviano", lider: null, partida: "acero", golpe: 0.17, grupo: "limpiar" },
   mezclarH: { nombre: "Mezclar hormigón", rinde: 8, peso: "pesado", lider: null, partida: "hormigon", golpe: 0.1, grupo: "pala" },
   mezclarM: { nombre: "Mezclar mortero", rinde: 22, peso: "pesado", lider: null, partida: "block", golpe: 0.25, grupo: "pala" },
   vaciar: { nombre: "Vaciar", rinde: 8, peso: "pesado", lider: ["albanil"], partida: "hormigon", golpe: 0.1, grupo: "vaciar" },
-  block: { nombre: "Poner block", rinde: 110, peso: "medio", lider: ["albanil"], partida: "block", golpe: 1, grupo: "block" },
+  block: { nombre: "Poner block", rinde: 150, peso: "medio", lider: ["albanil"], partida: "block", golpe: 1, grupo: "block" },
   encofrar: { nombre: "Encofrar", rinde: 6.7, peso: "medio", lider: ["carpintero", "albanil"], partida: "encofrado", golpe: 0.08, grupo: "encofrar" },
   techo: { nombre: "Techar", rinde: 8, peso: "medio", lider: ["carpintero", "albanil"], partida: "techo", golpe: 0.1, grupo: "encofrar" },
   relleno: { nombre: "Rellenar", rinde: 3, peso: "pesado", lider: null, partida: "piso", golpe: 0.036, grupo: "pala" },
@@ -237,7 +237,7 @@ export const MANIA_INFO: Record<Mania, { nombre: string; bueno: string; malo: st
   madrugador: { nombre: "Madrugador", bueno: "Rinde 12.5% más", malo: "Los sábados no viene" },
   cantor: { nombre: "el Cantor", bueno: "+10% a quien comparta su puesto", malo: "Él rinde 5% menos" },
   piedra: { nombre: "Mano'e Piedra", bueno: "Lo pesado +20%", malo: "Ojo −1" },
-  domino: { nombre: "el Dominoero", bueno: "Se cansa 20% menos", malo: "Rinde un chin menos" },
+  domino: { nombre: "el Dominero", bueno: "Se cansa 20% menos", malo: "Rinde un chin menos" },
 };
 
 export const PUESTO_NOMBRE: Record<Puesto, string> = {
@@ -263,7 +263,7 @@ export const SITIOS = {
   almacen: { id: "almacen", nombre: "Almacén", x: 4.5, y: 14.5 },
   oficina: { id: "oficina", nombre: "Oficina", x: 8.7, y: 16.6 },
   obra: { id: "obra", nombre: "Obra", x: 19, y: 14.5 },
-  tierra: { id: "tierra", nombre: "Tierra", x: 23.5, y: 12.2 },
+  tierra: { id: "tierra", nombre: "Tierra", x: 23.58, y: 12.2 },
   sombra: { id: "sombra", nombre: "Mata de mango", x: 27.5, y: 11 },
   entrada: { id: "entrada", nombre: "Entrada", x: 12.4, y: 21.2 },
   ferreteria: { id: "ferreteria", nombre: "Ferretería El Cruce", x: 30, y: 22.5 },
@@ -280,18 +280,22 @@ export const PUESTO_SITIO: Record<Puesto, { x: number; y: number }> = {
 
 /** Tambor del trompo. El puesto se queda en SITIOS.batea, fuera del cuerpo. */
 export const TROMPO_CUERPO = { x: 19.9, y: 17.1, r: 0.68 };
-/** Bote de tierra al borde oeste del solar. */
-export const BOTE_TIERRA = { x: 16.15, y: 12.45 };
+/** Bote del baldío. La tierra sobrante y el escombro salen del solar. */
+export const BOTE_TIERRA = { x: 10.2, y: 9.4 };
+/** Montón de escombro, al lado oeste del solar. */
+export const ESCOMBRO = { x: 15.3, y: 16.9 };
+/** Lo que se pinta y por donde camina el maestro. Un solo rectángulo. */
+export const MAPA = { x0: -10, x1: 44, y0: -8, y1: 34 };
 
 export const LISTERO = { nombre: "Nico", apellido: "Adames", rol: "Listero" };
-export const GUARDALMACEN = { nombre: "Sita", apellido: "Ferreras", rol: "Guardalmacén" };
+export const GUARDALMACEN = { nombre: "Guardalmacén", apellido: "", rol: "Guardalmacén" };
 export const NOTA_ESCUADRA = "Si 3 m y 4 m dan 5 m de diagonal, la esquina está a escuadra.";
 
 export const SOLAR = { x0: 17, x1: 21, y0: 13, y1: 16 };
 export const MUNDO = { w: 34, h: 26 };
 export const RIO_Y = 3.6;
 export const CAMINO_Y = 23.6;
-export const INICIO = { x: 14, y: 19 };
+export const INICIO = { x: 12.4, y: 22.15 };
 
 export const RECETA_H = { cemento: 1, arena: 0.068, grava: 0.102, agua: 0.025, vida: 90 };
 export const RECETA_M = { cemento: 0.25, arena: 0.034, agua: 0.006, vida: 150, block: 22 };
@@ -350,7 +354,7 @@ export const ETAPAS: EtapaDef[] = [
     tramo: 0,
     trabajos: [
       { id: "acero", k: "acero", nombre: "Armar acero de zapata", q: 103.8, usa: { v38: 26, v14: 10, alambre: 6 } },
-      { id: "calzos", k: "calzos", nombre: "Calzos de grava", q: 1, usa: { grava: 0.05 } },
+      { id: "calzos", k: "calzos", nombre: "Calzos de grava (0.05 m³, separan el acero del fondo)", q: 1, usa: { grava: 0.05 } },
     ],
   },
   {
@@ -366,7 +370,7 @@ export const ETAPAS: EtapaDef[] = [
     n: 5,
     nombre: "Muros de block",
     regla: "Máximo 6 hiladas por día. Plomo en las hiladas 3, 6, 9 y 12.",
-    tramo: 0,
+    tramo: 0.1,
     trabajos: [
       {
         id: "block",
@@ -393,7 +397,7 @@ export const ETAPAS: EtapaDef[] = [
     n: 6,
     nombre: "Columnas de amarre",
     regla: "Primero el encofrado, después el vaciado. Fragua hasta el día siguiente.",
-    tramo: 0.2,
+    tramo: 0.1,
     trabajos: [
       {
         id: "encofrar",
@@ -549,7 +553,7 @@ export const TUTORIAL = [
   "Pide «Lo que falta» para arrancar.",
   "Manda a alguien a acarrear.",
   "Que alguien busque agua.",
-  "Sita te trae un papel a las 14:00, o antes si la obra se para por material.",
+  "El guardalmacén te trae una nota a las 14:00, o antes si la obra se para por material.",
   "El cartel de arriba dice qué frena la obra.",
 ];
 

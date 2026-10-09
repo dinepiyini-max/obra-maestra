@@ -7,6 +7,7 @@ import {
   SOLAR,
   TROMPO_CUERPO,
   BOTE_TIERRA,
+  ESCOMBRO,
   hash2,
   type Oficio,
 } from "./datos.ts";
@@ -16,6 +17,7 @@ import {
   hechoDe,
   cercano,
   cuello,
+  flecha,
   ancla,
   señalesReplanteo,
   trianguloEscuadra,
@@ -50,6 +52,11 @@ export interface Vis {
   selloOn: boolean;
   plomoOn: boolean;
   mira: { x: number; y: number } | null;
+  /** Fracción vertical donde cae la cámara. 0.56 en juego; más arriba con el contrato en el teléfono. */
+  ancla: number;
+  foco: { x: number; y: number } | null;
+  marca: { n: number; nombre: string; x: number; y: number } | null;
+  contrato: boolean;
 }
 
 const TINTA = "#1d1712";
@@ -155,6 +162,10 @@ function hatch(ctx: CanvasRenderingContext2D, pts: { x: number; y: number }[], g
 let terreno: { key: string; c: HTMLCanvasElement; ox: number; oy: number } | null = null;
 let obraCache: { key: string; c: HTMLCanvasElement; ax: number; ay: number } | null = null;
 
+function anclaDe(vis: { ancla?: number }): number {
+  return vis.ancla && vis.ancla > 0.05 ? vis.ancla : 0.56;
+}
+
 export function puntoEnPantalla(x: number, y: number, alt: number, w: number, h: number, cam: Cam) {
   const z = zoomDe(w);
   const o = proyectar(cam.x, cam.y, 0, z);
@@ -165,14 +176,14 @@ export function puntoEnPantalla(x: number, y: number, alt: number, w: number, h:
 function pantallaDe(x: number, y: number, alt: number, vis: Vis, w: number, h: number, z: number) {
   const o = proyectar(vis.cam.x, vis.cam.y, 0, z);
   const q = proyectar(x, y, alt, z);
-  return { x: w / 2 + (q.sx - o.sx), y: h * 0.56 + (q.sy - o.sy) };
+  return { x: w / 2 + (q.sx - o.sx), y: h * anclaDe(vis) + (q.sy - o.sy) };
 }
 
 export function mundoDesde(px: number, py: number, w: number, h: number, vis: Vis): { x: number; y: number } {
   const z = zoomDe(vis.ancho || w);
   const o = proyectar(vis.cam.x, vis.cam.y, 0, z);
   const sx = px - w / 2 + o.sx;
-  const sy = py - h * 0.56 + o.sy;
+  const sy = py - h * anclaDe(vis) + o.sy;
   const SX = sxu(z);
   const SY = syu(z);
   return { x: (sx / SX + sy / SY) / 2, y: (sy / SY - sx / SX) / 2 };
@@ -231,7 +242,7 @@ function pintarSenderos(
 }
 
 function asegurarTerreno(z: number, seed: number) {
-  const key = `dia|${seed}|${z.toFixed(2)}|senderos2`;
+  const key = `dia|${seed}|${z.toFixed(2)}|calle3`;
   if (terreno?.key === key) return terreno;
   const pad = 200;
   const corners = [
@@ -263,8 +274,13 @@ function asegurarTerreno(z: number, seed: number) {
   poly([P(-18, -16), P(52, -16), P(52, 46), P(-18, 46)], TIERRA);
   poly([P(0, 0), P(34, 0), P(34, 21.6), P(0, 21.6)], TIERRA2);
   poly([P(2, 10), P(32, 10), P(32, 21.6), P(2, 21.6)], TIERRA3);
-  poly([P(-8, 21.6), P(46, 21.6), P(46, 23.6), P(-8, 23.6)], ACERA);
-  poly([P(-18, 23.6), P(52, 23.6), P(52, 46), P(-18, 46)], CALLE);
+  poly([P(-8, 21.6), P(33.2, 21.6), P(33.2, 23.15), P(-8, 23.15)], ACERA);
+  poly([P(-18, 23.15), P(52, 23.15), P(52, 26.45), P(-18, 26.45)], CALLE);
+  poly([P(-8, 26.45), P(33.2, 26.45), P(33.2, 28.15), P(-8, 28.15)], ACERA);
+  poly([P(33.2, 8), P(34.15, 8), P(34.15, 32), P(33.2, 32)], ACERA);
+  poly([P(34.15, 6), P(37.35, 6), P(37.35, 34), P(34.15, 34)], CALLE);
+  poly([P(37.35, 8), P(38.3, 8), P(38.3, 32), P(37.35, 32)], ACERA);
+  poly([P(27.55, 19.7), P(33.15, 19.7), P(33.15, 23.15), P(27.55, 23.15)], "#e4d8c0");
   poly(
     [P(SOLAR.x0, SOLAR.y0), P(SOLAR.x1, SOLAR.y0), P(SOLAR.x1, SOLAR.y1), P(SOLAR.x0, SOLAR.y1)],
     "#e4d5b8",
@@ -291,9 +307,15 @@ function asegurarTerreno(z: number, seed: number) {
   ctx.setLineDash([10, 14]);
   ctx.beginPath();
   const ca = P(-8, 24.8);
-  const cb = P(46, 24.8);
+  const cb = P(33.2, 24.8);
   ctx.moveTo(ca.x, ca.y);
   ctx.lineTo(cb.x, cb.y);
+  ctx.stroke();
+  ctx.beginPath();
+  const ea = P(35.75, 8);
+  const eb = P(35.75, 32);
+  ctx.moveTo(ea.x, ea.y);
+  ctx.lineTo(eb.x, eb.y);
   ctx.stroke();
   ctx.setLineDash([]);
   ctx.globalAlpha = 1;
@@ -338,6 +360,119 @@ function bloqueCount(s: Estado): number {
   const puesto = s.etapa === 4 ? hechoDe(s, 4, "block") : 469;
   const redo = s.extras.filter((e) => e.k === "block").reduce((a, e) => a + e.hecho, 0);
   return Math.min(469, puesto + (s.etapa > 4 ? 0 : 0) + Math.min(redo, 24));
+}
+
+function pintarZanja(
+  ctx: CanvasRenderingContext2D,
+  P: (x: number, y: number, a?: number) => { x: number; y: number },
+  seed: number,
+  exc: number,
+  lluvia = false,
+) {
+  const prof = 0.6 * Math.min(1, exc);
+  const inn: [number, number][] = [
+    [17, 13],
+    [21, 13],
+    [21, 16],
+    [17, 16],
+  ];
+  const out: [number, number][] = [
+    [16.5, 12.5],
+    [21.5, 12.5],
+    [21.5, 16.5],
+    [16.5, 16.5],
+  ];
+  for (let i = 0; i < 4; i++) {
+    const j = (i + 1) % 4;
+    const a = out[i]!;
+    const b = out[j]!;
+    const c = inn[j]!;
+    const d = inn[i]!;
+    ink(ctx, [P(a[0], a[1], -prof), P(b[0], b[1], -prof), P(c[0], c[1], -prof), P(d[0], d[1], -prof)], {
+      fill: "#e7d3a8",
+      lw: 0.8,
+      seed: seed + 40 + i,
+      amp: 0,
+    });
+  }
+  const bandas = [
+    { t0: 0, t1: 0.14 / 0.6, fill: "#4b3a2b" },
+    { t0: 0.14 / 0.6, t1: 0.44 / 0.6, fill: "#9c4a32" },
+    { t0: 0.44 / 0.6, t1: 1, fill: "#cdbf9f" },
+  ];
+  for (let i = 0; i < 4; i++) {
+    const j = (i + 1) % 4;
+    const a = out[i]!;
+    const b = out[j]!;
+    for (const band of bandas) {
+      ink(
+        ctx,
+        [
+          P(a[0], a[1], -prof * band.t0),
+          P(b[0], b[1], -prof * band.t0),
+          P(b[0], b[1], -prof * band.t1),
+          P(a[0], a[1], -prof * band.t1),
+        ],
+        { fill: band.fill, lw: 0.7, seed: seed + 80 + i * 3, amp: 0 },
+      );
+    }
+    ctx.save();
+    ctx.fillStyle = "#efe6d4";
+    for (let k = 0; k < 4; k++) {
+      const t = (k + 0.4) / 4;
+      const q = P(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, -prof * (0.35 + hash2(seed, i * 11 + k) * 0.5));
+      ctx.fillRect(q.x - 1, q.y - 1, 2.4, 1.8);
+    }
+    ctx.restore();
+  }
+  ctx.save();
+  ctx.strokeStyle = TINTA;
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  inn.forEach((p, i) => {
+    const q = P(p[0] + jit(seed, 510 + i * 3, 0.16), p[1] + jit(seed, 720 + i * 5, 0.12), 0);
+    if (i === 0) ctx.moveTo(q.x, q.y);
+    else ctx.lineTo(q.x, q.y);
+  });
+  ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
+  if (lluvia && prof > 0.12) {
+    ink(
+      ctx,
+      inn.map((p, i) => P(p[0] + jit(seed, 40 + i, 0.06), p[1] + jit(seed, 60 + i, 0.05), -prof * 0.62)),
+      { fill: "#6f9a96", lw: 0.8, seed: seed + 33, amp: 0.15 },
+    );
+  }
+  const rx = 21.62;
+  const ry = 16.62;
+  const pasos = Math.max(1, Math.ceil(prof / 0.1 - 1e-6));
+  ctx.save();
+  ctx.lineWidth = 3.2;
+  ctx.lineCap = "butt";
+  for (let i = 0; i < pasos; i++) {
+    const z0 = -i * 0.1;
+    const z1 = -Math.min(prof, (i + 1) * 0.1);
+    const a = P(rx, ry, z0);
+    const b = P(rx, ry, z1);
+    ctx.strokeStyle = i % 2 === 0 ? "#b8432f" : "#f7f3ea";
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+  const lab = P(rx + 0.35, ry + 0.15, -prof * 0.45);
+  ctx.save();
+  ctx.font = "14px 'Patrick Hand', cursive";
+  ctx.textAlign = "left";
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "#14100c";
+  ctx.fillStyle = "#e8dcc2";
+  const texto = `Fondo ${prof.toFixed(2)} m`;
+  ctx.strokeText(texto, lab.x, lab.y);
+  ctx.fillText(texto, lab.x, lab.y);
+  ctx.restore();
 }
 
 function drawObraEn(ctx: CanvasRenderingContext2D, s: Estado, z: number, ox: number, oy: number) {
@@ -447,22 +582,7 @@ function drawObraEn(ctx: CanvasRenderingContext2D, s: Estado, z: number, ox: num
     ctx.stroke();
   }
 
-  if (exc > 0.02) {
-    const per = perimetro();
-    const n = Math.max(1, Math.round(per.length * Math.min(1, exc)));
-    for (let i = 0; i < n; i++) {
-      const a = per[i % per.length]!;
-      const b = per[(i + 1) % per.length]!;
-      const a2 = dentro(a, 0.42);
-      const b2 = dentro(b, 0.42);
-      ink(ctx, [P(a.x, a.y), P(b.x, b.y), P(b2.x, b2.y), P(a2.x, a2.y)], {
-        fill: "#1c1612",
-        lw: 1,
-        seed: seed + 90 + i,
-        amp: 0.12,
-      });
-    }
-  }
+  if (exc > 0.02 && zap < 0.05) pintarZanja(ctx, P, seed, Math.min(1, exc), dibujoLluvia);
 
   if (acero > 0.02 && zap < 0.98) {
     const per = perimetro();
@@ -503,19 +623,23 @@ function drawObraEn(ctx: CanvasRenderingContext2D, s: Estado, z: number, ox: num
   if (zap > 0.02) {
     const per = perimetro();
     const n = Math.max(1, Math.round(per.length * zap));
+    const cura = s.etapa > 3 ? Math.min(1, 0.45 + s.curadoDias.length * 0.18) : 0;
+    const mojado = s.etapa <= 3 || (s.curando && cura < 0.4);
+    const ladoZ = mojado ? "#4e5558" : cura > 0.6 ? "#b0aea8" : "#7a7e82";
+    const tapaZ = mojado ? "#6a7074" : cura > 0.6 ? "#d4d0c8" : "#9a9c9e";
     for (let i = 0; i < n; i++) {
       const a = per[i % per.length]!;
       const b = per[(i + 1) % per.length]!;
       const a2 = dentro(a, 0.46);
       const b2 = dentro(b, 0.46);
       ink(ctx, [P(a.x, a.y, 0), P(b.x, b.y, 0), P(b.x, b.y, 0.1), P(a.x, a.y, 0.1)], {
-        fill: "#6e6e6a",
+        fill: ladoZ,
         lw: 0.9,
         seed: seed + 180 + i,
         amp: 0.1,
       });
       ink(ctx, [P(a.x, a.y, 0.1), P(b.x, b.y, 0.1), P(b2.x, b2.y, 0.1), P(a2.x, a2.y, 0.1)], {
-        fill: "#9a9a96",
+        fill: tapaZ,
         lw: 1,
         seed: seed + 200 + i,
         amp: 0.1,
@@ -537,6 +661,21 @@ function drawObraEn(ctx: CanvasRenderingContext2D, s: Estado, z: number, ox: num
       ],
       { fill: col, lw: 1, seed: seed + 600, amp: 0.12 },
     );
+    if (llano > 0.2 || firme > 0.45) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(29,23,18,0.22)";
+      ctx.lineWidth = 0.8;
+      for (let i = 0; i < 5; i++) {
+        const y = SOLAR.y0 + inset + 0.35 + i * 0.42;
+        const a = P(SOLAR.x0 + inset + 0.2, y, h + 0.01);
+        const b = P(SOLAR.x1 - inset - 0.2, y, h + 0.01);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
   }
 
   const puestos = Math.floor(blocks);
@@ -559,6 +698,70 @@ function drawObraEn(ctx: CanvasRenderingContext2D, s: Estado, z: number, ox: num
     isoBox(ctx, P, x0, y0, alt, hx * 2, hy * 2, 0.03, "#c4b49a", "#a89880", "#d7c4a8", seed + br.c + 17);
     isoBox(ctx, P, x0, y0, alt + 0.03, hx * 2, hy * 2, 0.155, "#d9d0be", "#a89880", "#efe6d4", seed + br.c);
   }
+  const marcas = new Map<number, { x: number; y: number; c: number }>();
+  for (const br of bricks) {
+    const hil = br.c + 1;
+    if (hil !== 3 && hil !== 6 && hil !== 9 && hil !== 12) continue;
+    if (!s.plumbed.some((u) => Math.abs(u - hil * POR_HILADA) < 1)) continue;
+    const prev = marcas.get(hil);
+    if (!prev || br.x + br.y > prev.x + prev.y) marcas.set(hil, br);
+  }
+  ctx.save();
+  ctx.lineCap = "round";
+  for (const [hil, br] of marcas) {
+    const alt = br.c * 0.2 + 0.19;
+    const a = P(br.x, br.y, alt);
+    const b = P(br.x + 0.22, br.y + 0.02, alt + 0.04);
+    ctx.strokeStyle = TINTA;
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(a.x - 4, a.y);
+    ctx.lineTo(b.x, b.y - 3);
+    ctx.stroke();
+    const top = P(br.x - 0.02, br.y, alt + 0.22);
+    const bot = P(br.x, br.y, Math.max(0.15, alt - 0.55));
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(top.x, top.y);
+    ctx.lineTo(bot.x, bot.y);
+    ctx.stroke();
+    ctx.fillStyle = ORO;
+    ctx.beginPath();
+    ctx.arc(bot.x, bot.y, 3.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    void hil;
+  }
+  ctx.restore();
+
+  if (blocks > 36 && s.etapa === 4) {
+    const hM = Math.min(MURO - 0.08, (blocks / 469) * MURO);
+    const dowels = [
+      { x: 17.2, y: 13.2 },
+      { x: 20.8, y: 13.2 },
+      { x: 17.2, y: 15.8 },
+      { x: 18.5, y: 15.8 },
+      { x: 19.5, y: 15.8 },
+      { x: 20.8, y: 15.8 },
+    ];
+    ctx.save();
+    ctx.strokeStyle = "#3e4a55";
+    ctx.lineWidth = 1.2;
+    for (const c of dowels) {
+      for (const [ox, oy] of [
+        [-0.07, -0.05],
+        [0.06, 0.05],
+      ] as const) {
+        const a = P(c.x + ox, c.y + oy, hM);
+        const b = P(c.x + ox, c.y + oy, hM + 0.58);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
 
   if (colsF > 0.05 || colsV > 0.05 || s.etapa > 5) {
     const cols = [
@@ -575,6 +778,7 @@ function drawObraEn(ctx: CanvasRenderingContext2D, s: Estado, z: number, ox: num
       if (!formed && !poured) return;
       if (s.etapa > 5) {
         isoBox(ctx, P, c.x - 0.13, c.y - 0.13, 0.08, 0.26, 0.26, MURO, "#9a9a96", "#6e6e6a", "#c8c8c2", seed + 300 + i);
+        vetaTabla(ctx, P, c.x - 0.12, c.y + 0.12, c.x + 0.12, c.y + 0.12, 0.25, MURO - 0.1, 4);
         return;
       }
       const cage = 0.09;
@@ -620,6 +824,7 @@ function drawObraEn(ctx: CanvasRenderingContext2D, s: Estado, z: number, ox: num
         seed: seed + 360 + i,
         amp: 0.1,
       });
+      vetaTabla(ctx, P, x0, y0 + 0.04, x0 + s0, y0 + 0.04, 0.2, Math.max(0.28, fh - 0.08), 3);
       isoBox(ctx, P, x0 + s0 - 0.06, y0, 0.12, 0.06, 0.06, fh, "#8d6b3e", "#6a4e32", "#c4a574", seed + 380 + i);
       isoBox(ctx, P, x0 + s0 - 0.06, y0 + s0 - 0.06, 0.12, 0.06, 0.06, fh, "#8d6b3e", "#6a4e32", "#c4a574", seed + 390 + i);
       ctx.strokeStyle = "#6a4e32";
@@ -733,6 +938,32 @@ function drawObraEn(ctx: CanvasRenderingContext2D, s: Estado, z: number, ox: num
       }
     }
   }
+
+  if (techo > 0.85 || s.etapa > 8) {
+    const y = 15.9;
+    ink(ctx, [P(18.35, y, 0.12), P(18.95, y, 0.12), P(18.95, y, 2.05), P(18.35, y, 2.05)], {
+      fill: "#2a241c",
+      lw: 1,
+      seed: seed + 900,
+      amp: 0.05,
+    });
+    ink(ctx, [P(20.05, y, 1.25), P(20.55, y, 1.25), P(20.55, y, 1.9), P(20.05, y, 1.9)], {
+      fill: "#8fb3ad",
+      lw: 1,
+      seed: seed + 910,
+      amp: 0.04,
+    });
+    ctx.save();
+    ctx.strokeStyle = "#b8432f";
+    ctx.lineWidth = 2.2;
+    const pa = P(17.15, y, 0.62);
+    const pb = P(20.85, y, 0.62);
+    ctx.beginPath();
+    ctx.moveTo(pa.x, pa.y);
+    ctx.lineTo(pb.x, pb.y);
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
 function perimetro() {
@@ -746,6 +977,34 @@ function perimetro() {
   for (let i = 1; i <= 4; i++) pts.push({ x: x0 + w - (w * i) / 4, y: y0 + h });
   for (let i = 1; i < 3; i++) pts.push({ x: x0, y: y0 + h - (h * i) / 3 });
   return pts;
+}
+
+function vetaTabla(
+  ctx: CanvasRenderingContext2D,
+  P: (x: number, y: number, a?: number) => { x: number; y: number },
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  z0: number,
+  z1: number,
+  n = 3,
+) {
+  ctx.save();
+  ctx.strokeStyle = "rgba(29,23,18,0.32)";
+  ctx.lineWidth = 0.8;
+  for (let i = 1; i <= n; i++) {
+    const t = i / (n + 1);
+    const x = x0 + (x1 - x0) * t;
+    const y = y0 + (y1 - y0) * t;
+    const a = P(x, y, z0);
+    const b = P(x, y, z1);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function isoBox(
@@ -783,16 +1042,30 @@ function metro(P: Proy, x: number, y: number) {
   return Math.max(8, Math.hypot(b.x - a.x, b.y - a.y));
 }
 
+let solDx = 0;
+let solDy = 0;
+let dibujoLluvia = false;
+
+function aplicarSol(minuto: number, lluvia: boolean) {
+  const t = Math.min(1, Math.max(0, (minuto - 7 * 60) / (8 * 60)));
+  const lado = (t - 0.5) * 2;
+  const largo = lluvia ? 0.28 : 0.2 + Math.abs(lado) * 1.05;
+  solDx = lado * largo;
+  solDy = Math.abs(lado) * 0.22;
+  dibujoLluvia = lluvia;
+}
+
 function sombraIso(ctx: CanvasRenderingContext2D, P: Proy, x: number, y: number, rx: number, ry: number) {
   const c = P(x, y, 0.02);
   const a = P(x + rx, y, 0.02);
   const b = P(x, y + ry, 0.02);
   const ex = Math.max(8, Math.hypot(a.x - c.x, a.y - c.y));
   const ey = Math.max(5, Math.hypot(b.x - c.x, b.y - c.y) * 0.72);
+  const largo = 0.55 + Math.abs(solDx) * 0.85;
   ctx.save();
-  ctx.fillStyle = "rgba(29,23,18,0.16)";
+  ctx.fillStyle = "rgba(29,23,18,0.18)";
   ctx.beginPath();
-  ctx.ellipse(c.x + ex * 0.06, c.y + 3, ex, ey, 0, 0, Math.PI * 2);
+  ctx.ellipse(c.x + solDx * ex * 0.8, c.y + 2 + Math.abs(solDx) * 3, ex * largo, ey * (0.62 + Math.abs(solDx) * 0.22), solDx * 0.22, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }
@@ -967,11 +1240,12 @@ function pintarAlmacenM(
 ) {
   const dx = 2.45;
   const dy = 2.05;
-  const h = 2.15;
+  const h = 1.35;
   const x = cx - dx / 2;
   const y = cy - dy / 2;
+  sombraIso(ctx, P, cx, cy + 0.2, dx * 0.55, dy * 0.4);
   nave(ctx, P, x, y, dx, dy, h, seed, "#d7d1c6", "#c4bdb2");
-  for (const alt of [0.55, 1.15]) {
+  for (const alt of [0.42, 0.88]) {
     ink(ctx, [P(x + 0.12, y + 0.08, alt), P(x + dx - 0.35, y + 0.08, alt), P(x + dx - 0.35, y + 0.16, alt), P(x + 0.12, y + 0.16, alt)], {
       fill: "#8d6b3e",
       lw: 0.9,
@@ -995,6 +1269,7 @@ function pintarOficinaM(ctx: CanvasRenderingContext2D, P: Proy, cx: number, cy: 
   const h = 2.15;
   const x = cx - dx / 2;
   const y = cy - dy / 2;
+  sombraIso(ctx, P, cx, cy + 0.15, dx * 0.55, dy * 0.4);
   nave(ctx, P, x, y, dx, dy, h, seed, "#efe4cf", "#e4d5bc", conLuz ? "#f3d7a0" : "#cfc6b4");
   const cal = [
     P(x + 0.35, y + 0.04, 1.25),
@@ -1025,14 +1300,6 @@ function pintarOficinaM(ctx: CanvasRenderingContext2D, P: Proy, cx: number, cy: 
     ],
     { fill: "#f4efe4", lw: 1, seed: seed + 15, amp: 0.06 },
   );
-  ctx.strokeStyle = "#3d5f8a";
-  ctx.lineWidth = 0.8;
-  const p1 = P(x + 0.65, y + dy + 0.12, 0.75);
-  const p2 = P(x + 1.15, y + dy + 0.28, 0.75);
-  ctx.beginPath();
-  ctx.moveTo(p1.x, p1.y);
-  ctx.lineTo(p2.x, p2.y);
-  ctx.stroke();
 }
 
 function pintarTanqueM(ctx: CanvasRenderingContext2D, P: Proy, cx: number, cy: number, q: number, seed: number) {
@@ -1231,7 +1498,15 @@ function pintarTrompoM(
   ctx.stroke();
   carretillaMundo(ctx, P, cx - 1.15, cy + 0.28, seed + 12);
 }
-function conoTruncado(ctx: CanvasRenderingContext2D, P: Proy, x: number, y: number, m3: number, seed: number) {
+function conoTruncado(
+  ctx: CanvasRenderingContext2D,
+  P: Proy,
+  x: number,
+  y: number,
+  m3: number,
+  seed: number,
+  tono: "roja" | "gris" | "arena" = "arena",
+) {
   if (!(m3 > 0.05)) return;
   const u = Math.min(1.25, Math.sqrt(m3 / 4.2));
   const rb = 0.5 + u * 0.95;
@@ -1249,12 +1524,18 @@ function conoTruncado(ctx: CanvasRenderingContext2D, P: Proy, x: number, y: numb
   };
   const base = ring(rb, 0.03);
   const top = ring(rt, h);
-  const tintas = ["#c4a46c", "#a88452", "#cbb58a", "#8d6b3e"];
+  const paletas = {
+    roja: ["#9c4a32", "#7a3424", "#b85a3e", "#6a2e22"],
+    gris: ["#8a8680", "#6e6a64", "#a8a49c", "#5c5854"],
+    arena: ["#c4a46c", "#a88452", "#cbb58a", "#8d6b3e"],
+  };
+  const tintas = paletas[tono];
+  const cima = tono === "roja" ? "#c46a4e" : tono === "gris" ? "#b7b2a8" : "#d8c294";
   for (let i = 0; i < N; i++) {
     const j = (i + 1) % N;
     ink(ctx, [base[i]!, base[j]!, top[j]!, top[i]!], { fill: tintas[i % tintas.length]!, lw: 1, seed: seed + i, amp: 0.4 });
   }
-  ink(ctx, top, { fill: "#d8c294", lw: 1, seed: seed + 12, amp: 0.3 });
+  ink(ctx, top, { fill: cima, lw: 1, seed: seed + 12, amp: 0.3 });
 }
 
 function cementoConLona(ctx: CanvasRenderingContext2D, P: Proy, x: number, y: number, q: number, mojado: boolean, seed: number) {
@@ -1285,33 +1566,61 @@ function pintarPilasEntrada(ctx: CanvasRenderingContext2D, P: Proy, s: Estado) {
   const arena = s.inv.arena?.q ?? 0;
   const grava = s.inv.grava?.q ?? 0;
   const mojado = s.lluviaOn || s.avisoNubes;
-  if (arena > 0.02) pilaM(ctx, P, 8.55, 18.45, arena, 2.2, "#e4c98a", 31);
+  if (arena > 0.02) pilaM(ctx, P, 9.55, 20.42, arena, 2.2, "#e4c98a", 31);
   if (grava > 0.02) {
-    pilaM(ctx, P, 15.55, 19.15, grava, 2.2, "#7a756e", 32);
+    pilaM(ctx, P, 10.85, 20.48, grava, 2.2, "#7a756e", 32);
     ctx.save();
     ctx.fillStyle = "#4a453c";
     for (let i = 0; i < 5; i++) {
-      const p = P(15.35 + (i % 3) * 0.22, 19.05 + Math.floor(i / 3) * 0.16, 0.35 + (i % 2) * 0.2);
+      const p = P(10.7 + (i % 3) * 0.18, 20.4 + Math.floor(i / 3) * 0.14, 0.35 + (i % 2) * 0.2);
       ctx.fillRect(p.x, p.y, 3.2, 2.4);
     }
     ctx.restore();
   }
-  if (cem > 0.2) cementoConLona(ctx, P, 12.15, 18.75, cem, mojado, 33);
-  if (block > 0.5) paletaBlock(ctx, P, 11.15, 20.55, block, 34);
+  cuadroTablas(ctx, P, 9.3, 20.22, 11.15, 21.12);
+  if (cem > 0.2) cementoConLona(ctx, P, 9.48, 20.55, cem, mojado, 33);
+  if (block > 0.5) paletaBlock(ctx, P, 10.35, 20.62, block, 34);
   if (vara > 0.2) {
-    burroPar(ctx, P, 14.55, 20.55, 35);
-    varillasSobre(ctx, P, 14.55, 20.55, vara);
-    ctx.save();
-    ctx.strokeStyle = "#6a4e32";
-    ctx.lineWidth = 1.3;
-    const a = P(14.7, 20.5, 0.84);
-    const b = P(15.55, 20.62, 0.84);
+    burroPar(ctx, P, 9.55, 20.88, 35);
+    varillasSobre(ctx, P, 9.55, 20.88, vara);
+  }
+}
+
+function cuadroTablas(
+  ctx: CanvasRenderingContext2D,
+  P: Proy,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+) {
+  ctx.save();
+  ctx.strokeStyle = "#6a4e32";
+  ctx.lineWidth = 2.2;
+  ctx.lineJoin = "miter";
+  const esquina: [number, number][] = [
+    [x0, y0],
+    [x1, y0],
+    [x1, y1],
+    [x0, y1],
+  ];
+  ctx.beginPath();
+  esquina.forEach((p, i) => {
+    const q = P(p[0], p[1], 0.12);
+    if (i === 0) ctx.moveTo(q.x, q.y);
+    else ctx.lineTo(q.x, q.y);
+  });
+  ctx.closePath();
+  ctx.stroke();
+  for (const p of esquina) {
+    const a = P(p[0], p[1], 0);
+    const b = P(p[0], p[1], 0.48);
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
     ctx.stroke();
-    ctx.restore();
   }
+  ctx.restore();
 }
 
 function pilaM(ctx: CanvasRenderingContext2D, P: Proy, x: number, y: number, q: number, max: number, color: string, seed: number) {
@@ -1468,41 +1777,91 @@ function pintarEntradaM(ctx: CanvasRenderingContext2D, P: Proy, cx: number, cy: 
 }
 
 function pintarFerreteriaM(ctx: CanvasRenderingContext2D, P: Proy, cx: number, cy: number, seed: number) {
-  const dx = 4.1;
-  const dy = 2.5;
-  const h = 3.05;
+  const dx = 3.5;
+  const dy = 2.05;
+  const h = 2.55;
   const x = cx - dx / 2;
-  const y = cy - dy / 2;
-  isoBox(ctx, P, x, y, 0, dx, dy, h, "#efe4cf", "#e0d2ba", "#d7d1c6", seed);
-  ink(ctx, [P(x - 0.05, y + dy, h - 0.55), P(x + dx + 0.35, y + dy + 0.55, h - 0.7), P(x + dx + 0.35, y + dy + 0.55, h - 0.15), P(x - 0.05, y + dy, h)], {
-    fill: "#b8432f",
-    lw: 1,
-    seed: seed + 2,
-    amp: 0.1,
-  });
-  isoBox(ctx, P, x + 0.7, y + dy - 0.08, h - 0.15, 2.5, 0.12, 0.55, "#8d6b3e", "#6a4e32", "#c4a574", seed + 3);
-  const m = P(x + dx / 2, y + dy + 0.02, h + 0.12);
+  const y = cy - dy / 2 - 0.42;
+  sombraIso(ctx, P, cx, cy, dx * 0.5, dy * 0.35);
+  isoBox(ctx, P, x - 0.15, y - 0.2, 0, dx + 0.7, dy + 0.35, 0.06, "#d9cbb0", "#b7a88e", "#efe4cf", seed);
+  ctx.save();
+  ctx.strokeStyle = "#8d7b66";
+  ctx.lineWidth = 2;
+  const muro = (x0: number, y0: number, x1: number, y1: number) => {
+    const a = P(x0, y0, 0);
+    const b = P(x1, y1, 0);
+    const c = P(x1, y1, 0.85);
+    const d = P(x0, y0, 0.85);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.lineTo(c.x, c.y);
+    ctx.lineTo(d.x, d.y);
+    ctx.closePath();
+    ctx.fillStyle = "#c4b49a";
+    ctx.fill();
+    ctx.stroke();
+  };
+  muro(x - 0.05, y - 0.15, x + dx + 0.15, y - 0.15);
+  muro(x + dx + 0.05, y - 0.1, x + dx + 0.05, y + dy * 0.72);
+  ctx.restore();
+  isoBox(ctx, P, x, y, 0, dx, dy, 0.42, "#8a8680", "#6e6a64", "#b7b2a8", seed + 1);
+  isoBox(ctx, P, x, y, 0.42, dx, dy, h - 0.42, "#efe4cf", "#e0d2ba", "#f4efe4", seed + 2);
+  const puerta = 1.15;
+  ink(
+    ctx,
+    [
+      P(x + dx * 0.38, y + dy, 0.08),
+      P(x + dx * 0.38 + puerta, y + dy, 0.08),
+      P(x + dx * 0.38 + puerta, y + dy, 1.85),
+      P(x + dx * 0.38, y + dy, 1.85),
+    ],
+    { fill: "#241e18", lw: 1, seed: seed + 4, amp: 0.04 },
+  );
+  ctx.save();
+  ctx.strokeStyle = "#6a4e32";
+  ctx.lineWidth = 1.3;
+  for (let i = 0; i < 4; i++) {
+    const a = P(x + dx * 0.38, y + dy + 0.02, 1.95 + i * 0.06);
+    const b = P(x + dx * 0.38 + puerta, y + dy + 0.02, 1.95 + i * 0.06);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ink(
+    ctx,
+    [
+      P(x + 0.28, y + dy, 1.15),
+      P(x + 1.15, y + dy, 1.15),
+      P(x + 1.15, y + dy, 1.85),
+      P(x + 0.28, y + dy, 1.85),
+    ],
+    { fill: "#1a242c", lw: 1, seed: seed + 6, amp: 0.04 },
+  );
+  ink(
+    ctx,
+    [P(x - 0.05, y + dy, h - 0.15), P(x + dx + 0.2, y + dy + 0.55, h - 0.35), P(x + dx + 0.2, y + dy + 0.55, h - 0.05), P(x - 0.05, y + dy, h + 0.15)],
+    { fill: "#6a4e32", lw: 1, seed: seed + 7, amp: 0.08 },
+  );
+  const m = P(x + dx / 2, y + dy + 0.15, h + 0.28);
   const k = metro(P, cx, cy);
   ctx.fillStyle = TINTA;
-  ctx.font = `600 ${Math.max(13, Math.round(k * 0.42))}px 'Patrick Hand', cursive`;
+  ctx.font = `600 ${Math.max(11, Math.round(k * 0.28))}px 'Patrick Hand', cursive`;
   ctx.textAlign = "center";
-  ctx.fillText("EL CRUCE", m.x, m.y);
-  isoBox(ctx, P, x + dx / 2 - 0.28, y + dy - 0.06, 0, 0.56, 0.08, 2.15, "#3d342a", "#241e18", "#4a4034", seed + 4);
+  ctx.fillText("FERRETERÍA EL CRUCE", m.x, m.y);
+  paletaBlock(ctx, P, x - 1.15, y + dy - 0.15, 40, seed + 11);
+  burroPar(ctx, P, x + dx + 0.35, y + dy - 0.2, seed + 12);
+  varillasSobre(ctx, P, x + dx + 0.35, y + dy - 0.2, 8);
 }
 
-function pintarCamion(ctx: CanvasRenderingContext2D, x: number, y: number, z: number, age: number, seed: number) {
+function pintarCamion(ctx: CanvasRenderingContext2D, x: number, y: number, z: number, carga: number, seed: number) {
   const Sx = sxu(z);
   const Sy = syu(z);
   const V = 30 * z;
   const pt = (ix: number, iy: number, iz: number) => ({ x: x + (ix - iy) * Sx, y: y + (ix + iy) * Sy - iz * V });
-  const tilt =
-    age < 1.15 || age > 3.85
-      ? 0
-      : age < 1.75
-        ? (age - 1.15) / 0.6
-        : age < 3.15
-          ? 1
-          : (3.85 - age) / 0.7;
+  const tilt = 0;
   const lift = tilt * 3.15;
   const tail = -5.35;
   const span = 3.85;
@@ -1618,44 +1977,24 @@ function pintarCamion(ctx: CanvasRenderingContext2D, x: number, y: number, z: nu
   rueda(-4.35, 1.08, 0.46);
   rueda(-3.45, 1.08, 0.46);
   rueda(0.15, 1.02, 0.36);
-  if (volcando) {
-    const rear = pt(x0 + 0.05, 0.05, 0.95);
-    const piso = -1.15 * tilt;
-    const L = Math.max(92, 118 * z);
-    const alto = Math.max(22, 34 * z);
-    ctx.save();
-    ctx.translate(rear.x, rear.y);
-    ctx.rotate(piso);
-    ctx.fillStyle = "#6a4e32";
-    ctx.strokeStyle = TINTA;
-    ctx.lineWidth = 2.4;
-    ctx.fillRect(0, -alto * 0.55, L, alto * 0.55);
-    ctx.strokeRect(0, -alto * 0.55, L, alto * 0.55);
-    ctx.fillStyle = "#e8c98a";
-    ctx.fillRect(0, -alto, L, alto * 0.5);
-    ctx.strokeRect(0, -alto, L, alto * 0.5);
-    ctx.fillStyle = "#c4a574";
-    for (let i = 0; i < 3; i++) {
-      const bx = 8 + i * (L * 0.22);
-      ctx.fillRect(bx, -alto + 4, L * 0.16, alto * 0.28);
-      ctx.strokeRect(bx, -alto + 4, L * 0.16, alto * 0.28);
+  if (carga > 0.04) {
+    const n = Math.max(1, Math.round(carga * 4));
+    for (let i = 0; i < n; i++) {
+      const ix = x0 + 0.4 + (i % 3) * 1.05;
+      const iy = i % 2 === 0 ? -0.2 : 0.25;
+      const alto = 0.16 + 0.34 * carga;
+      isoBox(ctx, (x, y, a = 0) => cama(x, y, a), ix, iy, z0, 0.72, 0.4, alto, i % 2 ? "#c4b49a" : "#e4d8c4", "#8a8680", "#f4efe4", seed + 20 + i);
     }
-    ctx.rotate(1.15);
-    ctx.fillStyle = "#3a2a1c";
-    ctx.fillRect(-4, 0, 8, alto * 1.35);
-    ctx.strokeRect(-4, 0, 8, alto * 1.35);
-    ctx.restore();
     ctx.save();
-    for (let i = 0; i < 6; i++) {
-      const u = (age * 1.35 + i * 0.17) % 1;
-      const s = pt(x0 - 0.15 - u * 1.15, i % 2 ? 0.55 : -0.15, 0.05);
-      const w = Math.max(14, 18 * z);
-      const h = Math.max(10, 12 * z);
-      ctx.fillStyle = i % 2 ? "#c4b49a" : "#f2e2b8";
-      ctx.strokeStyle = TINTA;
-      ctx.lineWidth = 1.2;
-      ctx.fillRect(s.x - u * 10, s.y + u * 46, w, h);
-      ctx.strokeRect(s.x - u * 10, s.y + u * 46, w, h);
+    ctx.strokeStyle = "#3e4a55";
+    ctx.lineWidth = 1.7;
+    for (let i = 0; i < 3; i++) {
+      const a = cama(x0 + 0.3, -0.05 + i * 0.08, z0 + 0.22 + 0.28 * carga);
+      const b = cama(x1 - 0.15, 0.02 + i * 0.08, z0 + 0.22 + 0.28 * carga);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
     }
     ctx.restore();
   }
@@ -2014,6 +2353,58 @@ function gotaTinta(ctx: CanvasRenderingContext2D, x: number, y: number, s: numbe
   ctx.stroke();
 }
 
+function sentadoQuieto(pose: string, trabaja: boolean, caminando: boolean) {
+  return !pose && !trabaja && !caminando;
+}
+
+function manoDe(pose: string, cuadro: number): { x: number; y: number } {
+  const q = cuadro % 4;
+  if (pose === "pala" || pose === "trompo") {
+    return [
+      { x: 0.36, y: -0.22 },
+      { x: 0.42, y: 0.02 },
+      { x: -0.08, y: -1.28 },
+      { x: 0.12, y: -0.7 },
+    ][q]!;
+  }
+  if (pose === "carretilla") return { x: 0.34, y: -0.62 };
+  if (pose === "saco") return { x: -0.04, y: -1.32 };
+  if (pose === "block") {
+    return [
+      { x: 0.02, y: -1.62 },
+      { x: 0.18, y: -1.05 },
+      { x: 0.34, y: -0.72 },
+      { x: 0.3, y: -0.88 },
+    ][q]!;
+  }
+  if (pose === "martillo") {
+    return [
+      { x: 0.26, y: -1.38 },
+      { x: 0.36, y: -1.02 },
+      { x: 0.42, y: -0.48 },
+      { x: 0.3, y: -0.86 },
+    ][q]!;
+  }
+  if (pose === "cubeta") return { x: 0.34, y: q === 1 || q === 2 ? -0.7 : -0.95 };
+  if (pose === "regla") return { x: q % 2 ? 0.5 : 0.05, y: -0.68 };
+  if (pose === "manguera") return { x: 0.38, y: -0.92 };
+  if (pose === "plomo") return { x: 0.2, y: -1.2 };
+  if (pose === "acero" || pose === "cuchara") return { x: 0.32, y: -0.78 + (q % 2) * 0.14 };
+  if (pose === "papel") return { x: 0.26, y: -1.02 };
+  return { x: 0.24, y: -0.72 };
+}
+
+function polvoLocal(ctx: CanvasRenderingContext2D, x: number, y: number, t: number) {
+  ctx.save();
+  ctx.fillStyle = "#c4a46c";
+  for (let i = 0; i < 4; i++) {
+    const u = (t * 1.6 + i * 0.27) % 1;
+    ctx.globalAlpha = 0.35 + (1 - u) * 0.4;
+    ctx.fillRect(x + Math.sin(t * 5 + i) * 7, y - u * 16, 2.4, 1.7);
+  }
+  ctx.restore();
+}
+
 function figura(
   ctx: CanvasRenderingContext2D,
   sx: number,
@@ -2030,27 +2421,45 @@ function figura(
     semilla: number;
     z: number;
     oficio?: Oficio | "maestro";
+    duena?: boolean;
+    pose?: string;
+    cargada?: boolean;
   },
 ) {
   const k = 30 * p.z;
-  const paso = p.cansancio >= 70 ? 0.55 : 1;
-  const walk = p.caminando ? Math.sin(p.t * 9 + p.semilla) * paso : 0;
+  const pose = p.pose || "";
+  const lento = p.cansancio >= 70 ? 0.42 : 1;
+  const walk = p.caminando ? Math.sin(p.t * 7 * lento + p.semilla) * lento : 0;
   const bob = Math.abs(walk) * k * 0.035;
-  const quieto = !p.trabaja && !p.caminando && p.anim !== "papel" && p.anim !== "saco" && p.anim !== "varilla" && p.anim !== "carretilla";
-  const swing = p.trabaja ? Math.sin(p.t * 8 + p.semilla) : 0;
+  const trabajaPose = p.trabaja && pose !== "espera" && pose !== "sentado";
+  const cuadro = Math.abs(Math.floor(p.t * (trabajaPose ? 2.35 : 1.2) * lento + p.semilla)) % 4;
+  const quieto = pose === "espera" || sentadoQuieto(pose, p.trabaja, p.caminando);
+  const sentado = pose === "sentado";
+  const caido = p.cansancio >= 70 ? 0.08 * k : 0;
   const lw = Math.max(1, k * 0.03);
+  const mano = manoDe(pose, cuadro);
   ctx.save();
   ctx.translate(sx, sy - bob);
+  const sombraL = 0.55 + Math.abs(solDx) * 0.85;
   ctx.fillStyle = "rgba(29,23,18,0.28)";
   ctx.beginPath();
-  ctx.ellipse(0, k * 0.02, k * 0.2, k * 0.07, 0, 0, Math.PI * 2);
+  ctx.ellipse(
+    solDx * k * 0.45,
+    k * 0.02 + Math.abs(solDx) * 2,
+    k * 0.18 * sombraL,
+    k * 0.055 * (0.65 + Math.abs(solDx) * 0.3),
+    solDx * 0.12,
+    0,
+    Math.PI * 2,
+  );
   ctx.fill();
   ctx.strokeStyle = TINTA;
   ctx.fillStyle = "#2a261f";
   ctx.lineWidth = lw;
   ctx.lineJoin = "bevel";
-  const hip = -0.92 * k;
-  const sho = -1.44 * k;
+  if (caido && !sentado) ctx.rotate(0.09);
+  const hip = sentado ? -0.58 * k : -0.92 * k;
+  const sho = (sentado ? -1.05 * k : -1.44 * k) + caido;
   const pierna = (x0: number, x1: number) => {
     ctx.beginPath();
     ctx.moveTo(x0, hip);
@@ -2060,8 +2469,19 @@ function figura(
     ctx.fillRect(x1 - 0.07 * k, -0.14 * k, 0.15 * k, 0.12 * k);
     ctx.strokeRect(x1 - 0.07 * k, -0.14 * k, 0.15 * k, 0.12 * k);
   };
-  pierna(-0.07 * k, -0.07 * k - walk * 0.1 * k);
-  pierna(0.07 * k, 0.07 * k + walk * 0.1 * k);
+  if (sentado) {
+    ctx.beginPath();
+    ctx.moveTo(-0.06 * k, hip);
+    ctx.lineTo(-0.32 * k, hip + 0.16 * k);
+    ctx.lineTo(-0.02 * k, -0.04 * k);
+    ctx.moveTo(0.08 * k, hip);
+    ctx.lineTo(0.36 * k, hip + 0.14 * k);
+    ctx.lineTo(0.06 * k, -0.04 * k);
+    ctx.stroke();
+  } else {
+    pierna(-0.07 * k, -0.07 * k - walk * 0.1 * k);
+    pierna(0.07 * k, 0.07 * k + walk * 0.1 * k);
+  }
   ctx.fillStyle = p.camisa;
   ctx.beginPath();
   ctx.moveTo(-0.16 * k, hip);
@@ -2071,19 +2491,24 @@ function figura(
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
-  const brazo = (lado: number, akimbo: boolean) => {
-    ctx.beginPath();
-    ctx.moveTo(lado * 0.18 * k, sho + 0.04 * k);
-    if (akimbo) {
-      ctx.lineTo(lado * 0.32 * k, sho + 0.28 * k);
-      ctx.lineTo(lado * 0.14 * k, hip + 0.06 * k);
-    } else {
-      ctx.lineTo(lado * 0.22 * k, hip + 0.18 * k + (lado > 0 ? swing * 0.08 * k : -walk * 0.04 * k));
-    }
-    ctx.stroke();
-  };
-  brazo(-1, quieto);
-  brazo(1, quieto);
+  ctx.beginPath();
+  if (sentado || quieto) {
+    ctx.moveTo(-0.16 * k, sho + 0.06 * k);
+    ctx.lineTo(0.14 * k, hip + 0.18 * k);
+    ctx.moveTo(0.16 * k, sho + 0.06 * k);
+    ctx.lineTo(-0.14 * k, hip + 0.18 * k);
+  } else if (pose === "plomo") {
+    ctx.moveTo(-0.16 * k, sho);
+    ctx.lineTo(-0.08 * k, hip + 0.05 * k);
+    ctx.moveTo(0.12 * k, sho + 0.02 * k);
+    ctx.lineTo(mano.x * k, mano.y * k);
+  } else {
+    ctx.moveTo(-0.16 * k, sho);
+    ctx.lineTo(-0.22 * k, hip + 0.22 * k - walk * 0.04 * k);
+    ctx.moveTo(0.16 * k, sho);
+    ctx.lineTo(mano.x * k, mano.y * k);
+  }
+  ctx.stroke();
   ctx.fillStyle = "#c49a78";
   ctx.beginPath();
   ctx.moveTo(-0.09 * k, sho + 0.02 * k);
@@ -2096,16 +2521,33 @@ function figura(
   ctx.fillStyle = TINTA;
   ctx.fillRect(-0.045 * k, sho - 0.08 * k, 0.025 * k, 0.025 * k);
   ctx.fillRect(0.02 * k, sho - 0.08 * k, 0.025 * k, 0.025 * k);
-  ctx.fillStyle = p.casco;
+  ctx.fillStyle = p.duena ? "#3d342a" : p.casco;
   ctx.beginPath();
-  ctx.moveTo(-0.11 * k, sho - 0.12 * k);
-  ctx.lineTo(0.12 * k, sho - 0.12 * k);
-  ctx.lineTo(0.1 * k, sho - 0.28 * k);
-  ctx.lineTo(-0.09 * k, sho - 0.28 * k);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillRect(-0.13 * k, sho - 0.14 * k, 0.26 * k, 0.035 * k);
+  if (p.duena) {
+    ctx.moveTo(-0.12 * k, sho - 0.08 * k);
+    ctx.lineTo(-0.1 * k, sho - 0.32 * k);
+    ctx.lineTo(0.02 * k, sho - 0.36 * k);
+    ctx.lineTo(0.12 * k, sho - 0.22 * k);
+    ctx.lineTo(0.08 * k, sho - 0.08 * k);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0.1 * k, sho - 0.24 * k, 0.07 * k, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  } else {
+    ctx.lineWidth = p.oficio === "maestro" ? Math.max(2.4, lw * 2.6) : lw;
+    ctx.strokeStyle = "#1d1712";
+    ctx.moveTo(-0.11 * k, sho - 0.12 * k);
+    ctx.lineTo(0.12 * k, sho - 0.12 * k);
+    ctx.lineTo(0.1 * k, sho - 0.28 * k);
+    ctx.lineTo(-0.09 * k, sho - 0.28 * k);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillRect(-0.13 * k, sho - 0.14 * k, 0.26 * k, 0.035 * k);
+  }
   if (p.letra) {
     ctx.fillStyle = TINTA;
     ctx.font = `700 ${Math.max(8, Math.round(k * 0.16))}px 'Patrick Hand', cursive`;
@@ -2118,113 +2560,191 @@ function figura(
     ctx.strokeRect(-0.14 * k, hip + 0.04 * k, 0.12 * k, 0.035 * k);
   }
   const herramienta = () => {
-    let kind = p.anim;
-    if (kind === "cuchara" && p.oficio === "varillero") kind = "tenaza";
-    if (kind === "nada" || kind === "") {
-      if (p.oficio === "varillero") kind = "tenaza";
-      else if (p.oficio === "carpintero") kind = "serrucho";
-      else if (p.oficio === "albanil" || p.oficio === "maestro") kind = "cuchara";
-      else if (p.oficio === "peon" || p.oficio === "ayudante") kind = "pala";
-    }
+    const pose = p.pose || "";
+    const hx = mano.x * k;
+    const hy = mano.y * k;
     ctx.save();
-    ctx.translate(0.24 * k, -1.2 * k);
-    if (!quieto) ctx.rotate(swing * 0.65);
     ctx.strokeStyle = TINTA;
     ctx.lineWidth = Math.max(1.4, lw);
-    if (kind === "pala") {
+    ctx.lineCap = "round";
+    if (pose === "pala" || pose === "trompo") {
+      const dirs = [
+        { x: 0.16, y: 0.42 },
+        { x: 0.22, y: 0.28 },
+        { x: -0.28, y: -0.22 },
+        { x: -0.08, y: 0.18 },
+      ];
+      const d = dirs[cuadro]!;
       ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(0.08 * k, 0.55 * k);
+      ctx.moveTo(hx, hy);
+      ctx.lineTo(hx + d.x * k, hy + d.y * k);
       ctx.stroke();
       ctx.fillStyle = "#8a8680";
-      ctx.fillRect(0.02 * k, 0.5 * k, 0.16 * k, 0.07 * k);
-      ctx.strokeRect(0.02 * k, 0.5 * k, 0.16 * k, 0.07 * k);
-    } else if (kind === "martillo" || kind === "serrucho") {
+      ctx.save();
+      ctx.translate(hx + d.x * k, hy + d.y * k);
+      ctx.rotate(cuadro === 2 ? -0.8 : 0.5);
+      ctx.fillRect(-0.04 * k, 0, 0.18 * k, 0.07 * k);
+      ctx.strokeRect(-0.04 * k, 0, 0.18 * k, 0.07 * k);
+      ctx.restore();
+      if (cuadro < 3) polvoLocal(ctx, hx + d.x * k, hy + d.y * k, p.t + p.semilla);
+    } else if (pose === "carretilla") {
       ctx.beginPath();
-      ctx.moveTo(0, 0.05 * k);
-      ctx.lineTo(0.02 * k, 0.32 * k);
+      ctx.moveTo(0.12 * k, sho + 0.12 * k);
+      ctx.lineTo(0.58 * k, -0.12 * k);
+      ctx.moveTo(0.02 * k, hip + 0.12 * k);
+      ctx.lineTo(0.5 * k, -0.02 * k);
       ctx.stroke();
-      ctx.fillStyle = "#6a4e32";
-      ctx.fillRect(-0.06 * k, -0.02 * k, 0.16 * k, 0.06 * k);
-      ctx.strokeRect(-0.06 * k, -0.02 * k, 0.16 * k, 0.06 * k);
-      if (p.oficio === "carpintero" || kind === "serrucho") {
+      ctx.fillStyle = p.cargada ? "#8d6b3e" : "#d7c4a8";
+      ctx.fillRect(0.3 * k, -0.32 * k, 0.36 * k, 0.16 * k);
+      ctx.strokeRect(0.3 * k, -0.32 * k, 0.36 * k, 0.16 * k);
+      if (p.cargada) {
+        ctx.fillStyle = "#9c4a32";
         ctx.beginPath();
-        ctx.moveTo(-0.22 * k, 0.15 * k);
-        ctx.lineTo(-0.02 * k, 0.42 * k);
-        ctx.lineTo(0.02 * k, 0.38 * k);
-        ctx.lineTo(-0.18 * k, 0.11 * k);
-        ctx.closePath();
-        ctx.fillStyle = "#c4a574";
+        ctx.ellipse(0.48 * k, -0.34 * k, 0.13 * k, 0.06 * k, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
       }
-    } else if (kind === "cubeta") {
-      ctx.fillStyle = AGUA;
       ctx.beginPath();
-      ctx.moveTo(-0.02 * k, 0.05 * k);
-      ctx.lineTo(0.16 * k, 0.05 * k);
-      ctx.lineTo(0.13 * k, 0.2 * k);
-      ctx.lineTo(0.01 * k, 0.2 * k);
-      ctx.closePath();
-      ctx.fill();
+      ctx.arc(0.66 * k, -0.02 * k, 0.1 * k, 0, Math.PI * 2);
       ctx.stroke();
-    } else if (kind === "cuchara") {
+      if (p.caminando) polvoLocal(ctx, 0.62 * k, 0.02 * k, p.t);
+    } else if (pose === "saco") {
+      const bobS = cuadro % 2 ? -0.04 * k : 0;
+      ctx.fillStyle = "#c4a574";
+      ctx.fillRect(-0.2 * k, sho - 0.08 * k + bobS, 0.28 * k, 0.34 * k);
+      ctx.strokeRect(-0.2 * k, sho - 0.08 * k + bobS, 0.28 * k, 0.34 * k);
       ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(0.12 * k, 0.16 * k);
+      ctx.moveTo(-0.16 * k, sho + 0.02 * k + bobS);
+      ctx.lineTo(0.04 * k, sho + 0.2 * k);
       ctx.stroke();
+    } else if (pose === "block") {
+      const ys = [-1.62, -1.08, -0.78, -0.78];
+      const by = ys[cuadro]! * k;
+      ctx.fillStyle = "#d9d0be";
+      ctx.fillRect(-0.1 * k, by, 0.24 * k, 0.1 * k);
+      ctx.strokeRect(-0.1 * k, by, 0.24 * k, 0.1 * k);
+      ctx.strokeStyle = "#c4b49a";
       ctx.beginPath();
-      ctx.moveTo(0.08 * k, 0.12 * k);
-      ctx.lineTo(0.2 * k, 0.16 * k);
-      ctx.lineTo(0.14 * k, 0.24 * k);
-      ctx.closePath();
-      ctx.fillStyle = "#d7d2c8";
-      ctx.fill();
+      ctx.moveTo(-0.1 * k, by + 0.05 * k);
+      ctx.lineTo(0.14 * k, by + 0.05 * k);
       ctx.stroke();
-    } else if (kind === "tenaza") {
-      ctx.beginPath();
-      ctx.moveTo(0, 0.05 * k);
-      ctx.lineTo(0.1 * k, 0.2 * k);
-      ctx.moveTo(0.08 * k, 0.05 * k);
-      ctx.lineTo(0.16 * k, 0.2 * k);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(-0.08 * k, 0.12 * k, 0.05 * k, 0, Math.PI * 1.6);
-      ctx.stroke();
-    } else if (kind === "saco") {
-      ctx.fillStyle = "#9a948a";
-      ctx.fillRect(-0.28 * k, -0.42 * k, 0.28 * k, 0.34 * k);
-      ctx.strokeRect(-0.28 * k, -0.42 * k, 0.28 * k, 0.34 * k);
-    } else if (kind === "varilla") {
-      ctx.strokeStyle = "#3e4a55";
-      for (let i = 0; i < 3; i++) {
+      ctx.strokeStyle = TINTA;
+      if (cuadro >= 2) {
         ctx.beginPath();
-        ctx.moveTo(-0.34 * k, -0.28 * k - i * 0.035 * k);
-        ctx.lineTo(0.16 * k, -0.12 * k - i * 0.035 * k);
+        ctx.moveTo(0.28 * k, -0.7 * k);
+        ctx.lineTo(0.42 * k, -0.55 * k);
+        ctx.stroke();
+        ctx.fillStyle = "#d7d2c8";
+        ctx.beginPath();
+        ctx.moveTo(0.38 * k, -0.58 * k);
+        ctx.lineTo(0.52 * k, -0.52 * k);
+        ctx.lineTo(0.44 * k, -0.42 * k);
+        ctx.closePath();
+        ctx.fill();
         ctx.stroke();
       }
-    } else if (kind === "carretilla") {
-      ctx.strokeStyle = TINTA;
+      if (cuadro === 1) polvoLocal(ctx, 0.05 * k, by + 0.12 * k, p.t);
+    } else if (pose === "martillo") {
       ctx.beginPath();
-      ctx.arc(0.28 * k, 0.42 * k, 0.09 * k, 0, Math.PI * 2);
+      ctx.moveTo(hx, hy);
+      ctx.lineTo(hx + 0.02 * k, hy + 0.28 * k);
       ctx.stroke();
-      ctx.fillStyle = "#c4b49a";
-      ctx.fillRect(0.02 * k, 0.22 * k, 0.26 * k, 0.14 * k);
-      ctx.strokeRect(0.02 * k, 0.22 * k, 0.26 * k, 0.14 * k);
-    } else if (kind === "papel") {
+      ctx.fillStyle = "#6a4e32";
+      ctx.fillRect(hx - 0.08 * k, hy - 0.02 * k, 0.18 * k, 0.06 * k);
+      ctx.strokeRect(hx - 0.08 * k, hy - 0.02 * k, 0.18 * k, 0.06 * k);
+    } else if (pose === "cubeta") {
+      const tilt = cuadro === 1 || cuadro === 2 ? 0.5 : 0.05;
+      ctx.save();
+      ctx.translate(hx, hy);
+      ctx.rotate(tilt);
+      ctx.fillStyle = "#8d8a84";
+      ctx.beginPath();
+      ctx.moveTo(-0.08 * k, 0);
+      ctx.lineTo(0.1 * k, 0);
+      ctx.lineTo(0.07 * k, 0.16 * k);
+      ctx.lineTo(-0.05 * k, 0.16 * k);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+      if (cuadro === 1 || cuadro === 2) {
+        ctx.strokeStyle = "#9a9a96";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(hx + 0.12 * k, hy + 0.04 * k);
+        ctx.lineTo(hx + 0.22 * k, hy + 0.28 * k);
+        ctx.stroke();
+      }
+    } else if (pose === "cuchara") {
+      ctx.beginPath();
+      ctx.moveTo(hx, hy);
+      ctx.lineTo(hx + 0.14 * k, hy + 0.12 * k);
+      ctx.stroke();
+      ctx.fillStyle = "#d7d2c8";
+      ctx.beginPath();
+      ctx.moveTo(hx + 0.1 * k, hy + 0.08 * k);
+      ctx.lineTo(hx + 0.24 * k, hy + 0.12 * k);
+      ctx.lineTo(hx + 0.16 * k, hy + 0.22 * k);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    } else if (pose === "acero") {
+      ctx.beginPath();
+      ctx.moveTo(hx, hy);
+      ctx.lineTo(hx + 0.12 * k, hy + 0.16 * k);
+      ctx.moveTo(hx + 0.06 * k, hy);
+      ctx.lineTo(hx + 0.16 * k, hy + 0.14 * k);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(hx - 0.06 * k, hy + 0.08 * k, 0.045 * k, 0, Math.PI * 1.5);
+      ctx.stroke();
+      ctx.strokeStyle = "#3e4a55";
+      ctx.beginPath();
+      ctx.moveTo(hx + 0.02 * k, hy + 0.18 * k);
+      ctx.lineTo(hx + 0.2 * k, hy + 0.1 * k + (cuadro % 2) * 3);
+      ctx.stroke();
+    } else if (pose === "regla") {
+      ctx.lineWidth = Math.max(2, lw * 1.4);
+      ctx.beginPath();
+      ctx.moveTo(-0.05 * k, -0.62 * k);
+      ctx.lineTo(0.62 * k, -0.7 * k);
+      ctx.stroke();
+    } else if (pose === "manguera") {
+      ctx.beginPath();
+      ctx.moveTo(hx, hy);
+      ctx.quadraticCurveTo(0.7 * k, -0.35 * k, 0.86 * k, 0.02 * k);
+      ctx.stroke();
+      ctx.fillStyle = AGUA;
+      for (let i = 0; i < 4; i++) {
+        const u = (p.t * 2.2 + i * 0.22) % 1;
+        ctx.globalAlpha = 0.85;
+        ctx.beginPath();
+        ctx.arc(0.84 * k + Math.sin(i) * 3, 0.04 * k + u * 0.32 * k, 1.7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    } else if (pose === "plomo") {
+      const sway = Math.sin(p.t * 2.2) * 0.06 * k;
+      ctx.beginPath();
+      ctx.moveTo(hx, hy);
+      ctx.lineTo(hx + sway, hy + 0.72 * k);
+      ctx.stroke();
+      ctx.fillStyle = ORO;
+      ctx.beginPath();
+      ctx.moveTo(hx + sway, hy + 0.7 * k);
+      ctx.lineTo(hx + sway + 0.05 * k, hy + 0.86 * k);
+      ctx.lineTo(hx + sway - 0.05 * k, hy + 0.86 * k);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    } else if (pose === "papel") {
       ctx.fillStyle = PAPEL;
-      ctx.fillRect(0.02 * k, -0.02 * k, 0.14 * k, 0.18 * k);
-      ctx.strokeRect(0.02 * k, -0.02 * k, 0.14 * k, 0.18 * k);
-      ctx.beginPath();
-      ctx.moveTo(0.04 * k, 0.04 * k);
-      ctx.lineTo(0.14 * k, 0.04 * k);
-      ctx.moveTo(0.04 * k, 0.08 * k);
-      ctx.lineTo(0.14 * k, 0.08 * k);
-      ctx.stroke();
+      ctx.fillRect(hx, hy, 0.14 * k, 0.18 * k);
+      ctx.strokeRect(hx, hy, 0.14 * k, 0.18 * k);
     }
     ctx.restore();
   };
-  herramienta();
+  if (!p.duena && pose && pose !== "espera" && pose !== "sentado") herramienta();
   const gotas = p.cansancio >= 85 ? 3 : p.cansancio >= 70 ? 2 : p.cansancio >= 50 ? 1 : 0;
   if (gotas > 0) {
     const alto = Math.max(22, k * 0.55);
@@ -2253,6 +2773,9 @@ function persona(
     semilla: number;
     z?: number;
     oficio?: Oficio | "maestro";
+    duena?: boolean;
+    pose?: string;
+    cargada?: boolean;
   },
 ) {
   if (p.z) {
@@ -2405,13 +2928,56 @@ function luzPiso(ctx: CanvasRenderingContext2D, P: Proy, x: number, y: number) {
   ctx.restore();
 }
 
+function poseCrew(
+  g: { puesto: string | null; anim: string; trabajando: boolean; oficio: string; faseViaje?: number; id: string },
+  s: Estado,
+  camina: boolean,
+): { pose: string; cargada: boolean } {
+  if (g.puesto === "sombra" && !camina) return { pose: "sentado", cargada: false };
+  if (!g.trabajando && !camina) return { pose: "espera", cargada: false };
+  if (g.puesto === "acarreo") {
+    const cargada = (g.faseViaje ?? 0) % 2 === 1;
+    const saco = cargada && (g.oficio === "ayudante" || g.id.charCodeAt(0) % 2 === 0);
+    if (saco) return { pose: "saco", cargada: true };
+    return { pose: "carretilla", cargada };
+  }
+  if (g.puesto === "batea") return { pose: "trompo", cargada: false };
+  if (g.puesto === "agua") return { pose: "cubeta", cargada: true };
+  if (g.anim === "martillo") return { pose: "martillo", cargada: false };
+  if (g.anim === "pala") return { pose: "pala", cargada: false };
+  if (g.anim === "saco") return { pose: "saco", cargada: true };
+  if (g.anim === "varilla") return { pose: "acero", cargada: false };
+  if (g.anim === "carretilla") return { pose: "carretilla", cargada: (g.faseViaje ?? 0) % 2 === 1 };
+  if (g.anim === "papel") return { pose: "papel", cargada: false };
+  if (g.anim === "cubeta") return { pose: s.curando ? "manguera" : "cubeta", cargada: !s.curando };
+  if (g.anim === "cuchara") {
+    if (g.oficio === "varillero" || s.etapa === 2) return { pose: "acero", cargada: false };
+    if (s.etapa === 4) return { pose: "block", cargada: false };
+    if (s.etapa === 7) return { pose: "regla", cargada: false };
+    if (s.etapa === 3 || s.etapa === 5 || s.etapa === 6) return { pose: "cubeta", cargada: true };
+    if (s.curando) return { pose: "manguera", cargada: false };
+    return { pose: "cuchara", cargada: false };
+  }
+  if (g.trabajando) return { pose: "pala", cargada: false };
+  return { pose: "espera", cargada: false };
+}
+
 export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: Estado, vis: Vis, dpr = 1) {
   etiquetasVivas.length = 0;
+  colaEti.length = 0;
   const z = zoomDe(w);
   vis.ancho = w;
   const sigue = 1 - Math.exp(-vis.dt * 4.5);
-  vis.cam.x += (s.jugador.x - vis.cam.x) * sigue;
-  vis.cam.y += (s.jugador.y - vis.cam.y) * sigue;
+  const meta = vis.foco ?? s.jugador;
+  vis.cam.x += (meta.x - vis.cam.x) * sigue;
+  vis.cam.y += (meta.y - vis.cam.y) * sigue;
+  vis.ancla = 0.56;
+  if (vis.contrato && w < 900) {
+    const of = proyectar(SITIOS.oficina.x, SITIOS.oficina.y, 0, z);
+    const cam = proyectar(vis.cam.x, vis.cam.y, 0, z);
+    vis.ancla = 0.2 - (of.sy - cam.sy) / h;
+  }
+  const fraccion = anclaDe(vis);
   const shake = vis.shake > 0 ? Math.sin(vis.t * 40) * vis.shake : 0;
   vis.shake = Math.max(0, vis.shake - vis.dt * 18);
 
@@ -2419,11 +2985,34 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
   ctx.fillStyle = PAPEL;
   ctx.fillRect(-20, 0, w + 40, h);
 
+  const hoyLl = s.lluvias.find((r) => r.dia === s.dia);
+  const llueve = s.lluviaOn || (hoyLl != null && s.minuto >= hoyLl.ini && s.minuto < hoyLl.fin);
+  aplicarSol(s.minuto, llueve);
+
   const ter = asegurarTerreno(z, s.seed);
   const o = proyectar(vis.cam.x, vis.cam.y, 0, z);
   const blitX = w / 2 - o.sx + ter.ox;
-  const blitY = h * 0.56 - o.sy + ter.oy;
+  const blitY = h * fraccion - o.sy + ter.oy;
   ctx.drawImage(ter.c, blitX, blitY);
+  if (llueve) {
+    const charcos: [number, number][] = [
+      [12.4, 18.6],
+      [14.8, 16.8],
+      [22.6, 15.2],
+      [8.2, 16.4],
+      [26.2, 14.2],
+      [16.2, 18.8],
+    ];
+    ctx.save();
+    ctx.fillStyle = "rgba(95,138,139,0.5)";
+    charcos.forEach((c, i) => {
+      const p = pantallaDe(c[0], c[1], 0.02, vis, w, h, z);
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, 14 + (i % 3) * 6, 5 + (i % 2) * 2, -0.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+  }
 
   const to = (x: number, y: number, a = 0) => pantallaDe(x, y, a, vis, w, h, z);
   const alfa = (x: number, y: number) => {
@@ -2439,7 +3028,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
   const bucket = Math.floor(progresoObra(s) * 50);
   const blocks = s.etapa === 4 ? Math.floor(hechoDe(s, 4, "block")) : s.etapa > 4 ? 469 : 0;
   const diagKey = s.etapa > 0 ? 8 : Math.floor(hechoDe(s, 0, "replantear") * 8);
-  const key = `c|${bucket}|${blocks}|${s.plumbed.length}|${s.desplomes}|${z}|${s.curadoDias.length}|${s.curando ? 1 : 0}|${s.etapa}|${diagKey}|${Math.floor(hechoDe(s, 1, "excavar"))}|${Math.floor(hechoDe(s, 2, "acero"))}|${Math.floor(hechoDe(s, 3, "vaciar"))}|${Math.floor(hechoDe(s, 5, "encofrar") * 2)}|${Math.floor(hechoDe(s, 5, "vaciar") * 2)}|${Math.floor(hechoDe(s, 6, "encofrar") * 2)}|${Math.floor(hechoDe(s, 6, "acero") * 2)}|${Math.floor(hechoDe(s, 6, "vaciar") * 2)}|${Math.floor(hechoDe(s, 7, "relleno") * 2)}|${Math.floor(hechoDe(s, 7, "firme") * 2)}|${Math.floor(hechoDe(s, 7, "llano") * 2)}|${Math.floor(hechoDe(s, 8, "techo") * 2)}`;
+  const key = `c|${bucket}|${blocks}|${s.plumbed.join(",")}|${s.desplomes}|${z}|${s.curadoDias.length}|${s.curando ? 1 : 0}|${s.etapa}|${diagKey}|${Math.round(hechoDe(s, 1, "excavar") * 10)}|${Math.floor(hechoDe(s, 2, "acero"))}|${Math.floor(hechoDe(s, 3, "vaciar"))}|${Math.floor(hechoDe(s, 5, "encofrar") * 2)}|${Math.floor(hechoDe(s, 5, "vaciar") * 2)}|${Math.floor(hechoDe(s, 6, "encofrar") * 2)}|${Math.floor(hechoDe(s, 6, "acero") * 2)}|${Math.floor(hechoDe(s, 6, "vaciar") * 2)}|${Math.floor(hechoDe(s, 7, "relleno") * 2)}|${Math.floor(hechoDe(s, 7, "firme") * 2)}|${Math.floor(hechoDe(s, 7, "llano") * 2)}|${Math.floor(hechoDe(s, 8, "techo") * 2)}|${llueve ? 1 : 0}`;
   if (!obraCache || obraCache.key !== key) {
     const corners = [toWorldCorner(17, 13, z), toWorldCorner(21, 13, z), toWorldCorner(21, 16, z), toWorldCorner(17, 16, z), proyectar(19, 14.5, 4.2, z)];
     let minX = Infinity;
@@ -2462,8 +3051,17 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
   }
   const bp = to(0, 0);
   const origin = proyectar(0, 0, 0, z);
-  // blit using same camera transform as terrain: screen = center + (proj - camProj)
-  ctx.drawImage(obraCache.c, w / 2 + (obraCache.ax - o.sx), h * 0.56 + (obraCache.ay - o.sy));
+  if (s.etapa > 0 || hechoDe(s, 1, "excavar") > 0.2) {
+    const alto = s.etapa >= 4 ? 1.4 : 0.7;
+    const c = to(19 + solDx * 0.9, 14.7, 0.02);
+    ctx.save();
+    ctx.fillStyle = "rgba(29,23,18,0.16)";
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y, (70 + Math.abs(solDx) * 36) * z * alto, (26 + Math.abs(solDx) * 10) * z, solDx * 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.drawImage(obraCache.c, w / 2 + (obraCache.ax - o.sx), h * fraccion + (obraCache.ay - o.sy));
   void bp;
   void origin;
 
@@ -2474,11 +3072,23 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
   void hv;
   sprites.push({
     d: SITIOS.tierra.x + SITIOS.tierra.y,
-    draw: () => conoTruncado(ctx, to, SITIOS.tierra.x, SITIOS.tierra.y, s.tierraMonton ?? 0, 15),
+    draw: () => {
+      if (s.entregada) return;
+      conoTruncado(ctx, to, SITIOS.tierra.x, SITIOS.tierra.y, s.tierraMonton ?? 0, 15, "roja");
+    },
   });
   sprites.push({
     d: BOTE_TIERRA.x + BOTE_TIERRA.y + 0.01,
-    draw: () => conoTruncado(ctx, to, BOTE_TIERRA.x, BOTE_TIERRA.y, s.tierraBote ?? 0, 18),
+    draw: () => {
+      if (s.entregada) return;
+    },
+  });
+  sprites.push({
+    d: ESCOMBRO.x + ESCOMBRO.y,
+    draw: () => {
+      if (s.entregada) return;
+      conoTruncado(ctx, to, ESCOMBRO.x, ESCOMBRO.y, s.escombro ?? 0, 19, "gris");
+    },
   });
   {
     const lab = to(SITIOS.tierra.x, SITIOS.tierra.y, 1.3);
@@ -2498,6 +3108,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
   sprites.push({
     d: SITIOS.tanque.x + SITIOS.tanque.y,
     draw: () => {
+      if (s.entregada) return;
       pintarTanqueM(ctx, to, SITIOS.tanque.x, SITIOS.tanque.y, s.inv.agua.q, 21);
       const lab = to(SITIOS.tanque.x, SITIOS.tanque.y, 1.7);
       etiqueta(ctx, lab.x, lab.y, "Tanque", alfa(SITIOS.tanque.x, SITIOS.tanque.y));
@@ -2506,6 +3117,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
   sprites.push({
     d: SITIOS.toma.x + SITIOS.toma.y,
     draw: () => {
+      if (s.entregada) return;
       pintarTomaM(ctx, to, SITIOS.toma.x, SITIOS.toma.y, 30);
       const lab = to(SITIOS.toma.x, SITIOS.toma.y, 1.3);
       etiqueta(ctx, lab.x, lab.y, "Toma", alfa(SITIOS.toma.x, SITIOS.toma.y));
@@ -2524,6 +3136,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
         s.gente.some(
           (g) => g.activo && !g.fuera && !g.falto && Math.hypot(g.x - SITIOS.batea.x, g.y - SITIOS.batea.y) < 1.6,
         );
+      if (s.entregada) return;
       pintarTrompoM(ctx, to, prog, lista, gira, vis.t, 40);
       const lab = to(SITIOS.batea.x, SITIOS.batea.y, 1.55);
       etiqueta(ctx, lab.x, lab.y, "Trompo", alfa(SITIOS.batea.x, SITIOS.batea.y));
@@ -2531,26 +3144,34 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
   });
 
   sprites.push({
-    d: 6.55 + 13.55,
+    d: 2.7 + 15.9,
     draw: () => {
-      burroPar(ctx, to, 6.55, 13.55, 120);
-      varillasSobre(ctx, to, 6.55, 13.55, s.inv.v38.q + s.inv.v14.q);
+      if (s.entregada) return;
+      burroPar(ctx, to, 2.7, 15.9, 120);
+      varillasSobre(ctx, to, 2.7, 15.9, s.inv.v38.q + s.inv.v14.q);
     },
   });
   sprites.push({
     d: 6.7 + 15.35,
-    draw: () => paletaBlock(ctx, to, 6.7, 15.35, s.inv.block.q, 130),
+    draw: () => {
+      if (s.entregada) return;
+      paletaBlock(ctx, to, 6.7, 15.35, s.inv.block.q, 130);
+    },
   });
   sprites.push({
     d: SITIOS.tanque.x + SITIOS.tanque.y - 0.02,
-    draw: () => manguera(ctx, to),
+    draw: () => {
+      if (s.entregada) return;
+      manguera(ctx, to);
+    },
   });
 
   sprites.push({
     d: SITIOS.almacen.x + SITIOS.almacen.y,
     draw: () => {
-      pintarAlmacenM(ctx, to, SITIOS.almacen.x, SITIOS.almacen.y, 50, s.inv.cemento.q);
-      const lab = to(SITIOS.almacen.x, SITIOS.almacen.y, 2.8);
+      if (s.entregada) return;
+      pintarAlmacenM(ctx, to, SITIOS.almacen.x - 1.85, SITIOS.almacen.y - 1.15, 50, s.inv.cemento.q);
+      const lab = to(SITIOS.almacen.x - 1.85, SITIOS.almacen.y - 1.15, 2.5);
       etiqueta(ctx, lab.x, lab.y, "Almacén", alfa(SITIOS.almacen.x, SITIOS.almacen.y));
     },
   });
@@ -2558,10 +3179,25 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
   sprites.push({
     d: SITIOS.oficina.x + SITIOS.oficina.y,
     draw: () => {
+      if (s.entregada) return;
+      if (!s.firmado) {
+        const c = to(SITIOS.oficina.x, SITIOS.oficina.y, 1.1);
+        ctx.save();
+        const g = ctx.createRadialGradient(c.x, c.y, 10, c.x, c.y, 86 * z);
+        g.addColorStop(0, "rgba(232,220,194,0)");
+        g.addColorStop(0.55, "rgba(212,167,60,0.22)");
+        g.addColorStop(1, "rgba(212,167,60,0)");
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.ellipse(c.x, c.y, 86 * z, 40 * z, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
       const marca = s.firmado && s.dia === 1 && s.gente.length + s.reserva.length === 0;
-      pintarOficinaM(ctx, to, SITIOS.oficina.x, SITIOS.oficina.y, 60, marca);
-      if (marca) luzPiso(ctx, to, SITIOS.oficina.x, SITIOS.oficina.y);
-      const lab = to(SITIOS.oficina.x, SITIOS.oficina.y, 2.8);
+      const ox = SITIOS.oficina.x + 1.25;
+      const oy = SITIOS.oficina.y + 0.95;
+      pintarOficinaM(ctx, to, ox, oy, 60, marca);
+      const lab = to(ox, oy, 1.35);
       etiqueta(ctx, lab.x, lab.y, "Oficina", marca ? 1 : alfa(SITIOS.oficina.x, SITIOS.oficina.y), marca ? ORO : PAPEL);
     },
   });
@@ -2572,6 +3208,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
     sprites.push({
       d: nx + ny,
       draw: () => {
+        if (s.entregada) return;
         persona(ctx, a.x, a.y, {
           camisa: "#d9d3c7",
           casco: "#d4a73c",
@@ -2590,6 +3227,31 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
       },
     });
   }
+  {
+    const cx = SITIOS.oficina.x - 0.15;
+    const cy = SITIOS.oficina.y + 0.72;
+    const a = to(cx, cy);
+    sprites.push({
+      d: cx + cy + 0.03,
+      draw: () => {
+        if (s.entregada) return;
+        persona(ctx, a.x, a.y, {
+          camisa: "#c4a574",
+          casco: "#3d342a",
+          t: vis.t,
+          trabaja: false,
+          cansancio: 0,
+          caminando: false,
+          anim: "nada",
+          semilla: 11,
+          z,
+          duena: true,
+        });
+        const lab = to(cx, cy, 2.15);
+        etiqueta(ctx, lab.x, lab.y, "Doña Carmen", 1, PAPEL, true);
+      },
+    });
+  }
 
   if (s.sita) {
     const enCasa = s.sita.fase === "casa";
@@ -2601,6 +3263,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
     sprites.push({
       d: sx + sy + 0.05,
       draw: () => {
+        if (s.entregada) return;
         persona(ctx, p.x, p.y, {
           camisa: "#6e8f62",
           casco: "#3d5f8a",
@@ -2612,6 +3275,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
           anim: conPapel ? "papel" : "nada",
           semilla: 9,
           z,
+          pose: conPapel ? "papel" : camina ? "" : "espera",
         });
         const lab = to(sx, sy, 2.05);
         etiqueta(ctx, lab.x, lab.y, GUARDALMACEN.nombre, alfa(sx, sy), PAPEL, true);
@@ -2623,6 +3287,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
     sprites.push({
       d: SITIOS.entrada.x + SITIOS.entrada.y,
       draw: () => {
+        if (s.entregada) return;
         pintarEntradaM(ctx, to, SITIOS.entrada.x, SITIOS.entrada.y, 77);
         const lab = to(SITIOS.entrada.x, SITIOS.entrada.y, 2.5);
         etiqueta(ctx, lab.x, lab.y, "Entrada", alfa(SITIOS.entrada.x, SITIOS.entrada.y));
@@ -2665,18 +3330,27 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
     });
   }
   {
-    const p = to(SITIOS.camion.x, SITIOS.camion.y);
     const age = vis.camion >= 0 ? vis.t - vis.camion : 99;
-    if (age >= 0 && age < 5.4) {
-      let off = 0;
-      if (age < 1.05) off = (1 - age / 1.05) * 240;
-      else if (age > 3.85) off = ((age - 3.85) / 1.55) * 280;
+    if (!s.entregada && age >= 0 && age < 5.6) {
+      const cola = SITIOS.entrada.x;
+      const yCalle = 23.9;
+      let tail = cola;
+      let carga = 1;
+      if (age < 1.5) {
+        tail = -8 + (cola + 8) * (age / 1.5);
+        carga = 1;
+      } else if (age < 3.7) {
+        tail = cola;
+        carga = 1 - (age - 1.5) / 2.2;
+      } else {
+        tail = cola + ((age - 3.7) / 1.9) * 40;
+        carga = 0;
+      }
+      const cabX = tail + 5.1;
+      const p = to(cabX, yCalle);
       sprites.push({
-        d: SITIOS.camion.x + SITIOS.camion.y - 0.2,
-        draw: () => {
-          const x = p.x + off;
-          pintarCamion(ctx, x, p.y, z, age, 80);
-        },
+        d: cabX + yCalle,
+        draw: () => pintarCamion(ctx, p.x, p.y, z, Math.max(0, carga), 80),
       });
     }
   }
@@ -2694,6 +3368,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
   }
 
   for (const g of s.gente) {
+    if (s.entregada) continue;
     if (!g.activo || g.fuera) continue;
     const p = to(g.x, g.y);
     const dest = ancla(s, g);
@@ -2702,6 +3377,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
       d: g.x + g.y,
       draw: () => {
         const col = OFICIO_COLOR[g.oficio];
+        const pose = poseCrew(g, s, camina);
         persona(ctx, p.x, p.y, {
           camisa: col.camisa,
           casco: col.casco,
@@ -2713,6 +3389,8 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
           semilla: g.nombre.length * 9,
           z,
           oficio: g.oficio,
+          pose: pose.pose,
+          cargada: pose.cargada,
         });
         const lab = to(g.x, g.y, 2.05);
         etiqueta(ctx, lab.x, lab.y, g.nombre, alfa(g.x, g.y), PAPEL, true);
@@ -2721,22 +3399,49 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
   }
 
   const mp = to(s.jugador.x, s.jugador.y);
+  if (!s.entregada) {
   const sitio = cercano(s);
-  let animM = "nada";
-  if (sitio?.id === "batea" || sitio?.id === "obra") animM = "cuchara";
+  const dxM = Math.max(SOLAR.x0 - s.jugador.x, 0, s.jugador.x - SOLAR.x1);
+  const dyM = Math.max(SOLAR.y0 - s.jugador.y, 0, s.jugador.y - SOLAR.y1);
+  const enObra = Math.hypot(dxM, dyM) < 1.7 || Math.hypot(s.jugador.x - SITIOS.obra.x, s.jugador.y - SITIOS.obra.y) < 1.7;
+  let poseM = "";
+  let trabajaM = false;
+  if (s.vel <= 0.2 && s.plomo && enObra) {
+    poseM = "plomo";
+    trabajaM = true;
+  } else if (s.vel <= 0.2 && sitio?.id === "batea") {
+    poseM = "trompo";
+    trabajaM = true;
+  } else if (s.vel <= 0.2 && sitio?.id === "obra") {
+    trabajaM = true;
+    if (s.curando) poseM = "manguera";
+    else if (s.etapa === 1) poseM = "pala";
+    else if (s.etapa === 4) poseM = "block";
+    else if (s.etapa === 2) poseM = "acero";
+    else if (s.etapa === 5 || s.etapa === 6 || s.etapa === 8) poseM = "martillo";
+    else if (s.etapa === 7) poseM = "regla";
+    else if (s.etapa === 3) poseM = "cubeta";
+    else poseM = "cuchara";
+  }
+  let dMaestro = s.jugador.x + s.jugador.y + 0.2;
+  for (const g of s.gente) {
+    if (!g.activo || g.fuera) continue;
+    if (Math.hypot(g.x - s.jugador.x, g.y - s.jugador.y) < 1.35) dMaestro = Math.max(dMaestro, g.x + g.y + 0.08);
+  }
   sprites.push({
-    d: s.jugador.x + s.jugador.y + 0.01,
+    d: dMaestro,
     draw: () => {
-      const beat = vis.compas;
-      const ventana = beat < 0.15 || beat > 0.85;
-      const cerca = beat < 0.15 ? 1 - beat / 0.15 : beat > 0.85 ? 1 - (1 - beat) / 0.15 : 0;
-      const pulso = ventana ? 1 + 0.26 * Math.sin(cerca * Math.PI) : 1;
       ctx.beginPath();
-      ctx.strokeStyle = ventana ? ORO2 : TINTA;
-      ctx.globalAlpha = ventana ? 0.95 : 0.4;
-      ctx.lineWidth = ventana ? 1.6 : 1;
-      const rad = 0.38 * 30 * z * pulso;
+      const rad = 0.55 * 30 * z;
+      const halo = ctx.createRadialGradient(mp.x, mp.y + 2, rad * 0.15, mp.x, mp.y + 2, rad);
+      halo.addColorStop(0, "rgba(247,243,234,0.08)");
+      halo.addColorStop(0.62, "rgba(247,243,234,0.38)");
+      halo.addColorStop(1, "rgba(247,243,234,0)");
+      ctx.fillStyle = halo;
       ctx.ellipse(mp.x, mp.y + 2, rad, rad * 0.42, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(29,23,18,0.55)";
+      ctx.lineWidth = 1.4;
       ctx.stroke();
       ctx.globalAlpha = 1;
       const mov = s.vel > 0.2;
@@ -2745,16 +3450,18 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
         casco: "#f7f3ea",
         letra: "M",
         t: vis.t,
-        trabaja: !mov && animM !== "nada",
+        trabaja: trabajaM && !mov,
         cansancio: 0,
         caminando: mov,
-        anim: animM,
+        anim: "nada",
         semilla: 4,
         z,
         oficio: "maestro",
+        pose: mov ? "" : poseM,
       });
     },
   });
+  }
 
   sprites.sort((a, b) => a.d - b.d);
   for (const sp of sprites) sp.draw();
@@ -2781,10 +3488,20 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
     ctx.stroke();
     const bx = top.x + sway;
     const by = top.y + drop;
+    const pulso = 0.92 + 0.16 * (0.5 + 0.5 * Math.sin(vis.t * Math.PI * 2.6));
+    ctx.save();
+    ctx.translate(bx, by);
+    ctx.scale(pulso, pulso);
+    ctx.globalAlpha = 0.28 + 0.42 * (0.5 + 0.5 * Math.sin(vis.t * Math.PI * 2.6));
+    ctx.fillStyle = ORO;
     ctx.beginPath();
-    ctx.moveTo(bx, by - 2);
-    ctx.bezierCurveTo(bx + bw, by + bh * 0.28, bx + bw * 0.78, by + bh, bx, by + bh);
-    ctx.bezierCurveTo(bx - bw * 0.78, by + bh, bx - bw, by + bh * 0.28, bx, by - 2);
+    ctx.arc(0, bh * 0.46, bw * 1.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, -2);
+    ctx.bezierCurveTo(bw, bh * 0.28, bw * 0.78, bh, 0, bh);
+    ctx.bezierCurveTo(-bw * 0.78, bh, -bw, bh * 0.28, 0, -2);
     ctx.closePath();
     ctx.fillStyle = ORO;
     ctx.fill();
@@ -2792,8 +3509,9 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
     ctx.stroke();
     ctx.fillStyle = ORO2;
     ctx.beginPath();
-    ctx.ellipse(bx - bw * 0.28, by + bh * 0.38, bw * 0.22, bh * 0.14, -0.5, 0, Math.PI * 2);
+    ctx.ellipse(-bw * 0.28, bh * 0.38, bw * 0.22, bh * 0.14, -0.5, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
     ctx.restore();
   }
 
@@ -2812,7 +3530,25 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
   }
 
   for (const f of vis.floaters) {
-    const alto = f.texto === "¡Plomo!" || f.texto === "El maestro le dio" ? 2.6 : 1;
+    if (f.texto === "El maestro lo dijo") {
+      const p = to(s.jugador.x, s.jugador.y, 1.7);
+      const k = Math.max(0, Math.min(1, f.vida / 0.9));
+      ctx.save();
+      ctx.globalAlpha = k;
+      ctx.font = "14px 'Patrick Hand', cursive";
+      ctx.textAlign = "center";
+      const tw = ctx.measureText(f.texto).width;
+      ctx.fillStyle = "rgba(232,220,194,0.94)";
+      ctx.strokeStyle = TINTA;
+      ctx.lineWidth = 1.4;
+      ctx.fillRect(p.x - tw / 2 - 6, p.y - 16, tw + 12, 20);
+      ctx.strokeRect(p.x - tw / 2 - 6, p.y - 16, tw + 12, 20);
+      ctx.fillStyle = TINTA;
+      ctx.fillText(f.texto, p.x, p.y - 2);
+      ctx.restore();
+      continue;
+    }
+    const alto = f.texto === "¡Plomo!" ? 2.6 : 1;
     const p = to(f.x, f.y, alto);
     const k = Math.max(0, Math.min(1, f.vida / 0.9));
     ctx.globalAlpha = k;
@@ -2821,30 +3557,17 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
     ctx.font = "20px 'Jolly Lodger', cursive";
     ctx.textAlign = "center";
     ctx.lineWidth = 3;
-    let y = p.y - (1 - k) * 40;
-    if (f.texto === "El maestro le dio") {
-      const tw = ctx.measureText(f.texto).width;
-      for (let i = 0; i < 8 && y > 36; i++) {
-        const box = { x: p.x - tw / 2 - 6, y: y - 22, w: tw + 12, h: 26 };
-        const toca = etiquetasVivas.some(
-          (m) => box.x < m.x + m.w && box.x + box.w > m.x && box.y < m.y + m.h && box.y + box.h > m.y,
-        );
-        if (!toca) break;
-        y -= 18;
-      }
-    }
+    const y = p.y - (1 - k) * 40;
     ctx.strokeText(f.texto, p.x, y);
     ctx.fillText(f.texto, p.x, y);
     ctx.globalAlpha = 1;
   }
 
-  const hoyLl = s.lluvias.find((r) => r.dia === s.dia);
   let nubes = -1;
   if (hoyLl && s.minuto < hoyLl.ini && hoyLl.ini - s.minuto <= 120) nubes = 1 - (hoyLl.ini - s.minuto) / 120;
   if (hoyLl && s.minuto >= hoyLl.ini && s.minuto < hoyLl.fin) nubes = 1;
   if (nubes >= 0) pintarNubes(ctx, w, h, nubes, hv);
 
-  const llueve = s.lluviaOn || (hoyLl != null && s.minuto >= hoyLl.ini && s.minuto < hoyLl.fin);
   if (llueve) {
     ctx.strokeStyle = "rgba(29,23,18,0.55)";
     ctx.lineWidth = 1.2;
@@ -2856,8 +3579,59 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
       ctx.lineTo(x - 6, y + 14);
       ctx.stroke();
     }
-    ctx.fillStyle = "rgba(70,110,150,0.15)";
+  }
+
+  if (!s.firmado) {
+    const f = flecha(s);
+    if (f) {
+      const p = to(f.x, f.y, 3.5);
+      const bob = Math.sin(vis.t * 4) * 7;
+      ctx.save();
+      ctx.translate(p.x, p.y + bob);
+      ctx.fillStyle = "#b8432f";
+      ctx.strokeStyle = TINTA;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(0, 16);
+      ctx.lineTo(-9, -2);
+      ctx.lineTo(-3, -2);
+      ctx.lineTo(-3, -16);
+      ctx.lineTo(3, -16);
+      ctx.lineTo(3, -2);
+      ctx.lineTo(9, -2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+  soltarEtiquetas(ctx);
+
+  if (vis.marca) {
+    const p = to(vis.marca.x, vis.marca.y, 0.15);
+    ctx.save();
+    ctx.strokeStyle = "#b8432f";
+    ctx.setLineDash([7, 5]);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y, 58 * z, 26 * z, -0.4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+    etiqueta(ctx, p.x, p.y - 36 * z, `${vis.marca.n} · ${vis.marca.nombre}`, 1, "#f4efe4");
+  }
+
+  const m = s.minuto;
+  const tSol = Math.min(1, Math.max(0, (m - 7 * 60) / (8 * 60)));
+  let luz: string | null = null;
+  if (llueve) luz = "rgba(72,78,86,0.26)";
+  else if (tSol < 0.32) luz = "rgba(148,176,190,0.13)";
+  else if (tSol > 0.62) luz = "rgba(196,122,42,0.15)";
+  if (luz) {
+    ctx.save();
+    ctx.fillStyle = luz;
     ctx.fillRect(-30, -30, w + 60, h + 60);
+    ctx.restore();
   }
 }
 
@@ -2881,21 +3655,61 @@ function ellipse(x: number, y: number, rx: number, ry: number) {
 
 function etiqueta(ctx: CanvasRenderingContext2D, x: number, y: number, texto: string, alpha = 1, fill = PAPEL, anota = false) {
   if (alpha <= 0.02) return;
+  const pri = PRI_ETI[texto] ?? 0;
+  if (pri > 0) {
+    colaEti.push({ x, y, texto, alpha, fill, pri });
+    void anota;
+    return;
+  }
+  pintarEtiqueta(ctx, x, y, texto, alpha, fill);
+}
+
+function pintarEtiqueta(ctx: CanvasRenderingContext2D, x: number, y: number, texto: string, alpha: number, fill: string) {
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.font = "15px 'Patrick Hand', cursive";
   ctx.textAlign = "center";
+  const tw = ctx.measureText(texto).width;
+  let yy = y;
+  const boxDe = (py: number) => ({ x: x - tw / 2 - 4, y: py - 16, w: tw + 8, h: 20 });
+  for (let i = 0; i < 6; i++) {
+    const box = boxDe(yy);
+    const toca = etiquetasVivas.some((m) => box.x < m.x + m.w && box.x + box.w > m.x && box.y < m.y + m.h && box.y + box.h > m.y);
+    if (!toca) break;
+    yy -= 18;
+  }
   ctx.lineWidth = 3;
   ctx.strokeStyle = "#14100c";
-  ctx.strokeText(texto, x, y);
+  ctx.strokeText(texto, x, yy);
   ctx.fillStyle = fill;
-  ctx.fillText(texto, x, y);
-  if (anota) {
-    const tw = ctx.measureText(texto).width;
-    etiquetasVivas.push({ x: x - tw / 2 - 4, y: y - 16, w: tw + 8, h: 20 });
-  }
+  ctx.fillText(texto, x, yy);
+  etiquetasVivas.push(boxDe(yy));
   ctx.restore();
 }
+
+function soltarEtiquetas(ctx: CanvasRenderingContext2D) {
+  colaEti.sort((a, b) => b.pri - a.pri);
+  ctx.save();
+  ctx.font = "15px 'Patrick Hand', cursive";
+  for (const e of colaEti) {
+    const tw = ctx.measureText(e.texto).width;
+    const box = { x: e.x - tw / 2 - 4, y: e.y - 16, w: tw + 8, h: 20 };
+    const toca = etiquetasVivas.some((m) => box.x < m.x + m.w && box.x + box.w > m.x && box.y < m.y + m.h && box.y + box.h > m.y);
+    if (toca) continue;
+    pintarEtiqueta(ctx, e.x, e.y, e.texto, e.alpha, e.fill);
+  }
+  colaEti.length = 0;
+  ctx.restore();
+}
+
+const PRI_ETI: Record<string, number> = {
+  Oficina: 4,
+  "Doña Carmen": 3,
+  Guardalmacén: 2,
+  Nico: 1,
+};
+type EtiCola = { x: number; y: number; texto: string; alpha: number; fill: string; pri: number };
+const colaEti: EtiCola[] = [];
 
 const etiquetasVivas: { x: number; y: number; w: number; h: number }[] = [];
 
@@ -2931,7 +3745,7 @@ function mezclaTinta(t: number): string {
 
 function pintarNubes(ctx: CanvasRenderingContext2D, w: number, h: number, u: number, hv: number) {
   const pulso = Math.min(1, Math.max(0, u));
-  const techo = Math.max(72, Math.min(h * 0.16, 140));
+  const techo = Math.max(188, Math.min(h * 0.34, 260));
   const fracs = [0.22, 0.48, 0.74].map((f, i) => f + (i - 1) * pulso * 0.04);
   const nube = (x: number, y: number, s: number, seed: number) => {
     ctx.beginPath();

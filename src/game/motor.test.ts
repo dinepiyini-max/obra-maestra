@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { CONTRATO, ETAPAS, FLETE, FLETE_URGENTE, HERRAMIENTA, MATERIALES, NOTA_ESCUADRA, POR_HILADA, RECETA_H, RECETA_M, SITIOS, BLOCKS_MURO, COMPRA, TUTORIAL, jornalDe, type Puesto } from "./datos.ts";
+import { CONTRATO, DIRECCION_DIA, ETAPAS, FLETE, FLETE_URGENTE, HERRAMIENTA, MATERIALES, NOTA_ESCUADRA, POR_HILADA, RECETA_H, RECETA_M, SITIOS, BLOCKS_MURO, COMPRA, TAREAS, TUTORIAL, esSabado, horaDe, jornalDe, peso, type Puesto } from "./datos.ts";
 import {
+  abrirDespacho,
   accion,
   aceptarSita,
   adelantar,
@@ -9,10 +10,13 @@ import {
   ancla,
   asignar,
   cajaLibre,
+  confirmarDespacho,
   continuarSello,
   contratar,
+  cuentaPedido,
   cuello,
   cuelloLabor,
+  desgloseNomina,
   firmar,
   golpe,
   hablarSita,
@@ -23,6 +27,7 @@ import {
   lineaAhora,
   lineaFicha,
   loQueFalta,
+  loQueFaltaSiguiente,
   marcarLibre,
   marcarGuia,
   nominaPendiente,
@@ -30,14 +35,20 @@ import {
   partesMuerto,
   pasoTutorial,
   pedir,
+  pedirTambien,
   puedeAdelantar,
+  queHaceEspacio,
   rechazarSita,
   sanear,
   seguirDedo,
+  seguirJornada,
   señalesReplanteo,
   siguienteDia,
   terminarJornada,
+  textoCajaLibre,
+  textoLlegada,
   tick,
+  tramos,
   trianguloEscuadra,
   validar,
   avanzarMinutos,
@@ -115,6 +126,48 @@ function jugar(seed: number, cupo = 4) {
   return { s, guard, log, inf: informe(s) };
 }
 
+function aceptarSiAlcanza(s: Estado): boolean {
+  const of = s.sita?.oferta;
+  if (!of) return false;
+  const hay = (c?: Record<string, number | undefined>) => !!c && Object.values(c).some((n) => (n ?? 0) > 1e-6);
+  const cerrarSi = (err: string | null) => {
+    if (err) rechazarSita(s);
+  };
+  if (!hay(of.items)) {
+    if (!hay(of.siguiente)) {
+      rechazarSita(s);
+      return false;
+    }
+    const mats = Object.entries(of.siguiente ?? {}).reduce((a, [k, n]) => a + (n ?? 0) * MATERIALES[k as keyof typeof MATERIALES].precio, 0);
+    const total = mats + (of.flete || 0);
+    const cuenta = cuentaPedido(s, total);
+    if (!cuenta.alcanza) {
+      rechazarSita(s);
+      return false;
+    }
+    if (cuenta.usaAdelanto && adelantar(s, total)) {
+      rechazarSita(s);
+      return false;
+    }
+    const antes = s.pedidos.length;
+    const err = pedirTambien(s);
+    cerrarSi(err);
+    return !err && s.pedidos.length > antes;
+  }
+  const cuenta = cuentaPedido(s, of.total);
+  if (!cuenta.alcanza) {
+    rechazarSita(s);
+    return false;
+  }
+  if (cuenta.usaAdelanto && adelantar(s, of.total)) {
+    rechazarSita(s);
+    return false;
+  }
+  const antes = s.pedidos.length;
+  const err = aceptarSita(s);
+  return !err && s.pedidos.length > antes;
+}
+
 function jugarNovato(seed: number, cupo = 4) {
   const s = nueva(seed);
   firmar(s);
@@ -135,8 +188,8 @@ function jugarNovato(seed: number, cupo = 4) {
     if (`${s.panel}` === "perdida") break;
     if (s.sita?.oferta) {
       const antes = s.pedidos.length;
-      const err = aceptarSita(s);
-      if (!err && s.pedidos.length > antes && s.pedidos[s.pedidos.length - 1]?.urgente) urgentes += 1;
+      const ok = aceptarSiAlcanza(s);
+      if (ok && s.pedidos.length > antes && s.pedidos[s.pedidos.length - 1]?.urgente) urgentes += 1;
     }
     if (s.panel && s.panel !== "informe") s.panel = null;
     if (s.entregada) break;
@@ -153,8 +206,8 @@ function jugarNovato(seed: number, cupo = 4) {
     tick(s, 0.2);
     if (s.sita?.oferta) {
       const antes = s.pedidos.length;
-      const err = aceptarSita(s);
-      if (!err && s.pedidos.length > antes && s.pedidos[s.pedidos.length - 1]?.urgente) urgentes += 1;
+      const ok = aceptarSiAlcanza(s);
+      if (ok && s.pedidos.length > antes && s.pedidos[s.pedidos.length - 1]?.urgente) urgentes += 1;
     }
     if (ver(s) === "sello") continue;
     if (s.minuto >= 15 * 60 + 8 && s.nominaPagada && !s.panel) {
@@ -193,7 +246,23 @@ function laborCambia(s: Estado): boolean {
   return false;
 }
 
-function gestionar(s: Estado, conPedido: boolean, cupo = 4) {
+function pedirSiPuede(s: Estado, items: Record<string, number | undefined>) {
+  if (!Object.keys(items).length) return;
+  const total = costoDe(items);
+  let err = pedir(s, items, false);
+  if (err && err.includes("nómina") && puedeAdelantar(s, total)) {
+    adelantar(s, total);
+    err = pedir(s, items, false);
+  }
+  if (err && err.includes("nómina")) {
+    const keys = Object.keys(items) as (keyof typeof items)[];
+    const half: typeof items = {};
+    for (const k of keys) half[k] = Math.max(MATERIALES_PASO(k), (items[k] ?? 0) / 2);
+    pedir(s, half, false);
+  }
+}
+
+function gestionar(s: Estado, conPedido: boolean, cupo = 4, tambienSiguiente = true, unSoloTrompo = false) {
   for (const c of [...s.candidatos]) {
     if (s.gente.length + s.reserva.length >= cupo) break;
     const err = contratar(s, c.id);
@@ -201,8 +270,9 @@ function gestionar(s: Estado, conPedido: boolean, cupo = 4) {
   }
   const vivos = s.gente.filter((g) => g.activo && !g.falto && !g.fuera);
   const batir = puedeBatir(s);
-  const maxBatea = batir ? 2 : 0;
-  const maxAcarreo = hayCarga(s) ? 2 : 0;
+  const carga = hayCarga(s);
+  const maxBatea = batir ? (unSoloTrompo && carga ? 1 : 2) : 0;
+  const maxAcarreo = carga ? 2 : 0;
   let batea = 0;
   let acarreo = 0;
   for (const g of vivos) {
@@ -218,21 +288,8 @@ function gestionar(s: Estado, conPedido: boolean, cupo = 4) {
     asignar(s, g.id, puesto);
   }
   if (conPedido) {
-    const items = loQueFalta(s);
-    if (Object.keys(items).length) {
-      const total = costoDe(items);
-      let err = pedir(s, items, false);
-      if (err && err.includes("nómina") && puedeAdelantar(s, total)) {
-        adelantar(s, total);
-        err = pedir(s, items, false);
-      }
-      if (err && err.includes("nómina")) {
-        const keys = Object.keys(items) as (keyof typeof items)[];
-        const half: typeof items = {};
-        for (const k of keys) half[k] = Math.max(MATERIALES_PASO(k), (items[k] ?? 0) / 2);
-        pedir(s, half, false);
-      }
-    }
+    pedirSiPuede(s, loQueFalta(s));
+    if (tambienSiguiente) pedirSiPuede(s, loQueFaltaSiguiente(s));
   }
   if (s.curando && s.curadoDias.length < 3 && s.etapa >= 8) {
     for (const g of s.gente) marcarLibre(s, g.id, true);
@@ -255,6 +312,7 @@ function jugarQuieto(seed: number) {
   const s = nueva(seed);
   firmar(s);
   for (const c of s.candidatos.slice(0, 4)) contratar(s, c.id);
+  for (const g of [...s.gente, ...s.reserva]) g.puesto = null;
   s.jugador = { x: 19, y: 14.5 };
   s.tut.fin = true;
   let guard = 0;
@@ -266,7 +324,7 @@ function jugarQuieto(seed: number) {
       siguienteDia(s);
     }
     if (`${s.panel}` === "perdida") break;
-    if (s.sita?.oferta) aceptarSita(s);
+    if (s.sita?.oferta) aceptarSiAlcanza(s);
     if (s.panel && s.panel !== "informe" && `${s.panel}` !== "perdida") s.panel = null;
     if (s.entregada || `${s.panel}` === "perdida") break;
     tick(s, 0.2);
@@ -278,6 +336,7 @@ function jugarPasivo(seed: number) {
   const s = nueva(seed);
   firmar(s);
   for (const id of s.candidatos.slice(0, 3).map((c) => c.id)) contratar(s, id);
+  for (const g of [...s.gente, ...s.reserva]) g.puesto = null;
   s.jugador = { x: 19, y: 14.5 };
   s.tut.fin = true;
   s.panel = null;
@@ -287,12 +346,144 @@ function jugarPasivo(seed: number) {
     if (s.panel === "sello") continuarSello(s);
     if (s.panel === "finde") siguienteDia(s);
     if (`${s.panel}` === "perdida") break;
-    if (s.sita?.oferta) aceptarSita(s);
+    if (s.sita?.oferta) aceptarSiAlcanza(s);
     if (s.panel && s.panel !== "informe" && `${s.panel}` !== "perdida") s.panel = null;
     if (s.entregada || `${s.panel}` === "perdida") break;
     tick(s, 0.2);
   }
   return { s, inf: informe(s) };
+}
+
+function sitioAtento(minuto: number): { x: number; y: number } {
+  const hora = Math.floor(minuto / 60) % 3;
+  if (hora === 0) return SITIOS.oficina;
+  if (hora === 1) return SITIOS.ferreteria;
+  return SITIOS.sombra;
+}
+
+function pedirAtento(s: Estado) {
+  const items = loQueFalta(s);
+  if (!Object.keys(items).length) return;
+  const mats = costoDe(items) - FLETE;
+  const urgente = s.minuto < 12 * 60 && mats >= 2500;
+  const total = costoDe(items) + (urgente ? FLETE_URGENTE - FLETE : 0);
+  let err = pedir(s, items, urgente);
+  if (err && /12/.test(err)) err = pedir(s, items, false);
+  if (err && err.includes("nómina") && puedeAdelantar(s, total)) {
+    adelantar(s, total);
+    err = pedir(s, items, urgente);
+    if (err && /12/.test(err)) err = pedir(s, items, false);
+  }
+  if (err && err.includes("nómina")) {
+    const keys = Object.keys(items) as (keyof typeof items)[];
+    const half: typeof items = {};
+    for (const k of keys) half[k] = Math.max(MATERIALES_PASO(k), (items[k] ?? 0) / 2);
+    err = pedir(s, half, urgente && s.minuto < 12 * 60);
+  }
+}
+
+function aceptarActual(s: Estado): boolean {
+  const of = s.sita?.oferta;
+  if (!of) return false;
+  const hay = (c?: Record<string, number | undefined>) => !!c && Object.values(c).some((n) => (n ?? 0) > 1e-6);
+  if (!hay(of.items)) {
+    rechazarSita(s);
+    return false;
+  }
+  const cuenta = cuentaPedido(s, of.total);
+  if (!cuenta.alcanza) {
+    rechazarSita(s);
+    return false;
+  }
+  if (cuenta.usaAdelanto && adelantar(s, of.total)) {
+    rechazarSita(s);
+    return false;
+  }
+  const antes = s.pedidos.length;
+  const err = aceptarSita(s);
+  return !err && s.pedidos.length > antes;
+}
+
+function jugarAtento(seed: number, cupo: number) {
+  const s = nueva(seed);
+  firmar(s);
+  for (const c of s.candidatos.slice(0, cupo)) contratar(s, c.id);
+  for (const g of s.gente) asignar(s, g.id, "obra");
+  s.jugador = { x: SITIOS.obra.x, y: SITIOS.obra.y };
+  s.destino = null;
+  s.tut.fin = true;
+  let guard = 0;
+  let pedidoClave = "";
+  let ultimoGolpe = -1;
+  let diaMuros = 0;
+  let diaBlock = 0;
+  while (!s.entregada && `${s.panel}` !== "perdida" && guard < 80000) {
+    guard++;
+    if (s.etapa >= 5 && !diaMuros) diaMuros = s.dia;
+    if (s.panel === "sello") continuarSello(s);
+    if (s.etapa >= 5 && !diaMuros) diaMuros = s.dia;
+    if (s.panel === "finde") {
+      let n = 0;
+      while (cajaLibre(s) < 5000 && n < 4 && adelantar(s) === null) n++;
+      siguienteDia(s);
+      pedidoClave = "";
+    }
+    if (`${s.panel}` === "perdida") break;
+    if (s.sita?.oferta) aceptarActual(s);
+    if (s.panel && s.panel !== "informe") s.panel = null;
+    if (s.entregada) break;
+    const enObra = s.minuto % 60 < 30 && s.minuto < 15 * 60;
+    const sitio = enObra ? SITIOS.obra : sitioAtento(s.minuto);
+    s.jugador = { x: sitio.x, y: sitio.y };
+    s.destino = null;
+    const clave = `${s.dia}:${s.etapa}`;
+    const pide = clave !== pedidoClave && s.minuto >= 7 * 60 && s.minuto < 15 * 60 && Object.keys(loQueFalta(s)).length > 0;
+    if (pide) {
+      pedirAtento(s);
+      pedidoClave = clave;
+    }
+    if (s.minuto < 15 * 60 && (s.minuto % 15 === 0 || laborCambia(s))) gestionar(s, false, cupo, false, true);
+    if (s.minuto < 7 * 60 + 8) silenciar(s);
+    let yaGolpe = false;
+    if (enObra && s.plomo) {
+      golpe(s, true);
+      yaGolpe = true;
+      ultimoGolpe = s.minuto;
+    }
+    if (enObra && !yaGolpe && s.minuto % 10 === 0 && s.minuto !== ultimoGolpe && s.minuto < 15 * 60) {
+      ultimoGolpe = s.minuto;
+      golpe(s, false);
+    }
+    tick(s, 0.2);
+    if (!diaBlock) {
+      const hecho = s.runs[4]?.find((r) => r.id === "block")?.hecho ?? 0;
+      if (hecho >= BLOCKS_MURO - 1) diaBlock = s.dia;
+    }
+    if (ver(s) === "sello") continue;
+    if (s.minuto >= 15 * 60 + 8 && s.nominaPagada && !s.panel) {
+      const c = cuelloLabor(s);
+      const muro = s.etapa === 4 && s.blocksHoy >= 180;
+      if (c.includes("fragua") || c.includes("Fragua") || c.includes("hiladas") || muro || (c.includes("Curado") && s.etapa >= 7)) {
+        terminarJornada(s);
+      }
+    }
+  }
+  if (s.etapa >= 5 && !diaMuros) diaMuros = s.dia;
+  return { s, guard, inf: informe(s), diaMuros, diaBlock };
+}
+
+function filaAtento(seed: number, r: ReturnType<typeof jugarAtento>) {
+  const entregada = r.s.entregada;
+  const perdida = r.s.panel === "perdida";
+  return {
+    semilla: seed,
+    entregada,
+    diaMuros: r.diaMuros,
+    diaBlock: r.diaBlock,
+    diaEntrega: entregada ? r.s.dia : null,
+    ganancia: Math.round(r.inf.ganancia),
+    diaPerdida: perdida ? r.s.dia : null,
+  };
 }
 
 function mediana10(xs: number[]): number {
@@ -388,6 +579,7 @@ describe("obra", () => {
     const s = nueva(1);
     firmar(s);
     s.panel = null;
+    s.etapa = 3;
     s.inv.cemento = { q: 5, valor: 2750 };
     s.inv.arena = { q: 1, valor: 0 };
     s.inv.grava = { q: 1, valor: 0 };
@@ -462,13 +654,19 @@ describe("obra", () => {
     assert.equal(validar(stats), false);
   });
 
-  it("el día 1 pide varilla y estima unos cien mil", () => {
+  it("el día 1 no salta de etapa y estima unos cien mil", () => {
     const s = nueva(1);
     firmar(s);
     const q = loQueFalta(s);
-    assert.ok((q.v38 ?? 0) > 0, "v38");
-    assert.ok((q.v14 ?? 0) > 0, "v14");
-    assert.ok((q.alambre ?? 0) > 0, "alambre");
+    assert.equal(q.v38, undefined);
+    assert.equal(q.v14, undefined);
+    assert.equal(q.alambre, undefined);
+    assert.equal(q.plywood, undefined);
+    assert.equal(q.block, undefined);
+    const sig = loQueFaltaSiguiente(s);
+    assert.equal(sig.v38, undefined);
+    assert.equal(sig.plywood, undefined);
+    assert.equal(sig.block, undefined);
     const lib = libreta(s);
     assert.ok(lib.ganancia > 90000 && lib.ganancia < 110000, String(lib.ganancia));
     const sinEmpezar = lib.filas.filter((f) => f.real < 1 && f.pre > 0);
@@ -529,6 +727,7 @@ describe("obra", () => {
     s.lluvias = [];
     s.minuto = 8 * 60;
     for (const c of [...s.candidatos]) contratar(s, c.id);
+    for (const g of s.gente) g.puesto = null;
     const fefa = s.gente.find((g) => g.nombre === "Fefa")!;
     const lalo = s.gente.find((g) => g.nombre === "Lalo")!;
     const tono = s.gente.find((g) => g.nombre === "Toño")!;
@@ -600,6 +799,7 @@ describe("obra", () => {
     const sombra = quieto.gente.find((g) => g.id === idS)!;
     const suelto = quieto.gente.find((g) => g.id === idN)!;
     asignar(quieto, sombra.id, "sombra");
+    suelto.puesto = null;
     sombra.x = SITIOS.sombra.x + 0.48;
     sombra.y = SITIOS.sombra.y;
     suelto.x = 10;
@@ -655,7 +855,7 @@ describe("obra", () => {
     const quieto = armar();
     for (let i = 0; i < 60; i++) pasoLimpio(quieto);
     assert.ok((quieto.stats.golpesAuto ?? 0) >= 3, "sin pegar " + quieto.stats.golpesAuto);
-    assert.ok(quieto.gritos.length === 0 || quieto.gritos.every((g) => g.texto === "El maestro le dio"));
+    assert.ok(quieto.gritos.length === 0 || quieto.gritos.every((g) => g.texto === "El maestro lo dijo"));
 
     const ritmo = armar();
     for (let i = 0; i < 60; i++) {
@@ -684,6 +884,7 @@ describe("obra", () => {
     suelto.minuto = 8 * 60;
     suelto.tut.fin = true;
     contratar(suelto, suelto.candidatos[0]!.id);
+    for (const g of [...suelto.gente, ...suelto.reserva]) g.puesto = null;
     for (let i = 0; i < 40; i++) {
       avanzarMinutos(suelto, 1);
       if (suelto.panel) suelto.panel = null;
@@ -697,8 +898,8 @@ describe("obra", () => {
     const rep = lejos.runs[0]!.find((r) => r.id === "replantear")!;
     const antes = rep.hecho;
     pasoLimpio(lejos);
-    assert.ok(rep.hecho > antes + 1e-6, "el maestro cuenta como líder aunque esté lejos");
-    assert.ok((lejos.stats.golpesAuto ?? 0) >= 1);
+    assert.ok(rep.hecho <= antes + 1e-6, "lejos no pega");
+    assert.equal(lejos.stats.golpesAuto ?? 0, 0);
   });
 
   it("el tope de adelantos es el 30% de lo que falta por cobrar", () => {
@@ -777,7 +978,9 @@ describe("obra", () => {
     const s = nueva(1);
     firmar(s);
     assert.equal(contratar(s, s.candidatos[0]!.id), null);
-    assert.equal(s.gente[0]!.puesto, null);
+    const peon = s.gente[0]!;
+    assert.equal(peon.puesto, null);
+    assert.equal(peon.cansancio, 0);
     s.panel = null;
     s.tut.fin = true;
     avanzarMinutos(s, 40);
@@ -871,8 +1074,180 @@ describe("obra", () => {
     const q = loQueFalta(s);
     assert.equal(q.cemento, undefined, JSON.stringify(q));
     const cartel = cuello(s);
-    assert.equal(cartel.includes("Pídelo"), false, cartel);
-    assert.equal(cartel.includes("Ferretería"), false, cartel);
+    assert.doesNotMatch(cartel, /p[ií]delo|p[ií]dela|pedir|ferreter[ií]a/i);
+  });
+
+  it("cemento, golpe, sello de reloj, ferretería y puesto al contratar", () => {
+    const piso = (hecho: number, cemento: number) => {
+      const s = nueva(11);
+      firmar(s);
+      s.etapa = 7;
+      s.panel = null;
+      s.tut.fin = true;
+      s.lluvias = [];
+      s.jugador = { x: 19, y: 14.5 };
+      s.inv.cemento = { q: cemento, valor: cemento * 550 };
+      s.inv.arena = { q: 2, valor: 0 };
+      s.inv.grava = { q: 2, valor: 0 };
+      s.inv.agua = { q: 1, valor: 0 };
+      s.inv.tierra = { q: 3, valor: 0 };
+      s.inv.abeto = { q: 20, valor: 0 };
+      s.inv.pino = { q: 20, valor: 0 };
+      s.inv.zinc = { q: 20, valor: 0 };
+      s.inv.clavo = { q: 8, valor: 0 };
+      s.inv.clavoTecho = { q: 8, valor: 0 };
+      s.runs[7]!.find((r) => r.id === "relleno")!.hecho = 2.2;
+      s.runs[7]!.find((r) => r.id === "firme")!.hecho = hecho;
+      const alb = s.candidatos.find((c) => c.oficio === "albanil");
+      const peon = s.candidatos.find((c) => c.oficio === "peon");
+      if (alb) contratar(s, alb.id);
+      if (peon) contratar(s, peon.id);
+      for (const g of s.gente) {
+        if (g.oficio === "albanil") asignar(s, g.id, "obra");
+        if (g.oficio === "peon") {
+          asignar(s, g.id, "batea");
+          g.x = SITIOS.batea.x;
+          g.y = SITIOS.batea.y;
+        }
+      }
+      return s;
+    };
+    const pide = /p[ií]delo|p[ií]dela|pedir|ferreter[ií]a/i;
+    const al20 = piso(7, 0);
+    al20.mezclas.push({ tipo: "H", prog: 0.2, lista: false, vida: 0, costo: 550, restante: 1 });
+    assert.equal(loQueFalta(al20).cemento, undefined, JSON.stringify(loQueFalta(al20)));
+    assert.doesNotMatch(cuello(al20), pide);
+    const media = piso(7, 0.5);
+    media.mezclas.push({ tipo: "H", prog: 0.2, lista: false, vida: 0, costo: 550, restante: 1 });
+    assert.equal(loQueFalta(media).cemento, undefined, JSON.stringify(loQueFalta(media)));
+    assert.doesNotMatch(cuello(media), pide);
+
+    const camino = piso(6, 0);
+    camino.mezclas.push({ tipo: "H", prog: 0.4, lista: false, vida: 0, costo: 550, restante: 1 });
+    camino.pedidos.push({ id: "cam", items: { cemento: 2 }, dia: camino.dia + 1, minuto: 7 * 60 + 30, flete: FLETE, urgente: false });
+    assert.equal(loQueFalta(camino).cemento, undefined, JSON.stringify(loQueFalta(camino)));
+    assert.doesNotMatch(cuello(camino), pide);
+    assert.doesNotMatch(cuello(camino), /cemento/i);
+
+    const dos = piso(5, 0);
+    dos.mezclas.push({ tipo: "H", prog: 0.4, lista: false, vida: 0, costo: 550, restante: 1 });
+    assert.equal(loQueFalta(dos).cemento, 2, JSON.stringify(loQueFalta(dos)));
+    assert.match(cuello(dos), /cemento/i);
+
+    const lista = piso(7.65, 0);
+    lista.mezclas.push({ tipo: "H", prog: 1, lista: true, vida: 90, costo: 550, restante: 0.4 });
+    assert.equal(loQueFalta(lista).cemento, undefined, JSON.stringify(loQueFalta(lista)));
+    assert.doesNotMatch(cuello(lista), pide);
+
+    const arena = piso(0, 8);
+    arena.inv.arena = { q: 0.068 * 8 - 0.0015, valor: 0 };
+    assert.ok((loQueFalta(arena).arena ?? 0) >= 0.5, JSON.stringify(loQueFalta(arena)));
+
+    const oficina = nueva(3);
+    firmar(oficina);
+    oficina.panel = null;
+    oficina.lluvias = [];
+    oficina.minuto = 8 * 60;
+    oficina.tut.fin = true;
+    oficina.jugador = { x: SITIOS.oficina.x, y: SITIOS.oficina.y };
+    const idOf = oficina.candidatos.find((c) => c.oficio === "albanil")!.id;
+    contratar(oficina, idOf);
+    asignar(oficina, idOf, "obra");
+    const canso = oficina.gente[0]!.cansancio;
+    avanzarMinutos(oficina, 120);
+    assert.equal(oficina.stats.golpesAuto ?? 0, 0);
+    assert.ok(oficina.gente[0]!.cansancio > canso, "la cuadrilla sí trabajó");
+
+    const plomo = nueva(3);
+    firmar(plomo);
+    plomo.panel = null;
+    plomo.lluvias = [];
+    plomo.minuto = 8 * 60;
+    plomo.tut.fin = true;
+    plomo.jugador = { x: 4, y: 14.5 };
+    plomo.plomo = { umbral: 10, min: 30 };
+    contratar(plomo, plomo.candidatos[0]!.id);
+    avanzarMinutos(plomo, 1);
+    assert.ok(plomo.plomo);
+    assert.equal(plomo.plomo.min, 30);
+    assert.equal(accion(plomo).verbo, "Camina al muro");
+    assert.equal(accion(plomo).detalle, "Plomear");
+    assert.equal(plomo.stats.golpesAuto ?? 0, 0);
+
+    const cerca = nueva(3);
+    firmar(cerca);
+    cerca.panel = null;
+    cerca.lluvias = [];
+    cerca.minuto = 8 * 60;
+    cerca.tut.fin = true;
+    cerca.sinGolpe = 0;
+    cerca.jugador = { x: 14, y: 14.5 };
+    const idC = cerca.candidatos.find((c) => c.oficio === "albanil")!.id;
+    contratar(cerca, idC);
+    asignar(cerca, idC, "obra");
+    for (let i = 0; i < 15; i++) {
+      avanzarMinutos(cerca, 1);
+      if (cerca.panel && cerca.panel !== "perdida") cerca.panel = null;
+    }
+    assert.ok((cerca.stats.golpesAuto ?? 0) >= 1, "a 3 m " + cerca.stats.golpesAuto);
+    const van = cerca.stats.golpesAuto ?? 0;
+    for (let i = 0; i < 14; i++) {
+      avanzarMinutos(cerca, 1);
+      if (cerca.panel) cerca.panel = null;
+    }
+    assert.equal(cerca.stats.golpesAuto ?? 0, van);
+    avanzarMinutos(cerca, 1);
+    if (cerca.panel) cerca.panel = null;
+    assert.ok((cerca.stats.golpesAuto ?? 0) >= van + 1);
+
+    const hoja = nueva(1);
+    firmar(hoja);
+    contratar(hoja, hoja.candidatos[0]!.id);
+    hoja.gente[0]!.puesto = null;
+    hoja.panel = "cuadrilla";
+    hoja.minuto = 8 * 60;
+    const hora = hoja.minuto;
+    const cans = hoja.gente[0]!.cansancio;
+    for (let i = 0; i < 50; i++) tick(hoja, 0.2);
+    assert.equal(hoja.minuto, hora);
+    assert.equal(hoja.gente[0]!.cansancio, cans);
+
+    const ocioso = nueva(1);
+    firmar(ocioso);
+    ocioso.panel = null;
+    ocioso.lluvias = [];
+    ocioso.minuto = 8 * 60;
+    ocioso.tut.fin = true;
+    contratar(ocioso, ocioso.candidatos[0]!.id);
+    ocioso.gente[0]!.puesto = null;
+    const base = ocioso.gente[0]!.cansancio;
+    avanzarMinutos(ocioso, 120);
+    assert.equal(ocioso.gente[0]!.cansancio, base);
+
+    const fer = nueva(1);
+    firmar(fer);
+    fer.panel = null;
+    for (const [x, y] of [
+      [30, 21.1],
+      [30, 23.9],
+      [27.8, 22.5],
+      [32.2, 22.5],
+    ] as const) {
+      fer.jugador = { x, y };
+      const a = accion(fer);
+      assert.equal(`${a.tecla} · ${a.verbo}`, "Espacio · Ferretería El Cruce", `${x},${y} ${a.verbo}`);
+    }
+
+    const cuadrilla = nueva(1);
+    firmar(cuadrilla);
+    const moncho = cuadrilla.candidatos.find((c) => c.nombre === "Moncho")!;
+    const tono = cuadrilla.candidatos.find((c) => c.nombre === "Toño")!;
+    assert.equal(contratar(cuadrilla, moncho.id), null);
+    assert.equal(contratar(cuadrilla, tono.id), null);
+    assert.equal(cuadrilla.gente.find((g) => g.nombre === "Moncho")!.puesto, null);
+    assert.equal(cuadrilla.gente.find((g) => g.nombre === "Toño")!.puesto, null);
+    assert.equal(cuadrilla.gente.find((g) => g.nombre === "Moncho")!.cansancio, 0);
+    assert.equal(cuadrilla.gente.find((g) => g.nombre === "Toño")!.cansancio, 0);
   });
 
   it("el adelanto sale solo si el pedido deja menos de 5000 libres", () => {
@@ -925,6 +1300,7 @@ describe("obra", () => {
       assert.equal(contratar(s0, c!.id), null);
     }
     assert.equal(s0.gente.length, 3);
+    for (const g of s0.gente) g.puesto = null;
     assert.equal(cuello(s0), "Replanteo 0/2 · Manda a alguien a replantear.");
     const moncho = s0.gente.find((g) => g.nombre === "Moncho")!;
     asignar(s0, moncho.id, "obra");
@@ -1193,30 +1569,32 @@ describe("obra", () => {
     }
 
     let aguanto = false;
-    let cayo = false;
-    for (let seed = 1; seed <= 40 && (!aguanto || !cayo); seed++) {
+    for (let seed = 1; seed <= 8 && !aguanto; seed++) {
       const t = armar(seed);
       const muro = t.runs[4]!.find((r) => r.id === "block")!;
       muro.hecho = 3 * POR_HILADA - 0.01;
       avanzarMinutos(t, 2);
       assert.ok(t.plomo, "semilla " + seed);
+      t.jugador = { x: SITIOS.oficina.x, y: SITIOS.oficina.y };
       for (const g of t.gente) g.puesto = null;
       const extras = t.extras.length;
       const desplomes = t.desplomes;
-      avanzarMinutos(t, 60);
-      assert.equal(t.plomo, null);
+      const min = t.plomo.min;
+      avanzarMinutos(t, 120);
+      assert.ok(t.plomo, "sigue esperando");
+      assert.equal(t.plomo.min, min);
+      assert.equal(accion(t).verbo, "Camina al muro");
+      assert.equal(accion(t).detalle, "Plomear");
+      assert.equal(t.avisos.some((a) => a.texto.includes("No plomeaste")), false);
       assert.equal(t.extras.length, extras);
-      if (t.desplomes > desplomes) {
-        cayo = true;
-        assert.ok(t.avisos.some((a) => a.texto.startsWith("¡Se desplomó un tramo!")));
-      } else {
-        aguanto = true;
-        assert.ok(t.avisos.some((a) => a.texto === "No plomeaste esta hilada: si se desploma, toca rehacer."));
-        assert.equal(t.avisos.some((a) => a.texto.includes("aguantó")), false);
-      }
+      assert.equal(t.desplomes, desplomes);
+      t.jugador = { x: SITIOS.obra.x, y: SITIOS.obra.y };
+      const f = golpe(t, false);
+      assert.equal(f?.texto, "¡Plomo!");
+      assert.equal(t.plomo, null);
+      aguanto = true;
     }
     assert.equal(aguanto, true);
-    assert.equal(cayo, true);
   });
 
   it("la cuadrilla de ocho trabaja cada uno en lo suyo y la nómina cuadra", () => {
@@ -1263,23 +1641,19 @@ describe("obra", () => {
     s.cargas = [];
     s.tierraMonton = 2;
     for (const g of s.gente) asignar(s, g.id, "obra");
-    assert.equal(laborDe(s, fefa), "tierra");
+    assert.equal(laborDe(s, fefa), "obra");
     assert.notEqual(laborDe(s, tono), "tierra");
 
     const antes = s.caja;
-    let suma = 0;
-    for (const g of s.gente) {
-      const j = jornalDe(g.oficio, g.rinde);
-      suma += j + j * HERRAMIENTA;
-    }
+    const esp = nominaPendiente(s);
     s.minuto = 15 * 60 - 1;
     s.panel = null;
     avanzarMinutos(s, 1);
     assert.equal(s.nominaPagada, true);
-    assert.ok(Math.abs(antes - s.caja - suma) < 0.02, `caja ${antes - s.caja} nómina ${suma}`);
+    assert.ok(Math.abs(antes - s.caja - esp) < 1.5, `caja ${antes - s.caja} nómina ${esp}`);
     const linea = s.diario.find((d) => d.texto.startsWith("Nómina:"));
     assert.ok(linea);
-    assert.equal(Math.round(antes - s.caja), Math.round(suma));
+    assert.equal(Math.round(antes - s.caja), Math.round(esp));
   });
 
   it("después de Ahora no, Sita se puede llamar a las 14:20", () => {
@@ -1336,6 +1710,192 @@ describe("obra", () => {
     assert.equal(s.destino, null);
   });
 
+  it("la nómina de hoy es la misma en la cuenta y en el pago", () => {
+    const s = nueva(1);
+    firmar(s);
+    s.minuto = 8 * 60;
+    s.panel = null;
+    s.lluvias = [];
+    for (const c of s.candidatos.slice(0, 8)) assert.equal(contratar(s, c.id), null);
+    const d = desgloseNomina(s);
+    let jornales = 0;
+    let herramienta = 0;
+    for (const g of s.gente) {
+      const j = jornalDe(g.oficio, g.rinde);
+      jornales += j;
+      herramienta += Math.round(j * HERRAMIENTA);
+    }
+    assert.equal(d.jornales, jornales);
+    assert.equal(d.herramienta, herramienta);
+    assert.equal(d.direccion, DIRECCION_DIA);
+    assert.equal(d.total, jornales + herramienta + DIRECCION_DIA);
+    assert.equal(nominaPendiente(s), d.total);
+    assert.match(textoCajaLibre(s), /nómina de hoy/);
+    const cuenta = cuentaPedido(s, 1000);
+    assert.equal(cuenta.nomina, d.total);
+    assert.equal(cuenta.jornales, d.jornales);
+    assert.equal(cuenta.herramienta, d.herramienta);
+    assert.equal(cuenta.direccion, d.direccion);
+    const antes = s.caja;
+    s.minuto = 15 * 60 - 1;
+    avanzarMinutos(s, 1);
+    assert.ok(Math.abs(antes - s.caja - d.total) < 1.5, `pago ${antes - s.caja} nómina ${d.total}`);
+  });
+
+  it("terminar a las 14:05 abre la hoja y seguir no despacha", () => {
+    const s = nueva(1);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.minuto = 14 * 60 + 5;
+    s.panel = null;
+    s.lluvias = [];
+    const caja = s.caja;
+    const nomina = nominaPendiente(s);
+    abrirDespacho(s);
+    assert.equal(s.panel, "despacho");
+    assert.equal(s.nominaPagada, false);
+    assert.equal(s.caja, caja);
+    seguirJornada(s);
+    assert.equal(s.panel, null);
+    assert.equal(s.minuto, 14 * 60 + 5);
+    assert.equal(s.nominaPagada, false);
+    abrirDespacho(s);
+    confirmarDespacho(s);
+    assert.equal(s.nominaPagada, true);
+    assert.equal(s.panel, "finde");
+    assert.ok(s.avisos.some((a) => a.texto.startsWith(`Se fueron a las ${horaDe(14 * 60 + 5)}`)));
+    assert.ok(Math.abs(caja - s.caja - nomina) < 1.5);
+  });
+
+  it("sin trabajo de mezcla el trompo no bate y el block corto lo dice", () => {
+    const s = nueva(1);
+    firmar(s);
+    s.panel = null;
+    s.lluvias = [];
+    s.minuto = 8 * 60;
+    s.etapa = 0;
+    s.jugador = { x: SITIOS.batea.x, y: SITIOS.batea.y };
+    s.inv.cemento = { q: 8, valor: 0 };
+    s.inv.arena = { q: 2, valor: 0 };
+    s.inv.grava = { q: 2, valor: 0 };
+    s.inv.agua = { q: 2, valor: 0 };
+    const f = golpe(s, false);
+    assert.equal(f?.texto, "Nada que batir");
+    assert.equal(s.mezclas.length, 0);
+    s.mezclas = [{ tipo: "M", prog: 1, lista: true, vida: 1, costo: 0, restante: 1 }];
+    avanzarMinutos(s, 1);
+    assert.equal(s.avisos.some((a) => /Se venció/.test(a.texto) && /P\$0/.test(a.texto)), false);
+    s.etapa = 4;
+    s.blocksHoy = 200;
+    s.inv.block = { q: 400, valor: 0 };
+    s.inv.v38 = { q: 20, valor: 0 };
+    s.inv.alambre = { q: 4, valor: 0 };
+    s.inv.cemento = { q: 20, valor: 0 };
+    s.inv.arena = { q: 2, valor: 0 };
+    s.inv.agua = { q: 2, valor: 0 };
+    s.mezclas = [{ tipo: "M", prog: 1, lista: true, vida: 90, costo: 10, restante: 30 }];
+    s.plomo = null;
+    assert.equal(cuelloLabor(s), "Máximo 6 hiladas por día.");
+  });
+
+  it("un pedido que deja la nómina en rojo no alcanza", () => {
+    const s = nueva(1);
+    firmar(s);
+    for (const c of s.candidatos.slice(0, 4)) contratar(s, c.id);
+    s.cobrado = s.precio;
+    s.caja = nominaPendiente(s) + 100;
+    const cuenta = cuentaPedido(s, 5000);
+    assert.equal(cuenta.usaAdelanto, false);
+    assert.equal(cuenta.alcanza, false);
+    assert.ok(cuenta.libre < 0);
+    const err = pedir(s, { cemento: 4 }, false);
+    assert.ok(err && /nómina/.test(err));
+    assert.equal(s.pedidos.length, 0);
+  });
+
+  it("la ferretería abierta no mueve la hora ni el cansancio", () => {
+    const s = nueva(1);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.panel = null;
+    s.lluvias = [];
+    s.minuto = 8 * 60;
+    s.gente[0]!.cansancio = 12;
+    s.gente[0]!.puesto = "obra";
+    const antes = s.minuto;
+    for (let i = 0; i < 5; i++) tick(s, 0.1);
+    assert.ok(s.minuto > antes, "sin hoja el reloj corre");
+    s.minuto = antes;
+    s.frac = 0;
+    s.gente[0]!.cansancio = 12;
+    s.panel = "ferreteria";
+    for (let i = 0; i < 100; i++) tick(s, 0.1);
+    assert.equal(s.minuto, antes);
+    assert.equal(s.gente[0]!.cansancio, 12);
+  });
+
+  it("tramos de cobro: muros 10, columnas 10, suma el contrato", () => {
+    assert.equal(TAREAS.block.rinde, 150);
+    assert.equal(ETAPAS.find((e) => e.id === "muros")!.tramo, 0.1);
+    assert.equal(ETAPAS.find((e) => e.id === "columnas")!.tramo, 0.1);
+    const s = nueva(1);
+    firmar(s);
+    const t = tramos(s);
+    const suma = t.reduce((n, x) => n + x.monto, 0);
+    assert.equal(suma, s.precio);
+    assert.equal(s.precio, CONTRATO);
+    assert.equal(t.find((x) => x.nombre === "Muros 10%")?.monto, 30000);
+    assert.equal(t.find((x) => x.nombre === "Columnas 10%")?.monto, 30000);
+    assert.equal(t.find((x) => x.nombre === "Zapata 15%")?.monto, 45000);
+    assert.equal(t.find((x) => x.nombre === "Anticipo 30%")?.monto, 90000);
+  });
+
+  it("atento con 4 termina muros entre los días 9 y 11", () => {
+    const n = Number(process.env.ATENTO_N || 40);
+    const filas = [];
+    for (let seed = 1; seed <= n; seed++) filas.push(filaAtento(seed, jugarAtento(seed, 4)));
+    const entregadas = filas.filter((f) => f.entregada).length;
+    const conGanancia = filas.filter((f) => f.entregada && f.ganancia > 0).length;
+    console.log("ATENTO4", JSON.stringify(filas));
+    console.log(
+      "ATENTO4_RES",
+      JSON.stringify({
+        entregadas,
+        conGanancia,
+        muros: filas.map((f) => f.diaMuros),
+        block: filas.map((f) => f.diaBlock),
+        entrega: filas.map((f) => f.diaEntrega),
+        ganancia: filas.map((f) => f.ganancia),
+        perdida: filas.map((f) => f.diaPerdida),
+      }),
+    );
+    for (const f of filas) {
+      assert.ok(f.diaMuros >= 9 && f.diaMuros <= 11, `semilla ${f.semilla} muros día ${f.diaMuros}`);
+    }
+    assert.ok(conGanancia >= 36, `con ganancia ${conGanancia}/40`);
+  });
+
+  it("atento con 5 entrega entre los días 14 y 18", () => {
+    const n = Number(process.env.ATENTO_N || 40);
+    const filas = [];
+    for (let seed = 1; seed <= n; seed++) filas.push(filaAtento(seed, jugarAtento(seed, 5)));
+    const entregadas = filas.filter((f) => f.entregada).length;
+    console.log("ATENTO5", JSON.stringify(filas));
+    console.log(
+      "ATENTO5_RES",
+      JSON.stringify({
+        entregadas,
+        entrega: filas.map((f) => f.diaEntrega),
+        ganancia: filas.map((f) => f.ganancia),
+        perdida: filas.map((f) => f.diaPerdida),
+      }),
+    );
+    assert.equal(entregadas, 40, JSON.stringify(filas.filter((f) => !f.entregada)));
+    for (const f of filas) {
+      assert.ok(f.diaEntrega != null && f.diaEntrega >= 14 && f.diaEntrega <= 18, `semilla ${f.semilla} entrega ${f.diaEntrega} ganancia ${f.ganancia}`);
+    }
+  });
+
   it("simulación de 40 semillas", () => {
     const ganancias: number[] = [];
     const dias: number[] = [];
@@ -1368,9 +1928,9 @@ describe("obra", () => {
       fletes: media(fletes),
       muertoPromedio: Math.round(media(muertos)),
     };
-    assert.equal(entregadas, 39, JSON.stringify(linea));
+    assert.equal(entregadas, 40, JSON.stringify(linea));
     console.log("SIM40", JSON.stringify(linea));
-    assert.equal(linea.mediana, 72169.5);
+    assert.equal(linea.mediana, 61591);
   });
 
   it("la guía no retrocede", () => {
@@ -1381,11 +1941,16 @@ describe("obra", () => {
     const caja = s.caja;
     s.sita.oferta = { items: { cemento: 1 }, urgente: false, mats: 1, flete: FLETE, total: 2050, texto: "falta" };
     marcarGuia(s);
-    assert.equal(pasoTutorial(s), 6);
+    assert.equal(pasoTutorial(s) + 1, 3);
     s.sita.oferta = null;
     assert.equal(s.tut.parada, false);
     assert.equal(s.tut.sita, false);
-    assert.equal(pasoTutorial(s), 6);
+    assert.equal(pasoTutorial(s) + 1, 3);
+    s.runs[0]!.find((r) => r.id === "replantear")!.hecho = 2;
+    marcarGuia(s);
+    assert.equal(pasoTutorial(s) + 1, 4);
+    s.runs[0]!.find((r) => r.id === "replantear")!.hecho = 0;
+    assert.equal(pasoTutorial(s) + 1, 4);
     assert.equal(s.rng, rng);
     assert.equal(s.caja, caja);
   });
@@ -1490,7 +2055,13 @@ describe("obra", () => {
     assert.equal(aceptarSita(u9), null);
     assert.equal(u9.pedidos[0]!.urgente, true);
     assert.equal(u9.pedidos[0]!.flete, FLETE_URGENTE);
-    assert.ok(u9.sita.oferta == null);
+    assert.ok(u9.sita.oferta);
+    assert.equal(Object.keys(u9.sita.oferta!.items).length, 0);
+    assert.ok((u9.sita.oferta!.siguiente?.block ?? 0) > 0);
+    const antesTam = u9.pedidos.length;
+    assert.equal(pedirTambien(u9), null);
+    assert.equal(u9.pedidos.length, antesTam + 1);
+    assert.equal(u9.sita.oferta, null);
 
     const u13 = nueva(2);
     firmar(u13);
@@ -1552,6 +2123,7 @@ describe("obra", () => {
     for (let seed = 1; seed <= 40; seed++) {
       const r = jugarNovato(seed);
       if (r.s.entregada) entregadas += 1;
+      else assert.ok(r.inf.ganancia > -10000, `semilla ${seed} pierde ${Math.round(r.inf.ganancia)}`);
       ganancias.push(Math.round(r.inf.ganancia));
       dias.push(r.s.diasTrabajados);
       fletes.push(r.s.stats.fletes);
@@ -1576,9 +2148,9 @@ describe("obra", () => {
       urgentes: media(urgentes),
     };
     console.log("NOVATO40", JSON.stringify(linea));
-    assert.equal(entregadas, 39, JSON.stringify(linea));
-    assert.ok(linea.fletesMediana >= 6 && linea.fletesMediana <= 9, JSON.stringify(linea));
-    assert.ok(linea.mediana >= 52216, JSON.stringify(linea));
+    assert.equal(entregadas, 40, JSON.stringify(linea));
+    assert.equal(linea.fletesMediana, 10, JSON.stringify(linea));
+    assert.equal(linea.mediana, 60263, JSON.stringify(linea));
   });
 
   it("pasivo que no asigna pierde entre los días 20 y 28", () => {
@@ -1596,7 +2168,7 @@ describe("obra", () => {
   });
 
   it("los textos de la obra no mueven la caja", () => {
-    assert.equal(TUTORIAL[6], "Sita te trae un papel a las 14:00, o antes si la obra se para por material.");
+    assert.equal(TUTORIAL[6], "El guardalmacén te trae una nota a las 14:00, o antes si la obra se para por material.");
     const vaciar = (s: Estado) => {
       for (const m of COMPRA) s.inv[m] = { q: 0, valor: 0 };
       s.inv.agua = { q: 1, valor: 0 };
@@ -1632,7 +2204,9 @@ describe("obra", () => {
     const cajaNota = tarde.caja;
     avanzarMinutos(tarde, 1);
     const nota = tarde.sita.oferta?.texto ?? "";
-    assert.match(nota, /^Para mañana faltan: \d+ varillas 3\/8/);
+    assert.match(nota, /^Para mañana faltan:/);
+    assert.match(nota, /Varilla 3\/8: hace falta \d+, hay 0, vienen 0, pido \d+/);
+    assert.doesNotMatch(nota.split("Para la siguiente")[0] ?? nota, /plywood|pino|block/i);
     assert.equal(tarde.caja, cajaNota);
 
     const corto = nueva(1);
@@ -1645,13 +2219,23 @@ describe("obra", () => {
     avanzarMinutos(corto, 1);
     const pobre = corto.sita.oferta;
     assert.ok(pobre);
-    assert.match(pobre!.texto, /7:30\. Caja libre /);
-    assert.match(pobre!.texto, /Ni con el adelanto/);
-    const cifraNota = pobre!.texto.match(/faltan (P\$[\d,]+)\./);
+    assert.equal(corto.caja, 100);
+    assert.match(pobre!.texto, /llega mañana 7:30/);
+    assert.match(pobre!.texto, /Caja libre/);
+    assert.doesNotMatch(pobre!.texto, /Al tocar Pedir/);
+    assert.doesNotMatch(pobre!.texto, /Ni con el adelanto/);
+    const cuenta = cuentaPedido(corto, pobre!.total);
+    if (cuenta.usaAdelanto) assert.match(pobre!.texto, /Usa el adelanto de Doña Carmen/);
+    else assert.match(pobre!.texto, /No alcanza para la nómina de hoy/);
     const err = aceptarSita(corto);
-    assert.ok(err);
-    const cifraPedir = err!.match(/Faltan (P\$[\d,]+)\./);
-    assert.equal(cifraPedir?.[1], cifraNota?.[1]);
+    assert.notEqual(err, null);
+    assert.equal(corto.pedidos.length, 0);
+    assert.ok(corto.sita?.oferta);
+    if (cuenta.usaAdelanto) {
+      assert.equal(adelantar(corto, pobre!.total), null);
+      assert.equal(aceptarSita(corto), null);
+      assert.equal(corto.pedidos.length, 1);
+    }
 
     const nom = nueva(1);
     firmar(nom);
@@ -1662,7 +2246,7 @@ describe("obra", () => {
     avanzarMinutos(nom, 1);
     const avisoNom = nom.avisos.find((a) => a.texto.startsWith("Se fueron"));
     assert.ok(avisoNom);
-    assert.match(avisoNom!.texto, /^Se fueron a las 3\. Nómina P\$[\d,]+ · Herramienta P\$[\d,]+\.$/);
+    assert.match(avisoNom!.texto, /^Se fueron a las 3\. Nómina: −P\$[\d,]+\. Herramienta: −P\$[\d,]+\.$/);
     assert.ok(nom.diario.some((d) => d.texto.startsWith("Nómina: −") && d.texto.includes("Herramienta: −")));
 
     const muro = nueva(1);
@@ -1679,6 +2263,171 @@ describe("obra", () => {
     const sigue = cuello(muro);
     assert.match(sigue, /^Se fueron a las 3\. Mañana sigue: /);
     assert.equal(sigue.includes("falta Varilla"), false);
+  });
+
+  it("la zapata con 3 fundas pide solo lo de esa etapa", () => {
+    const s = nueva(1);
+    firmar(s);
+    s.etapa = 3;
+    s.minuto = 14 * 60;
+    for (const m of COMPRA) s.inv[m] = { q: 0, valor: 0 };
+    s.inv.cemento = { q: 3, valor: 1650 };
+    s.inv.agua = { q: 1, valor: 0 };
+    s.entrada = {};
+    s.pedidos = [];
+    s.lluvias = [];
+    s.panel = null;
+    contratar(s, s.candidatos[0]!.id);
+    const g = s.gente[0] ?? s.reserva[0];
+    if (g) {
+      g.activo = false;
+      g.falto = true;
+    }
+    avanzarMinutos(s, 1);
+    const nota = s.sita.oferta?.texto ?? "";
+    assert.match(nota, /^Para mañana faltan:/);
+    assert.match(nota, /Cemento: hace falta 10, hay 3, vienen 0, pido 7/);
+    const principal = nota.split("Para la siguiente")[0] ?? nota;
+    assert.doesNotMatch(principal, /plywood|pino|block/i);
+    assert.match(nota, /Para la siguiente etapa \(opcional\):/);
+    assert.match(nota, /Block: hace falta/);
+    const notas = s.bitacora.filter((a) => a.clase === "nota" && a.texto.includes("Para mañana faltan"));
+    assert.equal(notas.length, 1);
+    s.aviso14 = false;
+    if (s.sita) s.sita.oferta = null;
+    avanzarMinutos(s, 0);
+    assert.equal(s.bitacora.filter((a) => a.clase === "nota" && a.texto.includes("Para mañana faltan")).length, 1);
+  });
+
+  it("la pista y Espacio achican lo mismo", () => {
+    const s = nueva(1);
+    firmar(s);
+    s.panel = null;
+    s.lluvias = [];
+    s.etapa = 1;
+    s.jugador = { x: SITIOS.oficina.x, y: SITIOS.oficina.y };
+    s.extras.push({
+      id: "achicar-t",
+      etapa: 1,
+      k: "achicar",
+      nombre: "Achicar la zanja",
+      q: 2,
+      hecho: 0,
+      bloquea: true,
+      partida: "excavacion",
+    });
+    const pe = s.candidatos.find((c) => c.oficio === "peon")!;
+    contratar(s, pe.id);
+    const lejos = queHaceEspacio(s);
+    assert.equal(lejos.verbo, "Camina a la zanja");
+    assert.equal(lejos.detalle, "Achicar 0/2");
+    assert.equal(lejos.hacer, "zanja");
+    const f = golpe(s, true);
+    assert.match(f?.texto ?? "", /Camina a la zanja/);
+    assert.equal(s.panel, null);
+    assert.equal(s.extras[0]!.hecho, 0);
+    s.jugador = { x: SITIOS.obra.x, y: SITIOS.obra.y };
+    const cerca = queHaceEspacio(s);
+    assert.equal(cerca.verbo, "Achicar");
+    assert.equal(cerca.detalle, "0/2");
+    golpe(s, true);
+    assert.equal(s.extras[0]!.hecho, 1);
+    assert.equal(queHaceEspacio(s).detalle, "1/2");
+    golpe(s, true);
+    assert.equal(s.extras[0]!.hecho, 2);
+    s.extras[0]!.hecho = 0;
+    s.lluvias = [{ dia: s.dia, ini: 7 * 60, fin: 18 * 60, prob: 1 }];
+    s.minuto = 12 * 60;
+    const lluvia = golpe(s, true);
+    assert.match(lluvia?.texto ?? "", /Sigue lloviendo/);
+    assert.equal(s.extras[0]!.hecho, 0);
+  });
+
+  it("la caja libre escribe la resta", () => {
+    const s = nueva(1);
+    firmar(s);
+    s.caja = 6423;
+    const gente = s.gente;
+    s.gente = [
+      {
+        ...s.candidatos[0]!,
+        activo: true,
+        falto: false,
+        fuera: false,
+      },
+    ];
+    const uno = nominaPendiente(s);
+    s.gente = gente;
+    assert.equal(textoCajaLibre(s), `Caja libre ${peso(6423)}`);
+    s.gente = [
+      {
+        ...s.candidatos[0]!,
+        activo: true,
+        falto: false,
+        fuera: false,
+      },
+    ];
+    const nom = nominaPendiente(s);
+    assert.ok(nom > 0);
+    assert.equal(textoCajaLibre(s), `Caja libre ${peso(6423 - nom)} = caja ${peso(6423)} menos nómina de hoy ${peso(nom)}`);
+    assert.equal(uno, nom);
+  });
+
+  it("un sábado el pedido llega el lunes", () => {
+    const s = nueva(1);
+    firmar(s);
+    s.dia = 6;
+    assert.equal(esSabado(s.dia), true);
+    assert.equal(textoLlegada(s, false), "llega el lunes 7:30");
+    s.dia = 2;
+    assert.equal(textoLlegada(s, false), "llega mañana 7:30");
+  });
+
+  it("una tanda sobrante no pide arena", () => {
+    const s = nueva(1);
+    firmar(s);
+    s.etapa = 4;
+    s.panel = null;
+    s.lluvias = [];
+    for (const r of s.runs[4] ?? []) r.hecho = 10000;
+    s.mezclas = [{ tipo: "H", prog: 1, lista: true, vida: 90, costo: 100, restante: 1 }];
+    for (const m of COMPRA) s.inv[m] = { q: 0, valor: 0 };
+    s.entrada = {};
+    s.pedidos = [];
+    assert.equal(cuelloLabor(s), "Sobró una tanda en el trompo");
+    assert.equal(loQueFalta(s).arena, undefined);
+    assert.equal(loQueFalta(s).cemento, undefined);
+    assert.doesNotMatch(cuelloLabor(s), /arena|Arena/);
+  });
+
+  it("con material en la entrada alguien acarrea", () => {
+    const s = nueva(1);
+    firmar(s);
+    s.panel = null;
+    s.lluvias = [];
+    s.etapa = 2;
+    s.minuto = 8 * 60;
+    for (const m of COMPRA) s.inv[m] = { q: 0, valor: 0 };
+    s.entrada = { v38: { q: 26, valor: 0 } };
+    s.pedidos = [];
+    const pe = s.candidatos.find((c) => c.oficio === "peon")!;
+    contratar(s, pe.id);
+    const g = s.gente.find((p) => p.id === pe.id)!;
+    asignar(s, g.id, "obra");
+    assert.notEqual(g.puesto, "acarreo");
+    assert.equal(laborDe(s, g), "acarreo");
+  });
+
+  it("el teléfono abierto no mueve el reloj", () => {
+    const s = nueva(1);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.panel = "oficina";
+    s.oficinaTab = "telefono";
+    const min = s.minuto;
+    tick(s, 60);
+    assert.equal(s.minuto, min);
+    assert.equal(s.panel, "oficina");
   });
 
   it("informe semilla 1", () => {

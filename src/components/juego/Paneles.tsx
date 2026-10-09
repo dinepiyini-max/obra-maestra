@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode, type RefObject } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import {
   COMPRA,
   CONTRATO,
@@ -8,7 +8,6 @@ import {
   FLETE,
   FLETE_URGENTE,
   GUARDALMACEN,
-  LISTERO,
   MANIA_INFO,
   MATERIALES,
   MAX_CUADRILLA,
@@ -19,6 +18,7 @@ import {
   PRESUPUESTO_TOTAL,
   PUESTO_NOMBRE,
   esDomingo,
+  esSabado,
   horaDe,
   jornalDe,
   num,
@@ -30,13 +30,14 @@ import {
 } from "@/game/datos";
 import {
   adelantar,
+  abrirPanel,
   almacen,
   aceptarSita,
   asignar,
-  cajaLibre,
   cerrarPanel,
-  continuarSello,
+  confirmarDespacho,
   contratar,
+  cuentaPedido,
   despedir,
   editarSita,
   firmar,
@@ -45,17 +46,24 @@ import {
   libreta,
   lineaAhora,
   lineaFicha,
-  libreTrasPedido,
   loQueFalta,
   marcarLibre,
   marcarLoQueFalta,
   nominaPendiente,
+  notarCierreHoja,
   pedir,
+  pedirTambien,
   partesMuerto,
+  precioDe,
   puedeAdelantar,
   pronosticoDia,
   rechazarSita,
+  regatear,
+  rindeLista,
+  seguirJornada,
   siguienteDia,
+  textoCajaLibre,
+  textoLlegada,
   tramos,
   type Estado,
   type OficinaTab,
@@ -65,25 +73,31 @@ import { Retrato } from "./Hud";
 import type { Ajustes } from "@/game/guardar";
 
 const btn =
-  "min-h-11 border-2 border-tinta bg-papel-2 px-3 py-2 font-hand text-tinta hover:bg-oro disabled:opacity-40";
-const btnPri = "min-h-11 border-2 border-tinta bg-tinta px-4 py-2 font-hand text-papel hover:bg-tierra";
-const btnGris = "min-h-11 border-2 border-tinta/30 bg-[#d9d3c7] px-4 py-2 font-hand text-[#8a8175]";
+  "min-h-11 min-w-11 border-2 border-tinta bg-papel-2 px-3 py-2 font-hand text-tinta hover:bg-papel disabled:opacity-40";
+const btnPri = "min-h-11 min-w-11 border-2 border-tinta bg-tinta px-4 py-2 font-hand text-papel hover:bg-tierra";
+const ALTO_OFICINA = "h-[min(88dvh,40rem)] max-h-[min(88dvh,40rem)]";
 
 function Candado() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0" aria-hidden="true">
-      <rect x="5" y="10" width="14" height="10" fill="none" stroke="#8a8175" strokeWidth="2" />
-      <path d="M8 10 V7 a4 4 0 0 1 8 0 V10" fill="none" stroke="#8a8175" strokeWidth="2" />
+      <rect x="5" y="10" width="14" height="10" fill="none" stroke="#5f564b" strokeWidth="2" />
+      <path d="M8 10 V7 a4 4 0 0 1 8 0 V10" fill="none" stroke="#5f564b" strokeWidth="2" />
     </svg>
   );
 }
 
 function HojaMenu({ children, onVolver }: { children: ReactNode; onVolver?: () => void }) {
+  const fondo = useRef(false);
   return (
     <div
-      className="fixed inset-0 z-30 flex items-center justify-center bg-fondo/40 p-4"
+      className="fixed inset-0 z-30 flex items-center justify-center bg-fondo/80 p-4"
+      style={{ paddingTop: "max(1rem, env(safe-area-inset-top))", paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
       onPointerDown={(e) => {
-        if (e.target === e.currentTarget) onVolver?.();
+        fondo.current = e.target === e.currentTarget;
+      }}
+      onPointerUp={(e) => {
+        if (fondo.current && e.target === e.currentTarget) onVolver?.();
+        fondo.current = false;
       }}
     >
       <section className="papel-grano w-full max-w-sm border-2 border-tinta px-4 py-4 text-left text-tinta shadow-[6px_8px_0_#1d1712]">
@@ -128,6 +142,17 @@ function Gotas({ n }: { n: number }) {
   );
 }
 
+function Creditos({ onVolver }: { onVolver: () => void }) {
+  return (
+    <HojaMenu onVolver={onVolver}>
+      <h2 className="font-display text-4xl leading-none sm:text-5xl">Obra Maestra</h2>
+      <p className="mt-3 font-hand text-lg leading-snug text-pretty sm:text-xl">
+        Obra Maestra. Creado y dirigido por Rico, con la ayuda de Grok. Asesoría de ingeniería: Diego Ángeles, ingeniero y maestro constructor; gracias por su ojo de obra. Agradecimientos a Elon Musk.
+      </p>
+    </HojaMenu>
+  );
+}
+
 function tonoDesvio(real: number, desv: number): string {
   if (real < 1) return "";
   if (desv > 1) return "text-rojo";
@@ -141,22 +166,30 @@ function Marco({
   onCerrar,
   ancho = "max-w-3xl",
   hoja = false,
+  alto = "",
 }: {
   titulo: string;
   children: ReactNode;
   onCerrar?: () => void;
   ancho?: string;
   hoja?: boolean;
+  alto?: string;
 }) {
+  const fondo = useRef(false);
   return (
     <div
-      className="fixed inset-0 z-30 flex items-end justify-center bg-fondo/55 p-2 sm:items-center sm:p-6"
+      className="velo-obra fixed inset-0 z-30 flex items-end justify-center bg-fondo/80 p-2 sm:items-center sm:p-6"
+      style={{ paddingTop: "max(0.5rem, env(safe-area-inset-top))", paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
       onPointerDown={(e) => {
-        if (e.target === e.currentTarget) onCerrar?.();
+        fondo.current = e.target === e.currentTarget;
+      }}
+      onPointerUp={(e) => {
+        if (fondo.current && e.target === e.currentTarget) onCerrar?.();
+        fondo.current = false;
       }}
     >
       <section
-        className={`relative max-h-[92vh] w-full ${ancho} overflow-x-hidden overflow-y-auto border-2 border-tinta p-4 text-tinta shadow-[6px_8px_0_#1d1712] sm:p-5 ${hoja ? "hoja-libreta pl-8" : "papel-grano"}`}
+        className={`marco-obra relative w-full ${ancho} overflow-x-hidden overflow-y-auto border-2 border-tinta p-3 text-tinta shadow-[6px_8px_0_#1d1712] sm:p-5 ${alto || "max-h-[92dvh]"} ${hoja ? "hoja-libreta pl-8" : "papel-grano"}`}
       >
         {hoja ? (
           <span className="pointer-events-none absolute top-6 bottom-6 left-2 flex w-3 flex-col justify-between" aria-hidden="true">
@@ -165,8 +198,8 @@ function Marco({
             <i className="h-3 w-3 rounded-full border-2 border-tinta bg-fondo" />
           </span>
         ) : null}
-        <header className="mb-3 flex items-start justify-between gap-3">
-          <h2 className="font-display text-4xl leading-none">{titulo}</h2>
+        <header className="mb-2 flex items-start justify-between gap-3">
+          <h2 className="min-w-0 flex-1 font-display text-xl leading-tight break-words sm:text-4xl">{titulo}</h2>
           {onCerrar ? (
             <button type="button" className={btn} onClick={onCerrar}>
               Cerrar
@@ -175,6 +208,140 @@ function Marco({
         </header>
         {children}
       </section>
+    </div>
+  );
+}
+
+const MOSTRAR_RINDE_EN = false;
+
+type ColContrata = "nombre" | "oficio" | "jornal" | "rinde" | "cansancio" | "faltas" | "desde";
+
+function TablaContratar({ s, onTomar }: { s: Estado; onTomar: (id: string) => void }) {
+  const [orden, setOrden] = useState<{ col: ColContrata; dir: 1 | -1 } | null>(null);
+  const [porOficio, setPorOficio] = useState(false);
+  const cupo = s.gente.length + s.reserva.length;
+  const desde = s.minuto < 9 * 60 ? "Hoy" : "Mañana 7:00";
+  const fila = (p: Persona) => ({
+    p,
+    nombre: `${p.nombre} ${p.apellido}`,
+    oficio: OFICIO_NOMBRE[p.oficio],
+    jornal: jornalDe(p.oficio, p.rinde),
+    rinde: rindeLista(p),
+    cansancio: p.cansancio,
+    faltas: p.mania === "madrugador" ? "Sábados" : "No",
+    desde,
+  });
+  const comparar = (a: ReturnType<typeof fila>, b: ReturnType<typeof fila>) => {
+    if (!orden) return 0;
+    const va = a[orden.col];
+    const vb = b[orden.col];
+    if (typeof va === "number" && typeof vb === "number") return (va - vb) * orden.dir;
+    return String(va).localeCompare(String(vb), "es") * orden.dir;
+  };
+  const tocar = (col: ColContrata) => {
+    setOrden((o) => {
+      if (!o || o.col !== col) {
+        const numero = col === "jornal" || col === "rinde" || col === "cansancio";
+        return { col, dir: numero ? -1 : 1 };
+      }
+      return { col, dir: o.dir === 1 ? -1 : 1 };
+    });
+  };
+  const tomados = new Set([...s.gente, ...s.reserva].map((g) => g.id));
+  const gente = s.candidatos.map(fila);
+  if (orden) gente.sort(comparar);
+  const grupos: { titulo: string; filas: typeof gente }[] = [];
+  if (porOficio) {
+    const ordenOf: Oficio[] = ["albanil", "ayudante", "varillero", "peon", "carpintero"];
+    for (const of of ordenOf) {
+      const filas = gente.filter((f) => f.p.oficio === of);
+      if (filas.length) grupos.push({ titulo: OFICIO_NOMBRE[of], filas });
+    }
+  } else grupos.push({ titulo: "", filas: gente });
+  const th = (col: ColContrata, label: string, numero = false) => (
+    <th className={"bg-papel px-2 text-left font-hand font-normal whitespace-nowrap " + (numero ? "text-right" : "")}>
+      <button type="button" className="min-h-8 underline" onClick={() => tocar(col)}>
+        {label}
+        {orden?.col === col ? (orden.dir < 0 ? " ↓" : " ↑") : ""}
+      </button>
+    </th>
+  );
+  return (
+    <div>
+      <p className="mb-1 font-hand text-sm min-[900px]:hidden">Desliza para ver más</p>
+      <div className="mb-2 flex gap-2">
+        <button type="button" className={(porOficio ? btnPri : btn) + " min-h-9 py-1 text-sm"} onClick={() => setPorOficio(true)}>
+          Por oficio
+        </button>
+        <button type="button" className={(!porOficio ? btnPri : btn) + " min-h-9 py-1 text-sm"} onClick={() => setPorOficio(false)}>
+          Todos
+        </button>
+      </div>
+      <div className="relative">
+        <div className="pointer-events-none absolute top-0 right-0 bottom-0 z-30 w-3 bg-gradient-to-l from-papel to-transparent min-[900px]:hidden" />
+        <div className="overflow-x-auto">
+          <table className="w-max min-w-full border-collapse text-sm">
+            <thead>
+              <tr className="h-8 border-b border-tinta/40">
+                <th className="sticky left-0 z-20 bg-papel px-2 text-left font-hand font-normal shadow-[6px_0_8px_-6px_rgba(29,23,18,0.35)]">
+                  <button type="button" className="min-h-8 underline" onClick={() => tocar("nombre")}>
+                    Nombre{orden?.col === "nombre" ? (orden.dir < 0 ? " ↓" : " ↑") : ""}
+                  </button>
+                </th>
+                {th("oficio", "Oficio")}
+                {th("jornal", "Jornal", true)}
+                {th("rinde", "Rinde", true)}
+                {th("cansancio", "Cansancio", true)}
+                {th("faltas", "Faltas")}
+                {th("desde", "Desde")}
+                {MOSTRAR_RINDE_EN ? th("oficio", "Rinde en") : null}
+                <th className="sticky right-0 z-20 bg-papel px-2 shadow-[-8px_0_8px_-6px_rgba(29,23,18,0.45)]" />
+              </tr>
+            </thead>
+            <tbody>
+              {grupos.map((g) => (
+                <Fragment key={g.titulo || "todos"}>
+                  {g.titulo ? (
+                    <tr className="h-8">
+                      <td colSpan={8} className="sticky left-0 bg-papel-2 px-2 font-display text-xl">
+                        {g.titulo}
+                      </td>
+                    </tr>
+                  ) : null}
+                  {g.filas.map((f) => {
+                    const ya = tomados.has(f.p.id);
+                    return (
+                      <tr key={f.p.id} className="h-9 border-b border-tinta/15">
+                        <td className="sticky left-0 z-10 bg-papel px-2 align-middle shadow-[6px_0_8px_-6px_rgba(29,23,18,0.28)]">
+                          <div className="leading-none">{f.nombre}</div>
+                          <div className="font-hand text-[12px] leading-none text-tierra">{MANIA_INFO[f.p.mania].nombre}</div>
+                        </td>
+                        <td className="px-2 whitespace-nowrap">{f.oficio}</td>
+                        <td className="px-2 text-right whitespace-nowrap">{peso(f.jornal)}</td>
+                        <td className="px-2 text-right">{num(f.rinde, 2)}</td>
+                        <td className="px-2 text-right">{num(f.cansancio, 0)}</td>
+                        <td className="px-2 whitespace-nowrap">{f.faltas}</td>
+                        <td className="px-2 whitespace-nowrap">{f.desde}</td>
+                        {MOSTRAR_RINDE_EN ? <td className="px-2" /> : null}
+                        <td className="sticky right-0 z-10 bg-papel px-2 shadow-[-8px_0_8px_-6px_rgba(29,23,18,0.35)]">
+                          <button
+                            type="button"
+                            className={ya ? btn + " min-h-11" : btnPri + " min-h-11"}
+                            onClick={() => onTomar(f.p.id)}
+                            disabled={ya || cupo >= MAX_CUADRILLA}
+                          >
+                            {ya ? "Contratado" : "Contratar"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
@@ -238,10 +405,10 @@ function Carta({ p, onTomar }: { p: Persona; onTomar: () => void }) {
           {OFICIO_NOMBRE[p.oficio]} · {m.nombre}
         </div>
         <div className="font-hand text-sm">
-          Rinde {num(p.rinde, 2)} · aguante {p.aguante} · ojo {p.ojo}
+          Rinde {num(rindeLista(p), 2)} · aguante {p.aguante} · ojo {p.ojo}
         </div>
         <p className="font-hand text-sm text-sello">{m.bueno}</p>
-        <p className="font-hand text-sm text-rojo">{m.malo}</p>
+        <p className="font-hand text-sm text-tierra">{m.malo}</p>
         <div className="mt-1 flex items-center justify-between gap-2">
           <span className="font-display text-2xl">{peso(jornalDe(p.oficio, p.rinde))}</span>
           <button type="button" className={btnPri} onClick={onTomar}>
@@ -283,9 +450,9 @@ function Pestanas({
     ["libreta", "Libreta"],
   ];
   return (
-    <div className="mb-3 flex flex-wrap gap-2">
+    <div className="mb-1 flex flex-nowrap gap-1 overflow-x-auto">
       {items.map(([id, nombre]) => (
-        <button key={id} type="button" className={tab === id ? btnPri : btn} onClick={() => onTab(id)}>
+        <button key={id} type="button" className={(tab === id ? btnPri : btn) + " min-h-8 shrink-0 px-2 py-1 text-sm"} onClick={() => onTab(id)}>
           {nombre}
         </button>
       ))}
@@ -323,10 +490,45 @@ function ListaFilas({ s }: { s: Estado }) {
   );
 }
 
+function ordenDiario<T extends { dia: number; min: number }>(filas: T[], dia: number, min: number): T[] {
+  return filas
+    .filter((a) => a.dia < dia || (a.dia === dia && a.min <= min))
+    .sort((a, b) => a.dia - b.dia || a.min - b.min);
+}
+
 function RegistroAlmacen({ s }: { s: Estado }) {
-  const entro = s.bitacora.filter((a) => a.clase === "entro");
-  const salio = s.bitacora.filter((a) => a.clase === "salio");
-  const notas = s.bitacora.filter((a) => a.clase === "guardado" || a.clase === "mojado" || a.clase === "nota");
+  const entroBruto = ordenDiario(
+    s.bitacora.filter((a) => a.clase === "entro"),
+    s.dia,
+    s.minuto,
+  );
+  const aguaDia = new Map<number, (typeof entroBruto)[number]>();
+  const entro = entroBruto.filter((a) => {
+    const agua = a.lugar === "tanque" && a.texto.startsWith("Entró");
+    if (!agua) return true;
+    aguaDia.set(a.dia, a);
+    return false;
+  });
+  for (const a of aguaDia.values()) entro.push(a);
+  entro.sort((a, b) => a.dia - b.dia || a.min - b.min);
+  const salio = ordenDiario(
+    s.bitacora.filter((a) => a.clase === "salio"),
+    s.dia,
+    s.minuto,
+  );
+  const notasTodas = ordenDiario(
+    s.bitacora.filter((a) => a.clase === "guardado" || a.clase === "mojado" || a.clase === "nota"),
+    s.dia,
+    s.minuto,
+  );
+  const notasVistas = new Set<string>();
+  const notas = notasTodas.filter((a) => {
+    if (!a.texto.includes("Para mañana faltan") && !a.texto.includes("Para hoy faltan")) return true;
+    const k = `${a.dia}|${a.texto.slice(0, 16)}`;
+    if (notasVistas.has(k)) return false;
+    notasVistas.add(k);
+    return true;
+  });
   const entrada = (Object.keys(s.entrada) as Mat[]).filter((k) => (s.entrada[k]?.q ?? 0) > 1e-6);
   return (
     <div className="space-y-3 font-hand text-sm">
@@ -401,35 +603,54 @@ export function Paneles({
   ajustes: Ajustes;
   onAjustes: (a: Ajustes) => void;
   selloAncla?: RefObject<HTMLDivElement | null>;
-  onTocarSello?: (texto: string, x: number, y: number) => void;
+  onTocarSello?: (x: number, y: number) => void;
 }) {
   const [tab, setTab] = useState<"pre" | "dia" | "lista" | "alm" | "con" | "plano">("pre");
   const [cart, setCart] = useState<Cantidades>({});
+  const [draft, setDraft] = useState<Partial<Record<Mat, string>>>({});
   const [nota, setNota] = useState("");
+  const [notaRoja, setNotaRoja] = useState(false);
+  const ponerNota = (texto: string, roja = false) => {
+    setNota(texto);
+    setNotaRoja(roja);
+  };
   const [partidaAbierta, setPartidaAbierta] = useState<string | null>(null);
   const [pausaAjustes, setPausaAjustes] = useState(false);
+  const [pausaHoja, setPausaHoja] = useState<null | "creditos">(null);
+  const [freno, setFreno] = useState<null | { origen: "sita" | "tambien" | "tel"; urgente: boolean; total: number }>(null);
   const [angosta, setAngosta] = useState(false);
+  const [telefono, setTelefono] = useState(false);
   const [hoja, setHoja] = useState<null | "como" | "obras" | "ajustes" | "creditos" | "confirmar">(null);
-  const [freno, setFreno] = useState<null | { origen: "sita" | "tel"; urgente: boolean; despues: number; nomina: number }>(null);
+  const fondoMenu = useRef(false);
   useEffect(() => {
     setFreno(null);
+    setDraft({});
     if (s.panel === "ferreteria" && s.sita?.editando && s.sita.oferta) {
       setCart({ ...s.sita.oferta.items });
-      setNota("Sita ya lo armó. Cámbialo si quieres y mándalo.");
+      ponerNota("El guardalmacén ya lo armó. Cámbialo si quieres y mándalo.");
     } else {
       setCart({});
-      setNota("");
+      ponerNota("");
     }
-    if (s.panel !== "pausa") setPausaAjustes(false);
+    if (s.panel !== "pausa") {
+      setPausaAjustes(false);
+      setPausaHoja(null);
+    }
   }, [s.panel]);
   useEffect(() => {
-    const mq = () => setAngosta(window.innerWidth < 420);
+    const mq = () => {
+      setAngosta(window.innerWidth < 420);
+      setTelefono(window.innerWidth < 900 || window.matchMedia("(pointer: coarse)").matches);
+    };
     mq();
     window.addEventListener("resize", mq);
     return () => window.removeEventListener("resize", mq);
   }, []);
 
-  const cerrar = () => act((st) => cerrarPanel(st));
+  const cerrar = () => {
+    notarCierreHoja();
+    act((st) => cerrarPanel(st));
+  };
   const ir = (t: OficinaTab) =>
     act((st) => {
       st.oficinaTab = t;
@@ -509,7 +730,7 @@ export function Paneles({
                   {o.nombre}
                 </li>
               ) : (
-                <li key={o.id} className="flex min-h-11 items-center gap-2 border-2 border-tinta/30 px-3 py-2 font-hand text-[#8a8175]">
+                <li key={o.id} className="flex min-h-11 items-center gap-2 border-2 border-tinta/30 px-3 py-2 font-hand text-[#5f564b]">
                   <Candado />
                   {o.nombre}
                 </li>
@@ -547,37 +768,38 @@ export function Paneles({
         </HojaMenu>
       );
     }
-    if (hoja === "creditos") {
-      return (
-        <HojaMenu onVolver={() => setHoja(null)}>
-          <h2 className="font-display text-4xl leading-none sm:text-5xl">Obra Maestra</h2>
-          <p className="mt-3 font-hand text-lg leading-snug text-pretty sm:text-xl">
-            Obra Maestra. Un proyecto del ingeniero y maestro constructor Diego Ángeles, con la ayuda de Grok. Agradecimientos a Elon Musk.
-          </p>
-        </HojaMenu>
-      );
-    }
+    if (hoja === "creditos") return <Creditos onVolver={() => setHoja(null)} />;
     return (
       <div
-        className="fixed inset-0 z-30 flex items-center justify-center bg-fondo/40 p-4"
+        className="fixed inset-0 z-30 flex items-center justify-center bg-fondo/80 p-4"
         onPointerDown={(e) => {
-          if (e.target === e.currentTarget) cerrar();
+          fondoMenu.current = e.target === e.currentTarget;
+        }}
+        onPointerUp={(e) => {
+          if (fondoMenu.current && e.target === e.currentTarget) cerrar();
+          fondoMenu.current = false;
         }}
       >
         <section className="papel-grano w-full max-w-sm border-2 border-tinta px-4 py-4 text-center text-tinta shadow-[6px_8px_0_#1d1712]">
-          <svg viewBox="0 0 220 120" className="mx-auto h-24 w-48" aria-hidden="true">
-            <path d="M30 78 L18 52 L110 18 L200 58 L168 86 Z" fill="#d9c9a6" stroke="#1d1712" strokeWidth="2" />
-            <path d="M16 54 L108 12 L206 58 L112 28 Z" fill="#8d5a3c" stroke="#1d1712" strokeWidth="2" />
-            <path d="M92 86 L92 62 L128 62 L128 86 Z" fill="#c4b49a" stroke="#1d1712" strokeWidth="2" />
+          <svg viewBox="0 0 240 150" className="mx-auto h-36 w-full" aria-hidden="true">
+            <path className="trazo-casa" d="M36 112 L22 78 L120 28 L214 82 L196 116 Z" />
+            <path className="trazo-casa" d="M18 80 L118 22 L222 86" />
+            <path className="trazo-casa" d="M118 22 L120 28" />
+            <path className="trazo-casa" d="M96 116 L96 82 L132 82 L132 116" />
+            <path className="trazo-casa" d="M156 74 L176 78 L174 96 L154 92 Z" />
+            <path className="trazo-casa" d="M28 104 L208 108" />
+            <path className="trazo-casa" d="M124 96 L124 112" />
           </svg>
-          <h2 className="-mt-6 font-display text-5xl leading-none text-tinta">Obra Maestra</h2>
+          <h2 className="-mt-4 font-display text-5xl leading-none text-tinta sm:text-6xl">Obra Maestra</h2>
           <AvisoRoto s={s} />
-          <div className="mt-4 flex flex-col gap-2">
-            <button type="button" className={seguir ? btnPri : btnGris} disabled={!seguir} onClick={onContinuar}>
-              Continuar
-            </button>
+          <div className="menu-luego mt-4 flex flex-col gap-2">
+            {seguir ? (
+              <button type="button" className={btnPri} onClick={onContinuar}>
+                Continuar
+              </button>
+            ) : null}
             <button type="button" className={btnPri} onClick={quiereNueva}>
-              Obra nueva
+              Jugar
             </button>
             <button type="button" className={btn} onClick={() => setHoja("como")}>
               Cómo se juega
@@ -591,23 +813,47 @@ export function Paneles({
             <button type="button" className={btn} onClick={() => setHoja("creditos")}>
               Créditos
             </button>
+            <p className="mt-1 font-hand text-sm text-[#5f564b]">Próximamente: jugar como ingeniero.</p>
           </div>
-          <p className="mt-3 font-hand text-sm text-[#8a8175]">Próximamente · Jugar como Ingeniero · Bloqueado</p>
         </section>
       </div>
     );
   }
 
   if (s.panel === "contrato") {
+    const pedido = s.precio > 0 ? s.precio : CONTRATO;
+    const dicho = s.regateo;
     return (
-      <div className="fixed inset-0 z-30 flex items-center justify-center bg-fondo/40 p-4">
-        <section className="papel-grano w-full max-w-sm border-2 border-tinta px-5 py-4 text-tinta shadow-[6px_8px_0_#1d1712]">
-          <p className="truncate font-hand text-2xl leading-tight">Caseta de block 3x4</p>
-          <p className="truncate font-display text-5xl leading-none">{peso(CONTRATO)}</p>
-          <p className="truncate font-hand text-2xl leading-tight">Lo que no gastes es tuyo</p>
+      <div className="pointer-events-none fixed inset-0 z-30">
+        <section
+          className="pointer-events-auto papel-grano absolute max-h-[70%] overflow-y-auto border-2 border-tinta px-4 py-3 text-tinta shadow-[6px_8px_0_#1d1712] inset-x-3 bottom-3 min-[900px]:inset-x-auto min-[900px]:right-4 min-[900px]:bottom-4 min-[900px]:w-[22rem]"
+          style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+        >
+          <p className="font-hand text-lg leading-tight">Oficina · Doña Carmen, la dueña</p>
+          <p className="mt-2 font-hand text-xl leading-tight">Caseta de block 3x4</p>
+          <p className="font-display text-4xl leading-none">{peso(pedido)}</p>
+          <p className="font-hand text-lg leading-tight">Lo que no gastes es tuyo</p>
           <AvisoRoto s={s} />
+          {dicho ? (
+            <p className="mt-3 font-hand text-tinta">
+              {pedido === 295000
+                ? "Así no. Ya me cotizaron otro maestro en P$295,000. Si la quieres, es a ese precio."
+                : `Está bien. Queda en ${peso(pedido)}.`}
+            </p>
+          ) : (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {[305, 310, 315, 320, 325].map((mil) => (
+                <button key={mil} type="button" className={btn} onClick={() => act((st) => void regatear(st, mil * 1000))}>
+                  Pedir {mil} mil
+                </button>
+              ))}
+            </div>
+          )}
           <button type="button" className={`${btnPri} mt-4 w-full`} onClick={() => act((st) => firmar(st))}>
             Firmar
+          </button>
+          <button type="button" className={`${btn} mt-2 w-full`} onClick={cerrar}>
+            Lo pienso y vuelvo
           </button>
         </section>
       </div>
@@ -617,15 +863,12 @@ export function Paneles({
   if (s.panel === "oficina" && s.oficinaTab === "gente") {
     const cupo = s.gente.length + s.reserva.length;
     return (
-      <Marco titulo="Oficina" onCerrar={cerrar}>
+      <Marco titulo={`Contratar · ${cupo} de ${MAX_CUADRILLA}`} onCerrar={cerrar} hoja alto={ALTO_OFICINA}>
         <Pestanas tab="gente" onTab={ir} />
-        <p className="mb-2 font-hand">
-          {LISTERO.nombre} {LISTERO.apellido}, listero · {GUARDALMACEN.nombre} {GUARDALMACEN.apellido}, guardalmacén. Los cubre la
-          dirección.
+        <p className="mb-2 font-hand text-base leading-snug">
+          Para esta caseta alcanzan 4 o 5. Más gente gasta la caja antes del próximo cobro.
         </p>
-        <Cascos usados={cupo} />
-        <p className="mb-3 font-hand">Antes de las 9:00 entran hoy. Se contrata por cuadrilla, hasta 8.</p>
-        <Grupos
+        <TablaContratar
           s={s}
           onTomar={(id) =>
             act((st) => {
@@ -639,7 +882,7 @@ export function Paneles({
 
   if (s.panel === "oficina" && s.oficinaTab === "planos") {
     return (
-      <Marco titulo="Planos" onCerrar={cerrar} hoja>
+      <Marco titulo="Planos" onCerrar={cerrar} hoja alto={ALTO_OFICINA}>
         <Pestanas tab="planos" onTab={ir} />
         <ol className="space-y-2">
           {ETAPAS.map((e, i) => {
@@ -662,13 +905,13 @@ export function Paneles({
 
   if (s.panel === "oficina" && s.oficinaTab === "telefono") {
     return (
-      <Marco titulo="Teléfono" onCerrar={cerrar}>
+      <Marco titulo="Teléfono" onCerrar={cerrar} alto={ALTO_OFICINA}>
         <Pestanas tab="telefono" onTab={ir} />
         <p className="font-hand">Doña Carmen paga el contrato. El material se compra en la ferretería, con precio y entrega.</p>
-        <p className="mt-2 font-hand">Sita Ferreras guarda el almacén. Su lista no se arma sola.</p>
+        <p className="mt-2 font-hand">El guardalmacén lleva el almacén. Su nota se arma con lo que falta.</p>
         <div className="mt-3 flex flex-wrap gap-2">
           <button type="button" className={btnPri} onClick={() => act((st) => hablarSita(st))}>
-            Hablar con Sita
+            Hablar con el guardalmacén
           </button>
           {puedeAdelantar(s) ? (
             <button type="button" className={btn} onClick={() => act((st) => decir(st, adelantar(st)))}>
@@ -682,7 +925,7 @@ export function Paneles({
 
   if (s.panel === "oficina" && s.oficinaTab === "diario") {
     return (
-      <Marco titulo="Diario" onCerrar={cerrar} hoja>
+      <Marco titulo="Diario" onCerrar={cerrar} hoja alto={ALTO_OFICINA}>
         <Pestanas tab="diario" onTab={ir} />
         <p className="mb-2 font-hand">{NOTA_ESCUADRA}</p>
         <ul className="max-h-[50vh] space-y-1 overflow-y-auto font-hand text-sm">
@@ -699,7 +942,7 @@ export function Paneles({
   if (s.panel === "oficina" && s.oficinaTab === "libreta") {
     const lib = libreta(s);
     return (
-      <Marco titulo="Libreta · Nico" onCerrar={cerrar} hoja>
+      <Marco titulo="Libreta · Nico" onCerrar={cerrar} hoja alto={ALTO_OFICINA}>
         <Pestanas tab="libreta" onTab={ir} />
         <ListaFilas s={s} />
         <div className="mt-4">
@@ -727,11 +970,11 @@ export function Paneles({
       ...s.reserva.map((g) => ({ g, manana: true })),
     ];
     return (
-      <Marco titulo="Cuadrilla" onCerrar={cerrar}>
+      <Marco titulo="Cuadrilla" onCerrar={cerrar} alto={ALTO_OFICINA}>
         {lista.length === 0 ? <p className="font-hand">Nadie contratado. Contrata en la oficina.</p> : null}
         <ul className="flex flex-col gap-3">
           {lista.map(({ g, manana }) => (
-            <li key={g.id} className="border-2 border-tinta p-2">
+            <li key={g.id} className="min-h-[9.5rem] border-2 border-tinta p-2">
               <div className="flex flex-wrap items-center gap-2">
                 <Retrato oficio={g.oficio} letra={g.nombre.slice(0, 1)} />
                 <div className="min-w-0 flex-1">
@@ -741,7 +984,7 @@ export function Paneles({
                     {g.falto ? " · no vino" : ""}
                     {g.fuera ? " · ya se fue" : ""}
                   </div>
-                  {lineaFicha(s, g) ? <div className="font-hand text-sm">{lineaFicha(s, g)}</div> : null}
+                  <div className="min-h-5 font-hand text-sm">{lineaFicha(s, g) ?? "\u00a0"}</div>
                   <div className="font-hand text-sm text-tierra">
                     Cansancio {Math.round(g.cansancio)} · jornal {peso(jornalDe(g.oficio, g.rinde))} · {MANIA_INFO[g.mania].nombre}
                   </div>
@@ -783,15 +1026,46 @@ export function Paneles({
     );
   }
 
-  if (freno && (s.panel === "sita" || s.panel === "ferreteria")) {
+  if (s.panel === "despacho") {
+    const n = nominaPendiente(s);
     return (
-      <Marco titulo="Antes de pedir" ancho="max-w-md" onCerrar={() => setFreno(null)}>
+      <Marco titulo="Despachar" ancho="max-w-md">
         <p className="font-hand text-lg">
-          Caja libre después: {peso(freno.despues)}. Nómina de hoy: {peso(freno.nomina)}.
+          Son las {horaDe(s.minuto)}. Si los despachas, el día se paga completo ({peso(n)}). ¿Despachar?
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
-          <button type="button" className={btnPri} onClick={() => confirmarFreno()}>
-            Confirmar
+          <button type="button" className={btnPri} onClick={() => act((st) => confirmarDespacho(st))}>
+            Despachar
+          </button>
+          <button type="button" className={btn} onClick={() => act((st) => seguirJornada(st))}>
+            Seguir
+          </button>
+        </div>
+      </Marco>
+    );
+  }
+
+  if (freno && (s.panel === "sita" || s.panel === "ferreteria")) {
+    const cuenta = cuentaPedido(s, freno.total);
+    return (
+      <Marco titulo="Antes de pedir" ancho="max-w-md" onCerrar={() => setFreno(null)}>
+        <ul className="space-y-1 font-hand text-lg">
+          <li>Caja {peso(cuenta.caja)}</li>
+          <li>− pedido {peso(cuenta.pedido)}</li>
+          <li>
+            − nómina de hoy {peso(cuenta.nomina)} (jornales {peso(cuenta.jornales)}, herramienta {peso(cuenta.herramienta)}, Dirección{" "}
+            {peso(cuenta.direccion)})
+          </li>
+          {cuenta.usaAdelanto ? <li>+ adelanto {peso(cuenta.adelanto)}</li> : null}
+          <li>= libre {peso(cuenta.libre)}</li>
+        </ul>
+        {cuenta.usaAdelanto ? (
+          <p className="mt-2 font-hand">Usa el adelanto de Doña Carmen: {peso(cuenta.adelanto)}. Hoy no habrá otro.</p>
+        ) : null}
+        {!cuenta.alcanza ? <p className="mt-2 font-hand">No alcanza para la nómina de hoy.</p> : null}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button type="button" className={btnPri} disabled={!cuenta.alcanza} onClick={() => confirmarFreno()}>
+            {cuenta.alcanza ? "Confirmar" : "No alcanza para la nómina de hoy"}
           </button>
           <button type="button" className={btn} onClick={() => setFreno(null)}>
             Cancelar
@@ -804,8 +1078,8 @@ export function Paneles({
   if (s.panel === "sita" && s.sita?.oferta) {
     const of = s.sita.oferta;
     return (
-      <Marco titulo="Hablar con Sita" ancho="max-w-md" onCerrar={cerrar}>
-        <p className="font-hand text-lg">{of.texto}</p>
+      <Marco titulo="Guardalmacén" ancho="max-w-md" onCerrar={cerrar}>
+        <p className="font-hand text-lg whitespace-pre-line">{of.texto}</p>
         <div className="mt-3 flex flex-wrap gap-2">
           <button
             type="button"
@@ -813,16 +1087,26 @@ export function Paneles({
             onClick={() => {
               const of = s.sita?.oferta;
               if (!of) return;
-              const aviso = avisarNomina(of.total);
-              if (aviso) {
-                setFreno({ origen: "sita", urgente: of.urgente, ...aviso });
-                return;
-              }
-              act((st) => decir(st, aceptarSita(st)));
+              setFreno({ origen: "sita", urgente: of.urgente, total: of.total });
             }}
           >
             Pedir
           </button>
+          {of.siguiente && Object.values(of.siguiente).some((n) => (n ?? 0) > 0) ? (
+            <button
+              type="button"
+              className={btn}
+              onClick={() => {
+                const matsSig = Object.entries(of.siguiente ?? {}).reduce(
+                  (a, [k, n]) => a + (n ?? 0) * MATERIALES[k as Mat].precio,
+                  0,
+                );
+                setFreno({ origen: "tambien", urgente: of.urgente, total: matsSig + (of.urgente ? FLETE_URGENTE : FLETE) });
+              }}
+            >
+              Pedir también
+            </button>
+          ) : null}
           <button type="button" className={btn} onClick={() => act((st) => rechazarSita(st))}>
             Ahora no
           </button>
@@ -838,8 +1122,8 @@ export function Paneles({
 
   if (s.panel === "sita") {
     return (
-      <Marco titulo="Hablar con Sita" ancho="max-w-md" onCerrar={cerrar}>
-        <p className="font-hand text-lg">Por ahora no falta nada.</p>
+      <Marco titulo="Guardalmacén" ancho="max-w-md" onCerrar={cerrar}>
+        <p className="font-hand text-lg">Ya está todo en el almacén o en camino.</p>
         <h3 className="mt-4 font-display text-2xl">En obra</h3>
         <RegistroAlmacen s={s} />
       </Marco>
@@ -849,12 +1133,11 @@ export function Paneles({
   if (s.panel === "ferreteria") {
     let mats = 0;
     for (const k of COMPRA) mats += (cart[k] ?? 0) * MATERIALES[k].precio;
-    const libre = cajaLibre(s);
     const urgenteOk = s.minuto < 12 * 60;
     return (
       <Marco titulo="Ferretería El Cruce" onCerrar={cerrar}>
         <p className="font-hand text-sm">
-          Caja libre {peso(libre)} (sin la nómina). Flete normal {peso(FLETE)}, entrega mañana 7:30. Urgente {peso(FLETE_URGENTE)}, solo
+          {textoCajaLibre(s)}. Flete normal {peso(FLETE)}, entrega {textoLlegada(s, false).replace(/^llega /, "")}. Urgente {peso(FLETE_URGENTE)}, solo
           antes de las 12, llega en 3 horas.
         </p>
         {s.pedidos.length > 0 ? (
@@ -887,12 +1170,15 @@ export function Paneles({
                     <td className="whitespace-nowrap pr-1">{peso(def.precio)}</td>
                     <td>
                       <span className="inline-flex items-center gap-1">
-                        <button type="button" className={btn + " px-2"} onClick={() => subir(k, -1)}>
-                          −
-                        </button>
-                        <span className="inline-block w-8 text-center">{num(cart[k] ?? 0, 2)}</span>
-                        <button type="button" className={btn + " px-2"} onClick={() => subir(k, 1)}>
-                          +
+                        <input
+                          aria-label={`Cantidad de ${def.nombre}`}
+                          inputMode="decimal"
+                          className="w-20 border border-tinta bg-papel px-1 py-1 text-right font-hand text-tinta"
+                          value={textoCant(k)}
+                          onChange={(e) => fijar(k, e.target.value)}
+                        />
+                        <button type="button" className={btn + " px-2"} aria-label={`Quitar ${def.nombre}`} onClick={() => fijar(k, "")}>
+                          X
                         </button>
                       </span>
                     </td>
@@ -905,7 +1191,7 @@ export function Paneles({
         <p className="mt-3 font-display text-3xl">
           Material {peso(mats)} · con flete {peso(mats + FLETE)}
         </p>
-        {nota ? <p className="font-hand text-rojo">{nota}</p> : null}
+        {nota ? <p className={"font-hand " + (notaRoja ? "text-rojo" : "text-tinta")}>{nota}</p> : null}
         <div className="mt-2 flex flex-wrap gap-2">
           <button
             type="button"
@@ -917,9 +1203,10 @@ export function Paneles({
                 q = loQueFalta(st);
               });
               setCart(q);
-              setNota(
+              setDraft({});
+              ponerNota(
                 Object.keys(q).length
-                  ? "Pedido lleno con lo que falta. Revísalo y mándalo."
+                  ? "Pedido lleno con lo que falta de esta etapa. La siguiente, si la hay, va aparte."
                   : "Por ahora no falta nada.",
               );
             }}
@@ -937,30 +1224,50 @@ export function Paneles({
     );
   }
 
-  function subir(k: Mat, dir: number) {
-    const paso = MATERIALES[k].paso;
+  function textoCant(k: Mat): string {
+    if (draft[k] !== undefined) return draft[k]!;
+    const n = cart[k];
+    return n ? String(n) : "";
+  }
+
+  function fijar(k: Mat, raw: string) {
+    const t = raw.replace(",", ".");
+    setDraft((d) => ({ ...d, [k]: t }));
+    if (t === "" || t === ".") {
+      setCart((c) => {
+        const next = { ...c };
+        delete next[k];
+        return next;
+      });
+      return;
+    }
+    if (!/^\d*\.?\d*$/.test(t)) return;
+    const n = Number(t);
+    if (!Number.isFinite(n) || n < 0) return;
     setCart((c) => {
-      const q = Math.max(0, Math.round(((c[k] ?? 0) + dir * paso) * 1000) / 1000);
       const next = { ...c };
-      if (q <= 0) delete next[k];
-      else next[k] = q;
+      if (n <= 0) delete next[k];
+      else next[k] = Math.round(n * 1000) / 1000;
       return next;
     });
   }
 
-  function avisarNomina(total: number): { despues: number; nomina: number } | null {
-    const nomina = nominaPendiente(s);
-    const despues = libreTrasPedido(s, total);
-    if (despues < -0.5) return null;
-    if (despues + 0.5 >= nomina) return null;
-    return { despues, nomina };
-  }
-
   function confirmarFreno() {
     const f = freno;
-    setFreno(null);
     if (!f) return;
-    if (f.origen === "sita") act((st) => decir(st, aceptarSita(st)));
+    const cuenta = cuentaPedido(s, f.total);
+    if (!cuenta.alcanza) return;
+    setFreno(null);
+    if (cuenta.usaAdelanto) {
+      let malo: string | null = null;
+      act((st) => {
+        malo = adelantar(st, f.total);
+        if (malo) decir(st, malo);
+      });
+      if (malo) return;
+    }
+    if (f.origen === "tambien") act((st) => decir(st, pedirTambien(st)));
+    else if (f.origen === "sita") act((st) => decir(st, aceptarSita(st)));
     else mandar(f.urgente, true);
   }
 
@@ -968,22 +1275,29 @@ export function Paneles({
     let matsAhora = 0;
     for (const k of COMPRA) matsAhora += (cart[k] ?? 0) * MATERIALES[k].precio;
     const total = matsAhora > 0 ? matsAhora + (urgente ? FLETE_URGENTE : FLETE) : 0;
-    if (!forzado && total > 0) {
-      const aviso = avisarNomina(total);
-      if (aviso) {
-        setFreno({ origen: "tel", urgente, ...aviso });
+    if (!forzado) {
+      if (total <= 0) {
+        ponerNota("No hay nada que pedir.", true);
         return;
       }
+      setFreno({ origen: "tel", urgente, total });
+      return;
     }
     let err: string | null = null;
+    const conBlock = (cart.block ?? 0) > 0;
     act((st) => {
       err = pedir(st, cart, urgente);
       decir(st, err);
     });
     if (!err) {
       setCart({});
-      setNota(urgente ? "El camión salió. Llega en 3 horas." : "Pedido hecho. Llega mañana a las 7:30.");
-    } else setNota(err);
+      setDraft({});
+      const cuando = textoLlegada(s, urgente);
+      if (urgente && cuando.startsWith("llega a las")) ponerNota("El camión salió. Llega en 3 horas.");
+      else if (!urgente && cuando === "llega mañana 7:30" && conBlock)
+        ponerNota("Llega mañana 7:30. El block empieza cuando llegue.");
+      else ponerNota(`Pedido hecho. ${cuando.charAt(0).toUpperCase()}${cuando.slice(1)}.`);
+    } else ponerNota(err, true);
   }
 
   if (s.panel === "libreta" || s.panel === "almacen") {
@@ -991,7 +1305,7 @@ export function Paneles({
     const alm = s.panel === "almacen" ? almacen(s) : lib.almacen;
     const pestana = s.panel === "almacen" ? "alm" : tab;
     return (
-      <Marco titulo={s.panel === "almacen" ? "Almacén" : "Libreta"} onCerrar={cerrar} hoja>
+      <Marco titulo={s.panel === "almacen" ? "Almacén" : "Libreta"} onCerrar={cerrar} hoja alto={ALTO_OFICINA}>
         {s.panel === "libreta" ? (
           <div className="mb-3 flex flex-wrap gap-1">
             {(
@@ -1080,38 +1394,40 @@ export function Paneles({
 
   if (s.panel === "sello" && s.sello) {
     const ok = s.sello.ok;
-    const def = ETAPAS[s.sello.etapa];
-    const neto = ok && def ? Math.max(0, Math.round(CONTRATO * def.tramo) - s.adelanto) : 0;
-    const monto = neto > 0 ? `+${peso(neto)}` : "";
+    const etapa = s.sello.etapa;
+    const cobra = (ETAPAS[etapa]?.tramo ?? 0) > 0;
+    let proximo = "";
+    if (!cobra) {
+      for (let i = etapa + 1; i < ETAPAS.length; i++) {
+        if ((ETAPAS[i]?.tramo ?? 0) > 0) {
+          proximo = ETAPAS[i]!.nombre;
+          break;
+        }
+      }
+    }
+    const linea = cobra
+      ? "Esta etapa cobra tramo"
+      : proximo
+        ? `Esta etapa no cobra; el próximo cobro es al aprobar ${proximo}`
+        : "Esta etapa no cobra";
     return (
-      <div ref={selloAncla} className="pointer-events-none fixed z-40" style={{ left: "50%", top: "46%" }}>
-        <div className="absolute -translate-x-1/2 -translate-y-[58%]">
-          <button
-            type="button"
-            aria-label={ok ? "Tocar el sello" : "Tocar la observación"}
-            className={
-              "sello-caer pointer-events-auto papel-grano max-w-md cursor-pointer border-8 px-6 py-5 text-center shadow-[8px_10px_0_#1d1712] " +
-              (ok ? "border-sello text-sello" : "border-rojo text-rojo")
-            }
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              if (monto) onTocarSello?.(monto, r.left + r.width / 2, r.top + r.height * 0.72);
-              act((st) => continuarSello(st));
-            }}
-          >
-            <div className="font-hand text-sm tracking-widest text-tinta">JUNTA DE VECINOS</div>
-            <div className="font-display text-6xl leading-none sm:text-7xl">{ok ? "APROBADO" : "OBSERVADO"}</div>
-            <p className="mt-2 font-hand text-xl text-tinta">{s.sello.nombre}</p>
-            {!ok ? <p className="font-hand text-tinta">{s.sello.motivo}</p> : null}
-            {monto ? <p className="font-display text-4xl text-oro">{monto}</p> : null}
-            {monto ? (
-              <p className="mt-1 flex justify-center gap-1" aria-hidden="true">
-                {[0, 1, 2, 3].map((i) => (
-                  <span key={i} className="inline-block h-3 w-3 rounded-full border border-tinta bg-oro" />
-                ))}
-              </p>
-            ) : null}
-          </button>
+      <div className="fixed inset-0 z-40" onPointerUp={(e) => onTocarSello?.(e.clientX, e.clientY)}>
+        <div ref={selloAncla} className="pointer-events-none absolute" style={{ left: "50%", top: "46%" }}>
+          <div className="absolute -translate-x-1/2 -translate-y-[58%]">
+            <div
+              className={
+                "sello-caer papel-grano max-w-md border-8 px-6 py-5 text-center shadow-[8px_10px_0_#1d1712] " +
+                (ok ? "border-sello text-sello" : "border-rojo text-rojo")
+              }
+            >
+              <div className="font-hand text-sm tracking-widest text-tinta">JUNTA DE VECINOS</div>
+              <div className="font-display text-6xl leading-none sm:text-7xl">{ok ? "APROBADO" : "OBSERVADO"}</div>
+              <p className="mt-2 font-hand text-xl text-tinta">{s.sello.nombre}</p>
+              <p className="font-hand text-tinta">{s.sello.motivo}</p>
+              <p className="mt-3 font-hand text-lg text-tinta">{linea}</p>
+              <p className="mt-3 font-hand text-base text-tinta">Toca para seguir</p>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -1119,15 +1435,16 @@ export function Paneles({
 
   if (s.panel === "finde") {
     const domingo = esDomingo(s.dia + 1);
-    const pagada = s.gente.reduce((a, g) => a + g.moHoy, 0);
+    const pagada = s.nominaHoy > 0 ? s.nominaHoy : s.gente.reduce((a, g) => a + (g.activo && !g.falto ? jornalDe(g.oficio, g.rinde) : 0), 0);
+    const herr = Math.round(s.herrHoy ?? 0);
+    const direccion = s.direccionCobrada && !esDomingo(s.dia) ? DIRECCION_DIA : 0;
     return (
       <Marco titulo="Fin del día" ancho="max-w-lg">
         <p className="font-display text-4xl">{peso(s.caja)}</p>
-        <p className="font-hand">Nómina pagada {peso(pagada)}</p>
-        {Math.round(s.herrHoy ?? 0) >= 1 ? <p className="font-hand">Herramienta {peso(s.herrHoy)}</p> : null}
-        {s.direccionCobrada && !esDomingo(s.dia) ? (
-          <p className="font-hand">Dirección (tu jornal) {peso(DIRECCION_DIA)}</p>
-        ) : null}
+        <p className="font-hand">Nómina {peso(pagada)}</p>
+        <p className="font-hand">Herramienta {peso(herr)}</p>
+        {direccion > 0 ? <p className="font-hand">Dirección {peso(direccion)}</p> : null}
+        <p className="font-hand">Total {peso(pagada + herr + direccion)}</p>
         {Math.round(s.mezclaTarde ?? 0) >= 1 ? (
           <p className="font-hand">Mezcla vencida después de las 3: {peso(s.mezclaTarde)}</p>
         ) : null}
@@ -1149,6 +1466,11 @@ export function Paneles({
             </li>
           ))}
         </ul>
+        {s.lluvias.some((r) => r.dia === s.dia) ? (
+          <p className="mt-2 font-hand text-sm">
+            Día de lluvia: se fueron a las {horaDe(s.salidaMin >= 0 ? s.salidaMin : s.minuto)} y el jornal se paga completo
+          </p>
+        ) : null}
         {s.faltanManana.length > 0 ? (
           <>
             <h3 className="mt-2 font-display text-2xl">Quién falta mañana</h3>
@@ -1158,7 +1480,7 @@ export function Paneles({
               ))}
             </ul>
           </>
-        ) : (
+        ) : esSabado(s.dia) || domingo ? null : (
           <p className="mt-2 font-hand text-sm">Mañana viene la cuadrilla, si hay con qué pagarles.</p>
         )}
         <p className="mt-2 font-hand text-sm">{pronosticoDia(s, 0)}</p>
@@ -1173,6 +1495,53 @@ export function Paneles({
   if (s.panel === "informe" || s.panel === "perdida") {
     const inf = informe(s);
     const perdida = s.panel === "perdida";
+    const muerto = inf.filas.find((f) => f.partida === "muerto");
+    const notaIng =
+      [...s.etapas].reverse().find((e) => e.motivo)?.motivo ||
+      (s.desplomes > 0 ? "La ingeniera observó un desplome." : "Ta' derecho. La caseta quedó en pie.");
+    if (!perdida) {
+      return (
+        <div className="fixed inset-0 z-30 flex items-end justify-center bg-[#c47a2a]/25 p-2 sm:items-center sm:p-6">
+          <section className="marco-obra papel-grano max-h-[94dvh] w-full max-w-lg overflow-y-auto border-2 border-tinta p-4 text-tinta shadow-[6px_8px_0_#1d1712]">
+            <svg viewBox="0 0 360 200" className="mx-auto w-full" aria-hidden="true">
+              <rect width="360" height="200" fill="#e7c48a" />
+              <path d="M40 150 L28 108 L150 48 L250 108 L236 150 Z" fill="#d9c9a6" stroke="#1d1712" strokeWidth="2" />
+              <path d="M24 110 L148 42 L256 112" fill="none" stroke="#8d5a3c" strokeWidth="6" />
+              <path d="M24 110 L148 42 L256 112" fill="none" stroke="#1d1712" strokeWidth="1.4" />
+              <path d="M118 150 L118 112 L156 112 L156 150 Z" fill="#3d342a" stroke="#1d1712" strokeWidth="1.6" />
+              <path d="M176 96 L198 100 L196 122 L174 118 Z" fill="#8fb3ad" stroke="#1d1712" strokeWidth="1.4" />
+              <path d="M36 140 L244 144" stroke="#b8432f" strokeWidth="3" />
+              <circle cx="292" cy="132" r="16" fill="#e6c2a4" stroke="#1d1712" strokeWidth="1.4" />
+              <path d="M276 168 C274 146 280 138 292 136 C308 138 314 148 312 168 Z" fill="#3d342a" stroke="#1d1712" strokeWidth="1.4" />
+              <path d="M278 128 C278 116 286 110 292 110 C304 112 308 120 306 128 Z" fill="#1d1712" />
+              <rect x="318" y="148" width="16" height="6" rx="1" fill="#d4a73c" stroke="#1d1712" strokeWidth="1" />
+              <circle cx="332" cy="151" r="2" fill="#1d1712" />
+              <path d="M250 78 H338 V108 H250 Z" fill="#e8dcc2" stroke="#1d1712" strokeWidth="1.4" />
+              <text x="294" y="98" textAnchor="middle" fontFamily="Patrick Hand, cursive" fontSize="16" fill="#1d1712">
+                Quedó bonita, maestro
+              </text>
+            </svg>
+            <h2 className="font-display text-4xl leading-none">Entrega</h2>
+            <ul className="mt-2 space-y-1 font-hand text-base">
+              <li>Días {inf.dias}</li>
+              <li>Costo total {peso(inf.costo)}</li>
+              <li>{inf.ganancia >= 0 ? `Ganancia ${peso(inf.ganancia)}` : `Pérdida ${peso(inf.ganancia)}`}</li>
+              <li>Tiempo muerto {peso(muerto?.real ?? 0)}</li>
+              <li>Desplomes {s.desplomes}</li>
+              <li>Ingeniera: {notaIng}</li>
+            </ul>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button type="button" className={btnPri} onClick={() => act((st) => abrirPanel(st, "libreta"))}>
+                Ver Libreta
+              </button>
+              <button type="button" className={btn} onClick={quiereNueva}>
+                Otra obra
+              </button>
+            </div>
+          </section>
+        </div>
+      );
+    }
     const pct = inf.presupuesto > 0 ? (inf.costo / inf.presupuesto - 1) * 100 : 0;
     return (
       <Marco titulo={perdida ? "Obra perdida" : "Informe final"} ancho="max-w-3xl">
@@ -1247,6 +1616,8 @@ export function Paneles({
     );
   }
 
+  if (s.panel === "pausa" && pausaHoja === "creditos") return <Creditos onVolver={() => setPausaHoja(null)} />;
+
   if (s.panel === "pausa") {
     const tog = (on: boolean) =>
       on ? "min-h-11 border-2 border-tinta bg-tinta px-4 font-hand text-papel" : "min-h-11 border-2 border-tinta bg-papel-2 px-4 font-hand text-tinta";
@@ -1263,7 +1634,9 @@ export function Paneles({
           </button>
         </div>
         <p className="mt-2 font-hand leading-snug">
-          Golpe al compás: pulsa Espacio (o ¡Dale!) cuando el anillo brilla dorado y rinde 25 % más.
+          {telefono
+            ? "Golpe al compás: pulsa ¡Dale! cuando el anillo brilla dorado y rinde 25 % más."
+            : "Golpe al compás: pulsa Espacio (o ¡Dale!) cuando el anillo brilla dorado y rinde 25 % más."}
         </p>
         <div className="mt-3 flex flex-col gap-2">
           <button type="button" className={btnPri} onClick={cerrar}>
@@ -1271,6 +1644,9 @@ export function Paneles({
           </button>
           <button type="button" className={btn} onClick={() => setPausaAjustes((v) => !v)}>
             Ajustes
+          </button>
+          <button type="button" className={btn} onClick={() => setPausaHoja("creditos")}>
+            Créditos
           </button>
           {pausaAjustes ? (
             <div className="border-2 border-tinta bg-papel-2 p-3">
@@ -1352,7 +1728,7 @@ function Plata({
       <p className="mt-1 flex justify-between gap-2 font-hand text-xs">
         <span>{cifraCorta(lib.costo, angosta)}</span>
         <span>{cifraCorta(lib.porHacer, angosta)}</span>
-        <span className="text-oro">{cifraCorta(lib.ganancia, angosta)}</span>
+        <span className="text-tinta">{cifraCorta(lib.ganancia, angosta)}</span>
       </p>
       <ul className="mt-2">
         {lib.filas.map((f) => {
@@ -1366,7 +1742,7 @@ function Plata({
           return (
             <li key={f.partida} className="border-b border-tinta/15 py-1">
               <button type="button" className="flex w-full min-w-0 items-center gap-2 text-left font-hand text-sm" onClick={() => onAbre(abierto ? null : f.partida)}>
-                <span className="w-16 shrink-0 truncate sm:w-24">{f.nombre}</span>
+                <span className={"w-16 shrink-0 sm:w-24 " + (angosta ? "whitespace-normal text-sm" : "truncate")}>{f.nombre}</span>
                 <span className="relative h-3 min-w-0 flex-1">
                   <span className="absolute top-0 h-3 border border-tinta" style={{ width: `${Math.max(hueco, tinta)}%` }} />
                   {muerto ? (
@@ -1378,7 +1754,7 @@ function Plata({
                     <span className="absolute top-0 h-3 bg-rojo/50" style={{ left: `${hueco}%`, width: `${paso}%`, backgroundImage: "repeating-linear-gradient(135deg,#b8432f 0 2px,transparent 2px 4px)" }} />
                   ) : null}
                 </span>
-                <span className="max-w-[46%] shrink-0 truncate text-right text-xs whitespace-nowrap">{txt}</span>
+                <span className="max-w-[46%] shrink-0 text-right text-sm whitespace-normal">{txt}</span>
               </button>
               {abierto && !muerto ? (
                 <p className="font-hand text-xs text-tierra">
@@ -1386,7 +1762,9 @@ function Plata({
                 </p>
               ) : null}
               {abierto && muerto ? (
-                <ul className="mt-1 space-y-1 font-hand text-xs text-rojo">
+                <div className="mt-1 font-hand text-xs text-tinta">
+                  <p>jornal pagado sin trabajo: espera, lluvia o despacho temprano</p>
+                  <ul className="mt-1 space-y-1">
                   {partes.length === 0 ? (
                     <li>Todavía no se parte.</li>
                   ) : (
@@ -1405,7 +1783,8 @@ function Plata({
                       </li>
                     ))
                   )}
-                </ul>
+                  </ul>
+                </div>
               ) : null}
             </li>
           );

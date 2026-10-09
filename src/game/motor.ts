@@ -1,5 +1,4 @@
 import {
-  ANTICIPO,
   BOTE_TIERRA,
   BLOCKS_MURO,
   TROMPO_CUERPO,
@@ -13,7 +12,9 @@ import {
   FLETE_URGENTE,
   FRASES_CANSANCIO,
   HERRAMIENTA,
+  ESCOMBRO,
   INICIO,
+  MAPA,
   JORNAL_BASE,
   KIT_PRECIO,
   MATERIALES,
@@ -74,7 +75,8 @@ export type Panel =
   | "sello"
   | "pausa"
   | "sita"
-  | "ferreteria";
+  | "ferreteria"
+  | "despacho";
 
 export type OficinaTab = "gente" | "planos" | "telefono" | "diario" | "libreta";
 
@@ -123,6 +125,8 @@ export interface Persona {
   /** Contador viejo. La caminata lo lee; no elige la labor. */
   esperaZona: number;
   enCruce: boolean;
+  /** 0 va al montón, 1 va al botadero. Cambia al llegar, no con el reloj. */
+  faseViaje?: number;
 }
 
 export interface Run {
@@ -259,8 +263,21 @@ export interface Estado {
   mezclaTardeNota: boolean;
   /** Tierra aún junto a la zanja. No entra en la caja: inv.tierra sigue igual. */
   tierraMonton: number;
-  /** Tierra ya botada al borde del solar. */
+  /** Tierra ya botada al baldío. No vuelve al relleno. */
   tierraBote: number;
+  /** Pedazos de block y mezcla botada, junto al solar. */
+  escombro: number;
+  escombroBote: number;
+  /** Precio firmado. 0 hasta que se firma: la oferta sigue en 300 mil. */
+  precio: number;
+  /** Doña Carmen solo escucha un pedido. */
+  regateo: boolean;
+  /** Minuto en que se despachó la cuadrilla. −1 si todavía no. */
+  salidaMin: number;
+  /** Agua entrada hoy, para una sola línea del diario. */
+  aguaDia: number;
+  /** Nómina del día, en pesos enteros. */
+  nominaHoy: number;
   /** Día en que Doña Carmen ya soltó el adelanto. Uno por día. */
   adelantoDia: number;
   /** Marca dia*10000+minuto de la última mezcla vencida. */
@@ -314,6 +331,7 @@ export interface OfertaSita {
   flete: number;
   total: number;
   texto: string;
+  siguiente?: Cantidades;
 }
 
 export interface Sita {
@@ -523,6 +541,13 @@ export function nueva(seed?: number): Estado {
     mezclaTardeNota: false,
     tierraMonton: 0,
     tierraBote: 0,
+    escombro: 0,
+    escombroBote: 0,
+    precio: 0,
+    regateo: false,
+    salidaMin: -1,
+    aguaDia: 0,
+    nominaHoy: 0,
     adelantoDia: 0,
     morteroVencio: 0,
     diasTrabajados: 0,
@@ -667,6 +692,13 @@ export function sanear(s: Estado): Estado {
   s.mezclaTardeNota = !!s.mezclaTardeNota;
   if (typeof s.tierraMonton !== "number" || !Number.isFinite(s.tierraMonton)) s.tierraMonton = s.inv.tierra?.q ?? 0;
   if (typeof s.tierraBote !== "number" || !Number.isFinite(s.tierraBote)) s.tierraBote = 0;
+  if (typeof s.escombro !== "number" || !Number.isFinite(s.escombro)) s.escombro = 0;
+  if (typeof s.escombroBote !== "number" || !Number.isFinite(s.escombroBote)) s.escombroBote = 0;
+  if (typeof s.precio !== "number" || !Number.isFinite(s.precio)) s.precio = 0;
+  s.regateo = !!s.regateo;
+  if (typeof s.salidaMin !== "number" || !Number.isFinite(s.salidaMin)) s.salidaMin = -1;
+  if (typeof s.aguaDia !== "number" || !Number.isFinite(s.aguaDia)) s.aguaDia = 0;
+  if (typeof s.nominaHoy !== "number" || !Number.isFinite(s.nominaHoy)) s.nominaHoy = 0;
   if (!s.sita || s.sita.fase == null || typeof s.sita.x !== "number") s.sita = sitaBase();
   else {
     s.sita.oferta ??= null;
@@ -711,22 +743,36 @@ function chequearTutorial(s: Estado) {
   }
 }
 
+function pasoHecho(s: Estado, i: number): boolean {
+  const gente = s.gente.length + s.reserva.length > 0;
+  const en = (puesto: Puesto) => [...s.gente, ...s.reserva].some((g) => g.puesto === puesto);
+  const replanteo = s.etapa > 0 || runDe(s, 0, "replantear").hecho >= 2 - 1e-4;
+  switch (i) {
+    case 0:
+      return s.firmado || s.tut.firma;
+    case 1:
+      return s.tut.parada || gente;
+    case 2:
+      return replanteo || runDe(s, 0, "replantear").hecho > 0.05;
+    case 3:
+      return s.tut.pedido || s.pedidos.length > 0;
+    case 4:
+      return s.tut.arena || en("acarreo");
+    case 5:
+      return !!s.tut.agua || en("agua");
+    case 6:
+      return !!s.tut.sita;
+    case 7:
+      return s.tut.fin;
+    default:
+      return false;
+  }
+}
+
 function pasoNatural(s: Estado): number {
-  if (!s.firmado) return 0;
-  const hayGente = s.gente.length + s.reserva.length > 0;
-  if (!s.tut.fin && !s.tut.sita && s.sita?.oferta && hayGente) return 6;
-  const flags = [
-    s.tut.firma,
-    s.tut.parada,
-    s.tut.cuadrilla,
-    s.tut.pedido,
-    s.tut.arena,
-    !!s.tut.agua,
-    !!s.tut.sita,
-    s.tut.fin,
-  ];
-  const i = flags.findIndex((f) => !f);
-  return i < 0 ? 8 : i;
+  if (!s.firmado && !s.tut.firma) return 0;
+  for (let i = 0; i < 8; i++) if (!pasoHecho(s, i)) return i;
+  return 8;
 }
 
 export function marcarGuia(s: Estado) {
@@ -742,6 +788,16 @@ export function pasoTutorial(s: Estado): number {
 }
 
 export function flecha(s: Estado): { x: number; y: number } | null {
+  if (!s.firmado && !s.entregada) return { x: SITIOS.oficina.x, y: SITIOS.oficina.y };
+  if (s.firmado && !s.entregada && listos(s).some((w) => w.k === "achicar") && !juntoAZanja(s))
+    return { x: SITIOS.obra.x, y: SITIOS.obra.y };
+  if (s.firmado && !s.entregada && s.plomo && !juntoAlMuro(s)) return { x: SITIOS.obra.x, y: SITIOS.obra.y };
+  const w = trabajoSiguiente(s);
+  if (w && s.firmado && !s.entregada) {
+    for (const m of matsEnFalta(s, w)) {
+      if ((s.entrada[m]?.q ?? 0) > 0.02) return SITIOS.entrada;
+    }
+  }
   if (!s.firmado || s.tut.fin || s.entregada) return null;
   switch (pasoTutorial(s)) {
     case 1:
@@ -759,12 +815,48 @@ export function flecha(s: Estado): { x: number; y: number } | null {
   }
 }
 
+export function precioDe(s: Estado): number {
+  return s.precio > 0 ? s.precio : CONTRATO;
+}
+
+export function techoCarmen(seed: number): number {
+  const u = hash2(seed >>> 0, 60);
+  const i = Math.min(2, Math.floor(u * 3));
+  return [310_000, 315_000, 320_000][i]!;
+}
+
+const PEDIDOS_REGATEO = [305_000, 310_000, 315_000, 320_000, 325_000];
+
+export function regatear(s: Estado, pedido: number): string {
+  if (s.firmado) return "El contrato ya está firmado.";
+  if (s.regateo) return "Doña Carmen ya te respondió.";
+  if (!PEDIDOS_REGATEO.includes(pedido)) return "Ese precio no está en la mesa.";
+  s.regateo = true;
+  const techo = techoCarmen(s.seed);
+  if (pedido <= techo) {
+    s.precio = pedido;
+    return `Está bien. Queda en ${peso(pedido)}.`;
+  }
+  s.precio = 295_000;
+  return "Así no. Ya me cotizaron otro maestro en P$295,000. Si la quieres, es a ese precio.";
+}
+
+let cierreHoja = 0;
+export function notarCierreHoja() {
+  cierreHoja = Date.now();
+}
+export function terminarEnFrio(): boolean {
+  return Date.now() - cierreHoja < 400;
+}
+
 export function firmar(s: Estado) {
   if (s.firmado) return;
   s.firmado = true;
-  s.caja = ANTICIPO;
-  s.cobrado = ANTICIPO;
-  diario(s, `Anticipo de Doña Carmen: +${peso(ANTICIPO)}.`);
+  if (!(s.precio > 0)) s.precio = CONTRATO;
+  const anticipo = Math.round(s.precio * 0.3);
+  s.caja = anticipo;
+  s.cobrado = anticipo;
+  diario(s, `Anticipo de Doña Carmen: +${peso(anticipo)}.`);
   s.caja -= KIT_PRECIO;
   diario(s, `Kit de replanteo: −${peso(KIT_PRECIO)}.`);
   s.inv.kit = { q: 1, valor: KIT_PRECIO };
@@ -790,7 +882,7 @@ export function abrirPanel(s: Estado, p: Panel) {
 }
 
 export function cerrarPanel(s: Estado) {
-  if (s.panel === "menu" && !s.firmado) return;
+  if (s.panel === "menu") return;
   if (s.panel === "informe" || s.panel === "perdida") return;
   if (s.panel === "sello") {
     continuarSello(s);
@@ -817,6 +909,14 @@ export function cerrarPanel(s: Estado) {
   s.panel = null;
 }
 
+function mermaDe(k: Mat): number {
+  return k === "block" ? 1.03 : 1;
+}
+
+function pasoCompra(m: Mat): number {
+  return m === "block" ? 1 : MATERIALES[m].paso;
+}
+
 function usar(s: Estado, mat: Mat, n: number): number {
   const slot = s.inv[mat];
   const q = Math.min(slot.q, Math.max(0, n));
@@ -830,11 +930,7 @@ function usar(s: Estado, mat: Mat, n: number): number {
     slot.valor = 0;
   }
   if (mat === "tierra" && q > 0) {
-    let n = q;
-    const deBote = Math.min(s.tierraBote ?? 0, n);
-    s.tierraBote = Math.max(0, (s.tierraBote ?? 0) - deBote);
-    n -= deBote;
-    s.tierraMonton = Math.max(0, (s.tierraMonton ?? 0) - n);
+    s.tierraMonton = Math.max(0, (s.tierraMonton ?? 0) - q);
   }
   return costo;
 }
@@ -885,7 +981,8 @@ function tenido(s: Estado, m: Mat): number {
 }
 
 function apunte(s: Estado, clase: ClaseApunte, texto: string, lugar = "") {
-  s.bitacora.push({ dia: s.dia, min: s.minuto, clase, texto, lugar });
+  const min = Math.min(s.minuto, 18 * 60);
+  s.bitacora.push({ dia: s.dia, min, clase, texto, lugar });
   if (s.bitacora.length > 240) s.bitacora.splice(0, s.bitacora.length - 240);
 }
 
@@ -1125,7 +1222,7 @@ function aplicar(s: Estado, w: W, dq: number): number {
   }
   if (w.usa) {
     for (const [k, total] of Object.entries(w.usa) as [Mat, number][]) {
-      const per = total / w.q;
+      const per = (total / w.q) * mermaDe(k);
       if (per > 0) dq = Math.min(dq, s.inv[k].q / per);
     }
   }
@@ -1142,8 +1239,14 @@ function aplicar(s: Estado, w: W, dq: number): number {
   dq = Math.min(dq, w.q - w.hecho);
   if (w.usa) {
     const mapa: Cantidades = {};
-    for (const [k, total] of Object.entries(w.usa) as [Mat, number][]) mapa[k] = (total * dq) / w.q;
+    let piezas = 0;
+    for (const [k, total] of Object.entries(w.usa) as [Mat, number][]) {
+      const base = (total * dq) / w.q;
+      mapa[k] = base * mermaDe(k);
+      if (k === "block") piezas += base * 0.03;
+    }
     s.costos[w.partida].mat += gastarMapa(s, mapa, "obra");
+    if (piezas > 0) s.escombro = (s.escombro ?? 0) + piezas * 0.008;
   }
   if (w.mezcla && w.mezclaQ) {
     const need = (w.mezclaQ * dq) / w.q;
@@ -1221,6 +1324,16 @@ function factorMania(s: Estado, g: Persona, tarea: Tarea): number {
   if (g.mania === "piedra" && td.peso === "pesado") f *= 1.2;
   if (g.mania !== "cantor" && hayCantor(s, g.puesto, g.id)) f *= 1.1;
   return f;
+}
+
+/** El rinde de la hoja de contratar: el del motor, con la manía que aplica siempre. Sin tarea nueva. */
+export function rindeLista(g: { rinde: number; mania: string }): number {
+  let f = 1;
+  if (g.mania === "tranquilo") f *= 0.9;
+  if (g.mania === "madrugador") f *= 1.125;
+  if (g.mania === "domino") f *= 0.9375;
+  if (g.mania === "cantor") f *= 0.95;
+  return g.rinde * f;
 }
 
 function factorCansancio(c: number): number {
@@ -1402,19 +1515,28 @@ function iniciarMezcla(s: Estado, tipo: "H" | "M"): Mezcla | null {
   return m;
 }
 
+function volMezcla(tipo: "H" | "M", frac: number): number {
+  if (frac <= 1e-8) return 0;
+  if (tipo === "H") return frac * (RECETA_H.arena + RECETA_H.grava + RECETA_H.agua);
+  return frac * (RECETA_M.arena + RECETA_M.agua);
+}
+
 function lavarMezclas(s: Estado, motivo: string) {
   if (!s.mezclas.length) return;
   let costo = 0;
   let n = 0;
+  let vol = 0;
   for (const m of s.mezclas) {
     const frac = m.lista ? m.restante : Math.max(m.prog, 0);
     const c = m.costo * frac;
     costo += c;
     n += frac;
+    vol += volMezcla(m.tipo, frac);
     s.costos[m.tipo === "H" ? "hormigon" : "block"].mat += c;
   }
   s.stats.tandasPerdidas += n;
   s.stats.costoPerdidas += costo;
+  s.escombro = (s.escombro ?? 0) + vol;
   s.mezclas = [];
   if (costo > 1) aviso(s, `${motivo} Se perdió mezcla por ${peso(costo)}.`);
 }
@@ -1428,9 +1550,10 @@ function envejecerMezclas(s: Estado) {
       s.costos[m.tipo === "H" ? "hormigon" : "block"].mat += c;
       s.stats.tandasPerdidas += m.restante;
       s.stats.costoPerdidas += c;
+      s.escombro = (s.escombro ?? 0) + volMezcla(m.tipo, m.restante);
       s.morteroVencio = s.dia * 10000 + s.minuto;
       if (s.minuto >= 15 * 60) s.mezclaTarde = (s.mezclaTarde ?? 0) + c;
-      else aviso(s, `Se venció el ${m.tipo === "H" ? "hormigón" : "mortero"} (${peso(c)}).`);
+      else if (Math.round(c) >= 1) aviso(s, `Se venció el ${m.tipo === "H" ? "hormigón" : "mortero"} (${peso(c)}).`);
     } else siguen.push(m);
   }
   s.mezclas = siguen;
@@ -1606,8 +1729,17 @@ function trabajarPersona(s: Estado, g: Persona) {
     return;
   }
   const labor = laborDe(s, g);
+  if (g.puesto === "batea" && !bateaTieneTrabajo(s)) {
+    cobrarMin(s, g, "muerto");
+    g.trabajando = false;
+    g.anim = "nada";
+    return;
+  }
+  if (labor === "tierra") {
+    trabajarTierra(s, g);
+    return;
+  }
   if (!labor) {
-    fatiga(s, g, "liviano");
     cobrarMin(s, g, "muerto");
     g.trabajando = false;
     g.anim = "nada";
@@ -1618,7 +1750,7 @@ function trabajarPersona(s: Estado, g: Persona) {
     const partida: Partida =
       labor === "obra" || labor === "batea" || labor === "regar"
         ? (elegir(s, g)?.partida ?? "muerto")
-        : labor === "sombra" || labor === "tierra"
+        : labor === "sombra"
           ? "muerto"
           : "farmeo";
     fatiga(s, g, "caminar");
@@ -1636,7 +1768,6 @@ function trabajarPersona(s: Estado, g: Persona) {
   }
   if (labor === "batea") {
     if (!trabajarBatea(s, g)) {
-      fatiga(s, g, "liviano");
       cobrarMin(s, g, "muerto");
       g.trabajando = false;
       g.anim = "nada";
@@ -1655,13 +1786,8 @@ function trabajarPersona(s: Estado, g: Persona) {
     trabajarRegar(s, g);
     return;
   }
-  if (labor === "tierra") {
-    trabajarTierra(s, g);
-    return;
-  }
   const w = elegir(s, g);
   if (!w) {
-    fatiga(s, g, "liviano");
     cobrarMin(s, g, "muerto");
     g.trabajando = false;
     g.anim = "nada";
@@ -1669,7 +1795,7 @@ function trabajarPersona(s: Estado, g: Persona) {
   }
   const dq = ritmo(s, g, w.k);
   const got = aplicar(s, w, dq);
-  fatiga(s, g, got > 0 ? TAREAS[w.k].peso : "liviano");
+  if (got > 0) fatiga(s, g, TAREAS[w.k].peso);
   cobrarMin(s, g, got > 0 ? w.partida : "muerto");
   g.trabajando = got > 0;
   g.anim = got > 0 ? herramientaDe(w.k) : "nada";
@@ -1683,7 +1809,6 @@ function trabajarBatea(s: Estado, g: Persona): boolean {
     const tarea = tipo === "H" ? "mezclarH" : "mezclarM";
     const vel = Math.max(1e-6, ritmo(s, g, tarea));
     if (s.minuto + 1 / vel > 15 * 60) {
-      fatiga(s, g, "liviano");
       cobrarMin(s, g, "muerto");
       g.trabajando = false;
       g.anim = "nada";
@@ -1692,7 +1817,6 @@ function trabajarBatea(s: Estado, g: Persona): boolean {
     if (!tieneMapa(s, receta(tipo))) {
       const map = receta(tipo);
       const soloAgua = aguaEsElFreno(s, map);
-      fatiga(s, g, "liviano");
       cobrarMin(s, g, "muerto");
       g.trabajando = false;
       g.anim = "nada";
@@ -1868,37 +1992,59 @@ function trabajarAcarreo(s: Estado, g: Persona) {
     }
   }
   s.cargas = s.cargas.filter((c) => c.prog < 1 - 1e-8);
-  fatiga(s, g, hizo ? "pesado" : "liviano");
+  if (hizo) fatiga(s, g, "pesado");
   cobrarMin(s, g, hizo ? "farmeo" : "muerto");
   g.trabajando = hizo;
   g.anim = hizo ? anim : "nada";
 }
 
+function tierraGuardada(s: Estado): number {
+  const hecho = runDe(s, 7, "relleno").hecho;
+  if (s.etapa > 7 || hecho >= 2.2 - 1e-4) return 0;
+  return Math.max(0, 2.2 - hecho);
+}
+
+function tierraSobrante(s: Estado): number {
+  return Math.max(0, (s.tierraMonton ?? 0) - tierraGuardada(s));
+}
+
 function trabajarTierra(s: Estado, g: Persona) {
-  const cerca = dist(g, BOTE_TIERRA) <= 0.55;
-  const hay = (s.tierraMonton ?? 0) > 0.02;
-  if (cerca && hay) {
-    const mueve = Math.min(0.06, s.tierraMonton);
-    s.tierraMonton -= mueve;
-    s.tierraBote = (s.tierraBote ?? 0) + mueve;
+  let cupo = 0.015;
+  const sobra = tierraSobrante(s);
+  if (sobra > 1e-6) {
+    const q = Math.min(cupo, sobra);
+    s.tierraMonton = Math.max(0, (s.tierraMonton ?? 0) - q);
+    s.inv.tierra.q = Math.max(0, s.inv.tierra.q - q);
+    if (s.inv.tierra.q < 1e-8) {
+      s.inv.tierra.q = 0;
+      s.inv.tierra.valor = 0;
+    }
+    s.tierraBote = (s.tierraBote ?? 0) + q;
+    cupo -= q;
   }
-  fatiga(s, g, "medio");
-  cobrarMin(s, g, "muerto");
-  g.trabajando = cerca && hay;
-  g.anim = "carretilla";
+  if (cupo > 1e-6 && (s.escombro ?? 0) > 1e-6) {
+    const q = Math.min(cupo, s.escombro ?? 0);
+    s.escombro = Math.max(0, (s.escombro ?? 0) - q);
+    s.escombroBote = (s.escombroBote ?? 0) + q;
+    cupo -= q;
+  }
+  const hizo = cupo < 0.015 - 1e-8;
+  if (hizo) fatiga(s, g, "pesado");
+  cobrarMin(s, g, hizo ? "farmeo" : "muerto");
+  g.trabajando = hizo;
+  g.anim = hizo ? "carretilla" : "nada";
 }
 
 function trabajarRegar(s: Estado, g: Persona) {
   const w = listos(s).find((x) => x.k === "regar");
   if (!w) {
-    fatiga(s, g, "liviano");
     cobrarMin(s, g, "muerto");
     g.trabajando = false;
     g.anim = "nada";
     return;
   }
   const got = aplicar(s, w, ritmo(s, g, "regar"));
-  fatiga(s, g, got > 0 ? "medio" : "liviano");
+  if (got > 0) fatiga(s, g, "medio");
   cobrarMin(s, g, got > 0 ? w.partida : "muerto");
   g.trabajando = got > 0;
   g.anim = got > 0 ? "cubeta" : "nada";
@@ -1909,14 +2055,18 @@ function trabajarAgua(s: Estado, g: Persona) {
   const n = Math.min(dq, Math.max(0, 1.2 - s.inv.agua.q));
   if (n > 1e-8) {
     s.inv.agua.q += n;
-    s.aguaNota += n;
-    if (s.aguaNota >= 0.1 - 1e-9) {
-      const q = Math.floor(s.aguaNota * 10) / 10;
-      s.aguaNota -= q;
-      apunte(s, "entro", `Entró ${num(q, 1)} m³ al tanque`, "tanque");
+    s.aguaDia = (s.aguaDia ?? 0) + n;
+    const q = Math.floor(s.aguaDia * 10) / 10;
+    if (q >= 0.1 - 1e-9) {
+      const texto = `Entró ${num(q, 1)} m³ al tanque`;
+      const prev = [...s.bitacora].reverse().find((a) => a.dia === s.dia && a.lugar === "tanque" && a.clase === "entro");
+      if (prev) {
+        prev.texto = texto;
+        prev.min = s.minuto;
+      } else apunte(s, "entro", texto, "tanque");
     }
   }
-  fatiga(s, g, n > 0 ? "medio" : "liviano");
+  if (n > 1e-8) fatiga(s, g, "medio");
   cobrarMin(s, g, n > 0 ? "farmeo" : "muerto");
   g.trabajando = n > 0;
   g.anim = n > 0 ? "cubeta" : "nada";
@@ -2022,8 +2172,15 @@ function opcionesAuto(s: Estado, g: Persona, batiendo: number): { labor: Labor; 
   if (regarToca(s)) out.push({ labor: "regar", prio: 3 });
   if (ayuda && hayCarga(s)) out.push({ labor: "acarreo", prio: 4 });
   if (!sinTrabajoUtil(s, g)) out.push({ labor: "obra", prio: 5 });
-  if (g.oficio === "ayudante" && (s.tierraMonton ?? 0) > 0.05) out.push({ labor: "tierra", prio: 6 });
+  if (puedeBotar(s, g)) out.push({ labor: "tierra", prio: 6 });
   return out;
+}
+
+function puedeBotar(s: Estado, g: Persona): boolean {
+  if (!esAyuda(g.oficio)) return false;
+  if (g.puesto === "batea" || g.puesto === "agua") return false;
+  if (bateaTieneTrabajo(s)) return false;
+  return tierraSobrante(s) > 0.02 || (s.escombro ?? 0) > 0.02;
 }
 
 function planLabores(s: Estado): Map<string, Labor | null> {
@@ -2053,6 +2210,22 @@ function planLabores(s: Estado): Map<string, Labor | null> {
     out.set(g.id, labor);
     if (labor === "batea") batiendo += 1;
   }
+  const frenaEntrada = (() => {
+    const w = trabajoSiguiente(s);
+    if (!w) return false;
+    const mf = materialFalta(s, w);
+    return !!mf && /acarreo/i.test(mf);
+  })();
+  const hayAcarreo = s.gente.some((g) => g.activo && !g.fuera && !g.falto && (g.puesto === "acarreo" || out.get(g.id) === "acarreo"));
+  if (frenaEntrada && !hayAcarreo) {
+    const libre = s.gente.find((g) => {
+      if (!g.activo || g.fuera || g.falto || !esAyuda(g.oficio)) return false;
+      if (g.puesto === "acarreo" || out.get(g.id) === "acarreo") return false;
+      if ((g.puesto === "batea" || g.puesto === "agua") && g.puesto && puestoTieneTrabajo(s, g, g.puesto)) return false;
+      return true;
+    });
+    if (libre) out.set(libre.id, "acarreo");
+  }
   return out;
 }
 
@@ -2072,8 +2245,9 @@ const QUE_LABOR: Record<Labor, string> = {
 };
 
 export function lineaFicha(s: Estado, g: Persona): string | null {
-  if (!g.puesto || g.puesto === "sombra") return null;
   const labor = laborDe(s, g);
+  if (g.puesto === "batea" && !bateaTieneTrabajo(s) && (labor == null || labor === "batea")) return "Trompo · espera tanda";
+  if (!g.puesto || g.puesto === "sombra") return null;
   if (!labor || labor === g.puesto) return null;
   return `${g.nombre} (${PUESTO_NOMBRE[g.puesto]}) · ${QUE_LABOR[labor]}`;
 }
@@ -2153,7 +2327,7 @@ export function continuarSello(s: Estado) {
   }
   let pago = 0;
   if (def.tramo > 0) {
-    const bruto = Math.round(CONTRATO * def.tramo);
+    const bruto = Math.round(precioDe(s) * def.tramo);
     const descuenta = Math.min(s.adelanto, bruto);
     s.adelanto -= descuenta;
     pago = bruto - descuenta;
@@ -2211,9 +2385,9 @@ function pagarNomina(s: Estado) {
       s.costos.muerto.mo += diff;
       const rate = j / 480;
       anotarMuerto(s, g, diff, rate > 0 ? diff / rate : 0, "resto");
-      g.moHoy = j;
     }
-    const herr = j * HERRAMIENTA;
+    g.moHoy = j;
+    const herr = Math.round(j * HERRAMIENTA);
     s.caja -= j + herr;
     s.costos.herramienta.mo += herr;
     total += j;
@@ -2224,9 +2398,25 @@ function pagarNomina(s: Estado) {
   }
   s.nominaPagada = true;
   s.herrHoy = herrSum;
+  s.nominaHoy = total;
+  if (s.salidaMin < 0) s.salidaMin = s.minuto;
+  let direccion = 0;
+  if (total > 0 && !s.direccionCobrada && s.firmado && !s.entregada) {
+    s.caja -= DIRECCION_DIA;
+    s.costos.direccion.mo += DIRECCION_DIA;
+    s.direccionCobrada = true;
+    s.diasTrabajados += 1;
+    direccion = DIRECCION_DIA;
+  }
   if (total > 0) {
-    diario(s, `Nómina: −${peso(total)}. Herramienta: −${peso(herrSum)}.`);
-    aviso(s, `Se fueron a las 3. Nómina ${peso(total)} · Herramienta ${peso(herrSum)}.`);
+    const temprano = s.salidaMin < 15 * 60;
+    const cabeza = temprano
+      ? `Se fueron a las ${horaDe(s.salidaMin)}. El día se paga completo.`
+      : "Se fueron a las 3.";
+    const linea = `Nómina: −${peso(total)}. Herramienta: −${peso(herrSum)}.`;
+    diario(s, linea);
+    if (direccion > 0) diario(s, `Dirección del día: −${peso(direccion)}.`);
+    aviso(s, `${cabeza} ${linea}`);
   }
 }
 
@@ -2271,22 +2461,15 @@ function vigilarNubes(s: Estado) {
 function avisarFaltaManana(s: Estado) {
   if (s.aviso14) return;
   s.aviso14 = true;
-  const q = loQueFalta(s);
-  const partes: string[] = [];
-  if ((q.cemento ?? 0) >= 1) partes.push(`${Math.round(q.cemento!)} fundas`);
-  if ((q.block ?? 0) >= 1) partes.push(`${Math.round(q.block!)} block`);
-  if ((q.arena ?? 0) > 0.02) partes.push(`${num(q.arena!, 1)} m³ de arena`);
-  if ((q.grava ?? 0) > 0.02) partes.push(`${num(q.grava!, 1)} m³ de grava`);
-  if (!partes.length) {
-    for (const [k, n] of Object.entries(q) as [Mat, number][]) {
-      if (!n || k === "cemento" || k === "block" || k === "arena" || k === "grava") continue;
-      partes.push(`${num(n, 0)} ${MATERIALES[k].unidad} de ${MATERIALES[k].nombre}`);
-      if (partes.length >= 3) break;
-    }
-  }
-  if (!partes.length) return;
-  const texto = `Para mañana faltan ${partes.join(" y ")}`;
-  diario(s, texto);
+  if (s.sita?.oferta) return;
+  if (notaEnDia(s, "Para mañana faltan")) return;
+  const cuerpo = cuerpoNota(s);
+  if (!cuerpo.lineas) return;
+  const llega = llegadaPedido(s, false, s.minuto + 1);
+  const cuando = fraseCuando(s, false, llega);
+  let texto = `Para mañana faltan:\n${cuerpo.lineas}`;
+  if (cuerpo.lineasSig) texto += `\nPara la siguiente etapa (opcional):\n${cuerpo.lineasSig}`;
+  texto += `\n¿Pido? Normal, ${cuando}`;
   apunte(s, "nota", texto, "");
 }
 
@@ -2307,10 +2490,6 @@ function paso(s: Estado) {
   revisarSita(s);
   if (s.minuto === 14 * 60 && sinNota && !s.sita?.oferta) avisarFaltaManana(s);
   flushSalidas(s);
-  if (s.plomo && s.minuto < 15 * 60) {
-    s.plomo.min += 1;
-    if (s.plomo.min >= 60) resolverPlomoAuto(s);
-  }
   if (s.minuto < 15 * 60) {
     for (const g of s.gente) trabajarPersona(s, g);
     for (const g of s.gente) cerrarEspera(s, g);
@@ -2323,7 +2502,12 @@ function paso(s: Estado) {
 }
 
 export function tick(s: Estado, dtReal: number) {
-  if (!s.firmado || s.entregada || s.pausa) return;
+  if (s.entregada || s.pausa) return;
+  if (!s.firmado) {
+    if (s.panel) return;
+    moverMaestro(s, clamp(dtReal, 0, 0.1));
+    return;
+  }
   const sim = dtReal >= 0.15;
   if (!sim && s.sita?.fase === "yendo" && !s.panel) {
     moverSita(s, clamp(dtReal, 0, 0.1), 11);
@@ -2580,8 +2764,8 @@ function moverMaestro(s: Estado, dt: number) {
     return;
   }
   const paso = andar(s.jugador.x, s.jugador.y, s.jugador.x + dx * VEL_MAESTRO * dt, s.jugador.y + dy * VEL_MAESTRO * dt);
-  s.jugador.x = clamp(paso.x, 0.6, 33.4);
-  s.jugador.y = clamp(paso.y, 3.75, 25.5);
+  s.jugador.x = clamp(paso.x, MAPA.x0, MAPA.x1);
+  s.jugador.y = clamp(paso.y, MAPA.y0, MAPA.y1);
   s.vel = VEL_MAESTRO;
 }
 
@@ -2593,8 +2777,8 @@ export function seguirDedo(s: Estado, x: number, y: number, soltar: boolean, alc
     s.mando.ay = 0;
     return;
   }
-  const tx = clamp(x, 0.6, 33.4);
-  const ty = clamp(y, 3.75, 25.5);
+  const tx = clamp(x, MAPA.x0, MAPA.x1);
+  const ty = clamp(y, MAPA.y0, MAPA.y1);
   let px = s.jugador.x;
   let py = s.jugador.y;
   let queda = Math.max(0, alcance);
@@ -2611,8 +2795,8 @@ export function seguirDedo(s: Estado, x: number, y: number, soltar: boolean, alc
     px = p.x;
     py = p.y;
   }
-  s.jugador.x = clamp(px, 0.6, 33.4);
-  s.jugador.y = clamp(py, 3.75, 25.5);
+  s.jugador.x = clamp(px, MAPA.x0, MAPA.x1);
+  s.jugador.y = clamp(py, MAPA.y0, MAPA.y1);
   s.destino = null;
   s.mando.ax = 0;
   s.mando.ay = 0;
@@ -2632,9 +2816,9 @@ export function ancla(s: Estado, g: Persona): { x: number; y: number } | null {
   const labor = laborDe(s, g);
   if (lluviaAhora(s)) return puertaAlmacen();
   if (labor === "tierra") {
-    const ciclo = 10;
-    const t = (s.minuto + g.nombre.length) % ciclo;
-    return t < 5 ? sacar(SITIOS.tierra.x, SITIOS.tierra.y) : { ...BOTE_TIERRA };
+    const sobra = tierraSobrante(s);
+    const origen = sobra > 0.02 ? SITIOS.tierra : ESCOMBRO;
+    return (g.faseViaje ?? 0) % 2 === 0 ? { x: origen.x, y: origen.y } : { ...BOTE_TIERRA };
   }
   const puesto = puestoEfectivo(s, g);
   if (!puesto) return null;
@@ -2684,6 +2868,9 @@ function moverCuadrilla(s: Estado, dt: number) {
       }
     }
     const movido = Math.hypot(g.x - x0, g.y - y0);
+    if (dest && laborDe(s, g) === "tierra" && Math.hypot(g.x - dest.x, g.y - dest.y) < 0.4) {
+      g.faseViaje = ((g.faseViaje ?? 0) + 1) % 2;
+    }
     if (movido > 1e-4 && !lluviaAhora(s)) {
       let sp = VEL_CUADRILLA;
       if (g.mania === "patas") sp *= 1.2;
@@ -2729,15 +2916,40 @@ function cerrarEspera(s: Estado, g: Persona) {
   g.esperaZona = Math.min(60, (g.esperaZona ?? 0) + 1);
 }
 
+export function desgloseNomina(s: Estado): { jornales: number; herramienta: number; direccion: number; total: number } {
+  if (s.nominaPagada) return { jornales: 0, herramienta: 0, direccion: 0, total: 0 };
+  let jornales = 0;
+  let herramienta = 0;
+  for (const g of s.gente) {
+    if (!g.activo || g.falto || g.fuera) continue;
+    const j = jornalDe(g.oficio, g.rinde);
+    jornales += j;
+    herramienta += Math.round(j * HERRAMIENTA);
+  }
+  const direccion = jornales > 0.5 && !s.direccionCobrada && s.firmado && !s.entregada ? DIRECCION_DIA : 0;
+  return { jornales, herramienta, direccion, total: jornales + herramienta + direccion };
+}
+
 export function nominaPendiente(s: Estado): number {
-  if (s.nominaPagada) return 0;
-  let t = 0;
-  for (const g of s.gente) if (g.activo && !g.falto && !g.fuera) t += jornalDe(g.oficio, g.rinde);
-  return t;
+  return desgloseNomina(s).total;
+}
+
+export function textoFaltaNomina(s: Estado): string | null {
+  if (!s.firmado || s.entregada || s.nominaPagada || s.minuto >= 15 * 60) return null;
+  const falta = nominaPendiente(s) - s.caja;
+  if (falta <= 0.5) return null;
+  return `Falta ${peso(falta)} para la nómina de las 3`;
 }
 
 export function cajaLibre(s: Estado): number {
   return s.caja - nominaPendiente(s);
+}
+
+export function textoCajaLibre(s: Estado): string {
+  const nomina = nominaPendiente(s);
+  const libre = s.caja - nomina;
+  if (nomina <= 0.5) return `Caja libre ${peso(libre)}`;
+  return `Caja libre ${peso(libre)} = caja ${peso(s.caja)} menos nómina de hoy ${peso(nomina)}`;
 }
 
 function sumaNecesidad(s: Estado, idx: number, restante: boolean, enteras = false): Cantidades {
@@ -2781,39 +2993,172 @@ function enCamino(s: Estado, m: Mat): number {
   return n;
 }
 
-export function loQueFalta(s: Estado): Cantidades {
-  let need = sumaNecesidad(s, s.etapa, true, true);
-  const nxt = sumaNecesidad(s, s.etapa + 1, false);
-  for (const [k, n] of Object.entries(nxt) as [Mat, number][]) need[k] = (need[k] ?? 0) + n;
-  if (!pideCompra(need)) {
-    for (let i = s.etapa + 2; i < ETAPAS.length; i++) {
-      const lejos = sumaNecesidad(s, i, false);
-      if (pideCompra(lejos)) {
-        need = lejos;
-        break;
-      }
+function tandasRestantes(s: Estado, tipo: "H" | "M"): number {
+  let n = 0;
+  const def = ETAPAS[s.etapa];
+  if (def) {
+    for (const t of def.trabajos) {
+      if (t.mezcla !== tipo || !t.mezclaQ || t.q <= 0) continue;
+      const run = runDe(s, s.etapa, t.id);
+      n += t.mezclaQ * Math.max(0, (t.q - run.hecho) / t.q);
     }
   }
-  for (const m of s.mezclas) {
-    const frac = m.lista ? m.restante : Math.max(m.prog, 0.15);
-    const map = receta(m.tipo);
-    for (const [k, n] of Object.entries(map) as [Mat, number][]) {
-      if (need[k]) need[k] = Math.max(0, (need[k] ?? 0) - n * frac);
+  for (const e of s.extras) {
+    if (e.etapa !== s.etapa || e.mezcla !== tipo || !e.mezclaQ || e.q <= 0) continue;
+    n += e.mezclaQ * Math.max(0, (e.q - e.hecho) / e.q);
+  }
+  return n;
+}
+
+function tandasAPedir(s: Estado, tipo: "H" | "M"): number {
+  const falta = tandasRestantes(s, tipo) - stockMezcla(s, tipo) - tandasEnCurso(s, tipo);
+  if (falta <= 1e-9) return 0;
+  return Math.ceil(falta - 1e-9);
+}
+
+function recetaFraccion(s: Estado, idx: number, restante: boolean): Cantidades {
+  const need: Cantidades = {};
+  const sumar = (tipo: "H" | "M", batches: number) => {
+    if (batches <= 1e-8) return;
+    for (const [k, n] of Object.entries(receta(tipo)) as [Mat, number][]) need[k] = (need[k] ?? 0) + n * batches;
+  };
+  const def = ETAPAS[idx];
+  if (!def) return need;
+  for (const t of def.trabajos) {
+    if (!t.mezcla || !t.mezclaQ) continue;
+    const frac = restante ? Math.max(0, (t.q - runDe(s, idx, t.id).hecho) / t.q) : 1;
+    sumar(t.mezcla, t.mezclaQ * frac);
+  }
+  if (restante) {
+    for (const e of s.extras) {
+      if (e.etapa !== idx || !e.mezcla || !e.mezclaQ || e.q <= 0) continue;
+      sumar(e.mezcla, e.mezclaQ * Math.max(0, (e.q - e.hecho) / e.q));
     }
   }
-  const out: Cantidades = {};
+  return need;
+}
+
+function necesidadActual(s: Estado): Cantidades {
+  const ahora = sumaNecesidad(s, s.etapa, true, false);
+  const frac = recetaFraccion(s, s.etapa, true);
+  for (const [k, n] of Object.entries(frac) as [Mat, number][]) ahora[k] = Math.max(0, (ahora[k] ?? 0) - n);
+  for (const tipo of ["H", "M"] as const) {
+    const batches = tandasAPedir(s, tipo);
+    if (batches <= 0) continue;
+    for (const [k, n] of Object.entries(receta(tipo)) as [Mat, number][]) ahora[k] = (ahora[k] ?? 0) + n * batches;
+  }
+  return ahora;
+}
+
+function cuantizarPedido(s: Estado, m: Mat, bruto: number, hay: number, vienen: number): number {
+  if (bruto <= 1e-8) return 0;
+  const pedido = m === "block" ? bruto * 1.03 : bruto;
+  const n = pedido - hay - vienen;
+  if (n <= 1e-6) return 0;
+  const paso = pasoCompra(m);
+  let q = Math.ceil((n - 1e-9) / paso) * paso;
+  if (m !== "cemento") {
+    const esp = espacio(s, m) - enCamino(s, m);
+    q = Math.min(q, Math.max(0, Math.floor((esp + 1e-9) / paso) * paso));
+  }
+  if (q <= 1e-6) return 0;
+  return Math.round(q * 1000) / 1000;
+}
+
+interface RenglonCuenta {
+  m: Mat;
+  falta: number;
+  hay: number;
+  vienen: number;
+  pido: number;
+}
+
+function stockBase(s: Estado): { hay: Cantidades; vienen: Cantidades } {
+  const hay: Cantidades = {};
+  const vienen: Cantidades = {};
   for (const m of COMPRA) {
-    let n = (need[m] ?? 0) - tenido(s, m) - enCamino(s, m);
-    if (n <= 0.02) continue;
-    const paso = MATERIALES[m].paso;
-    let q = Math.ceil((n - 1e-9) / paso) * paso;
-    if (m !== "cemento") {
-      const esp = espacio(s, m) - enCamino(s, m);
-      q = Math.min(q, Math.max(0, Math.floor((esp + 1e-9) / paso) * paso));
-    }
-    if (q > 0) out[m] = Math.round(q * 1000) / 1000;
+    hay[m] = tenido(s, m);
+    vienen[m] = enCamino(s, m);
   }
+  return { hay, vienen };
+}
+
+function renglonesDe(
+  s: Estado,
+  need: Cantidades,
+  hayBase: Cantidades,
+  vienenBase: Cantidades,
+): { renglones: RenglonCuenta[]; haySobra: Cantidades; vienenSobra: Cantidades } {
+  const renglones: RenglonCuenta[] = [];
+  const haySobra: Cantidades = { ...hayBase };
+  const vienenSobra: Cantidades = { ...vienenBase };
+  for (const m of COMPRA) {
+    const falta = need[m] ?? 0;
+    const hay = hayBase[m] ?? 0;
+    const vienen = vienenBase[m] ?? 0;
+    const merma = m === "block" ? falta * 1.03 : falta;
+    const tomaHay = Math.min(hay, Math.max(0, merma));
+    const tomaVienen = Math.min(vienen, Math.max(0, merma - tomaHay));
+    haySobra[m] = Math.max(0, hay - tomaHay);
+    vienenSobra[m] = Math.max(0, vienen - tomaVienen);
+    if (falta <= 1e-8) continue;
+    renglones.push({ m, falta, hay, vienen, pido: cuantizarPedido(s, m, falta, hay, vienen) });
+  }
+  return { renglones, haySobra, vienenSobra };
+}
+
+function itemsDe(renglones: RenglonCuenta[]): Cantidades {
+  const out: Cantidades = {};
+  for (const r of renglones) if (r.pido > 1e-6) out[r.m] = r.pido;
   return out;
+}
+
+function fmtCta(n: number): string {
+  if (!Number.isFinite(n)) return "0";
+  const r = Math.round(n * 10) / 10;
+  if (Math.abs(r - Math.round(r)) < 0.05) return String(Math.round(r));
+  return r.toFixed(1);
+}
+
+function lineasCuenta(renglones: RenglonCuenta[]): string {
+  const orden = (m: Mat) => {
+    const i = ORDEN_NOTA.indexOf(m);
+    return i < 0 ? 50 + COMPRA.indexOf(m) : i;
+  };
+  return [...renglones]
+    .filter((r) => r.pido > 1e-6)
+    .sort((a, b) => orden(a.m) - orden(b.m))
+    .map((r) => `${nombreCortoMat(r.m)}: hace falta ${fmtCta(r.falta)}, hay ${fmtCta(r.hay)}, vienen ${fmtCta(r.vienen)}, pido ${fmtCta(r.pido)}`)
+    .join("\n");
+}
+
+function cuerpoNota(s: Estado): { items: Cantidades; siguiente: Cantidades; lineas: string; lineasSig: string } {
+  const base = stockBase(s);
+  const ahora = renglonesDe(s, necesidadActual(s), base.hay, base.vienen);
+  const nxt = renglonesDe(s, sumaNecesidad(s, s.etapa + 1, false), ahora.haySobra, ahora.vienenSobra);
+  return { items: itemsDe(ahora.renglones), siguiente: itemsDe(nxt.renglones), lineas: lineasCuenta(ahora.renglones), lineasSig: lineasCuenta(nxt.renglones) };
+}
+
+function notaEnDia(s: Estado, cabeza: string): boolean {
+  return s.bitacora.some((a) => a.dia === s.dia && a.clase === "nota" && a.texto.includes(cabeza));
+}
+
+function fraseCuando(s: Estado, urgente: boolean, llega: { dia: number; minuto: number }): string {
+  if (urgente && llega.dia === s.dia) return `llega a las ${horaDe(llega.minuto)}`;
+  if (esSabado(s.dia) || llega.dia > s.dia + 1) return "llega el lunes 7:30";
+  return "llega mañana 7:30";
+}
+
+export function textoLlegada(s: Estado, urgente: boolean): string {
+  return fraseCuando(s, urgente, llegadaPedido(s, urgente));
+}
+
+export function loQueFalta(s: Estado): Cantidades {
+  return cuerpoNota(s).items;
+}
+
+export function loQueFaltaSiguiente(s: Estado): Cantidades {
+  return cuerpoNota(s).siguiente;
 }
 
 export function marcarLoQueFalta(s: Estado) {
@@ -2825,18 +3170,8 @@ function tieneItems(items: Cantidades): boolean {
   return Object.values(items).some((n) => (n ?? 0) > 0);
 }
 
-function gapCompra(s: Estado, need: Cantidades): boolean {
-  return COMPRA.some((m) => (need[m] ?? 0) - tenido(s, m) - enCamino(s, m) > 0.02);
-}
-
 function debeProponer(s: Estado): boolean {
-  if (gapCompra(s, sumaNecesidad(s, s.etapa, true, true))) return true;
-  for (let i = s.etapa + 1; i < ETAPAS.length; i++) {
-    const need = sumaNecesidad(s, i, false);
-    if (!pideCompra(need)) continue;
-    return gapCompra(s, need);
-  }
-  return false;
+  return tieneItems(loQueFalta(s));
 }
 
 function paradaPorMaterial(s: Estado): boolean {
@@ -2890,8 +3225,7 @@ function textoLista(items: Cantidades, primero?: Mat | null): string {
   if (primero) push(primero);
   for (const m of ORDEN_NOTA) push(m);
   for (const m of COMPRA) if (!ORDEN_NOTA.includes(m)) push(m);
-  if (partes.length > 3) return `${partes.slice(0, 3).join(", ")}...`;
-  return partes.join(", ");
+  return partes.join("\n");
 }
 
 function ofrecerSita(s: Estado, items: Cantidades, urgente: boolean) {
@@ -2900,24 +3234,22 @@ function ofrecerSita(s: Estado, items: Cantidades, urgente: boolean) {
   const total = mats + flete;
   if (mats <= 0) return;
   const llega = llegadaPedido(s, urgente, s.minuto + 1);
-  const cuando = urgente ? `llega a las ${horaDe(llega.minuto)}` : "llega mañana 7:30";
+  const cuando = fraseCuando(s, urgente, llega);
   const modo = urgente ? "Urgente" : "Normal";
   const cabeza = urgente ? "Para hoy faltan" : "Para mañana faltan";
-  const primero = urgente ? null : matQueFrena(s);
-  let texto = `${cabeza}: ${textoLista(items, primero)}. ¿Pido? ${modo} ${peso(total)}, ${cuando}`;
-  if (total > cajaLibre(s) + 0.5 && puedeAdelantar(s, total)) {
-    const libre = cajaLibre(s);
-    const monto = montoAdelanto(s);
-    if (total <= libre + monto + 0.5) {
-      const quedan = libre + monto - total;
-      texto += ` Caja libre ${peso(libre)}. Al tocar Pedir, Doña Carmen adelanta ${peso(monto)} y quedan libres ${peso(quedan)}.`;
-    } else {
-      const faltan = Math.max(0, total - libre - monto);
-      texto += `. Caja libre ${peso(libre)}. Ni con el adelanto de ${peso(monto)} alcanza: faltan ${peso(faltan)}.`;
-    }
+  const cuerpo = cuerpoNota(s);
+  let texto = `${cabeza}:\n${cuerpo.lineas}`;
+  if (cuerpo.lineasSig) texto += `\nPara la siguiente etapa (opcional):\n${cuerpo.lineasSig}`;
+  texto += `\n¿Pido? ${modo} ${peso(total)}, ${cuando}`;
+  const cuenta = cuentaPedido(s, total);
+  if (cuenta.nomina > 0.5 || cuenta.usaAdelanto || !cuenta.alcanza) {
+    texto += ` ${textoCajaLibre(s)}.`;
+    if (cuenta.usaAdelanto) texto += ` Usa el adelanto de Doña Carmen: ${peso(cuenta.adelanto)}. Hoy no habrá otro.`;
+    else if (!cuenta.alcanza) texto += ` No alcanza para la nómina de hoy.`;
   }
-  s.sita.oferta = { items, urgente, mats, flete, total, texto };
-  s.sita.ultima = { items: { ...items }, urgente, mats, flete, total, texto };
+  const siguiente = tieneItems(cuerpo.siguiente) ? cuerpo.siguiente : undefined;
+  s.sita.oferta = { items, urgente, mats, flete, total, texto, siguiente };
+  s.sita.ultima = { items: { ...items }, urgente, mats, flete, total, texto, siguiente };
   s.sita.editando = false;
   if (s.sita.fase === "casa") {
     const p = puertaAlmacen();
@@ -2925,8 +3257,8 @@ function ofrecerSita(s: Estado, items: Cantidades, urgente: boolean) {
     s.sita.y = p.y;
   }
   s.sita.fase = "yendo";
-  apunte(s, "nota", texto, "almacén");
-  diario(s, `Sita propone un pedido ${urgente ? "urgente" : "normal"} de ${peso(total)}.`);
+  if (!notaEnDia(s, cabeza)) apunte(s, "nota", texto, "almacén");
+  diario(s, `El guardalmacén propone un pedido ${urgente ? "urgente" : "normal"} de ${peso(total)}.`);
 }
 
 function revisarSita(s: Estado) {
@@ -2962,29 +3294,41 @@ function cerrarOfertaSita(s: Estado) {
 
 export function aceptarSita(s: Estado): string | null {
   const of = s.sita?.oferta;
-  if (!of) return "Sita no tiene nada que pedir.";
-  let err = pedir(s, of.items, of.urgente);
-  if (err && /nómina|caja libre/.test(err) && pedidoAlcanza(s, of.total) && of.total > cajaLibre(s) + 0.5) {
-    adelantar(s, of.total);
-    err = pedir(s, of.items, of.urgente);
+  if (!of) return "El guardalmacén no tiene nada que pedir.";
+  const ahora = loQueFalta(s);
+  const items: Cantidades = {};
+  for (const [k, n] of Object.entries(of.items) as [Mat, number][]) {
+    const q = Math.min(n ?? 0, ahora[k] ?? 0);
+    if (q > 1e-6) items[k] = q;
   }
+  const siguiente = of.siguiente && tieneItems(of.siguiente) ? { ...of.siguiente } : undefined;
+  if (!tieneItems(items)) {
+    if (siguiente) return "Eso ya está pedido. La siguiente etapa sigue aparte.";
+    if (s.sita) s.sita.ultima = null;
+    cerrarOfertaSita(s);
+    return "Ya está todo en el almacén o en camino";
+  }
+  const mats = Object.entries(items).reduce((a, [k, n]) => a + (n ?? 0) * MATERIALES[k as Mat].precio, 0);
+  const total = mats + of.flete;
+  of.items = items;
+  of.mats = mats;
+  of.total = total;
+  const mantener = !!siguiente;
+  const err = pedir(s, items, of.urgente, mantener);
   if (!err) {
+    if (mantener && s.sita?.oferta) {
+      s.sita.oferta.items = {};
+      s.sita.oferta.mats = 0;
+      s.sita.oferta.total = 0;
+      s.sita.oferta.siguiente = siguiente;
+    }
     s.tut.pedido = true;
     s.tut.sita = true;
     s.sita.ultima = null;
     chequearTutorial(s);
     return null;
   }
-  if (/nómina|caja libre/.test(err)) {
-    const libre = cajaLibre(s);
-    let faltan = Math.max(0, of.total - libre);
-    if (puedeAdelantar(s, of.total)) {
-      const monto = montoAdelanto(s);
-      if (of.total > libre + monto + 0.5) faltan = Math.max(0, of.total - libre - monto);
-    }
-    cerrarOfertaSita(s);
-    return `El pedido es ${peso(of.total)}. La caja libre es ${peso(libre)}. Faltan ${peso(faltan)}.`;
-  }
+  if (/nómina|caja libre/.test(err)) return err;
   return err;
 }
 
@@ -3009,10 +3353,14 @@ function ofrecerManual(s: Estado, items: Cantidades, urgente: boolean) {
   const flete = urgente ? FLETE_URGENTE : FLETE;
   const total = mats + flete;
   const llega = llegadaPedido(s, urgente, s.minuto + 1);
-  const cuando = urgente ? `llega a las ${horaDe(llega.minuto)}` : "llega mañana 7:30";
+  const cuando = fraseCuando(s, urgente, llega);
   const modo = urgente ? "Urgente" : "Normal";
-  const texto = `Lo que falta: ${textoLista(items)}. ¿Pido? ${modo} ${peso(total)}, ${cuando}`;
-  const oferta = { items: { ...items }, urgente, mats, flete, total, texto };
+  const cuerpo = cuerpoNota(s);
+  let texto = `Lo que falta:\n${cuerpo.lineas}`;
+  if (cuerpo.lineasSig) texto += `\nPara la siguiente etapa (opcional):\n${cuerpo.lineasSig}`;
+  texto += `\n¿Pido? ${modo} ${peso(total)}, ${cuando}`;
+  const siguiente = tieneItems(cuerpo.siguiente) ? cuerpo.siguiente : undefined;
+  const oferta = { items: { ...items }, urgente, mats, flete, total, texto, siguiente };
   s.sita.oferta = oferta;
   s.sita.ultima = { ...oferta, items: { ...items } };
   s.sita.editando = false;
@@ -3020,16 +3368,11 @@ function ofrecerManual(s: Estado, items: Cantidades, urgente: boolean) {
 
 export function hablarSita(s: Estado) {
   if (!s.firmado || !s.sita || s.entregada) return;
-  if (!s.sita.oferta) {
-    const u = s.sita.ultima;
-    const urgenteOk = s.minuto < 12 * 60;
-    if (u && tieneItems(u.items)) {
-      if (u.urgente && !urgenteOk) ofrecerManual(s, u.items, false);
-      else s.sita.oferta = { ...u, items: { ...u.items } };
-    } else {
-      const items = loQueFalta(s);
-      if (tieneItems(items)) ofrecerManual(s, items, false);
-    }
+  const items = loQueFalta(s);
+  if (tieneItems(items)) ofrecerManual(s, items, false);
+  else {
+    s.sita.oferta = null;
+    s.sita.ultima = null;
   }
   s.panel = "sita";
 }
@@ -3071,12 +3414,12 @@ function moverSita(s: Estado, dt: number, vel: number) {
   s.sita.y = nxt.y;
 }
 
-export function pedir(s: Estado, items: Cantidades, urgente: boolean): string | null {
+export function pedir(s: Estado, items: Cantidades, urgente: boolean, mantener = false): string | null {
   const limpio: Cantidades = {};
   let avisosTope = false;
   for (const [k, n] of Object.entries(items) as [Mat, number][]) {
     if (!n || n <= 0 || !MATERIALES[k]?.compra || k === "kit") continue;
-    const paso = MATERIALES[k].paso;
+    const paso = pasoCompra(k);
     let q = Math.ceil((n - 1e-9) / paso) * paso;
     if (k !== "cemento") {
       const esp = espacio(s, k) - enCamino(s, k);
@@ -3091,7 +3434,7 @@ export function pedir(s: Estado, items: Cantidades, urgente: boolean): string | 
   if (urgente && s.minuto >= 12 * 60) return "Lo urgente solo corre antes de las 12.";
   const flete = urgente ? FLETE_URGENTE : FLETE;
   const total = mats + flete;
-  if (total > cajaLibre(s) + 0.5) return "Eso se come la nómina de hoy. La caja libre no da.";
+  if (total > cajaLibre(s) + 0.5) return `Eso se come la nómina de hoy. ${textoCajaLibre(s)}.`;
   let cementoNuevo = limpio.cemento ?? 0;
   if (cementoNuevo > 0) {
     const bajoTecho = s.inv.cemento.q;
@@ -3112,17 +3455,38 @@ export function pedir(s: Estado, items: Cantidades, urgente: boolean): string | 
     urgente,
   });
   diario(s, `Pedido a la ferretería: −${peso(total)} (${urgente ? "urgente" : "flete normal"}).`);
-  aviso(s, urgente ? "El camión sale ya. Llega en 3 horas." : "Pedido hecho. Llega mañana a las 7:30.");
+  const cuando = fraseCuando(s, urgente, llega);
+  const normalManana = !urgente && cuando === "llega mañana 7:30";
+  const conBlock = (limpio.block ?? 0) > 0;
+  const avisoLlega = urgente && llega.dia === s.dia
+    ? "El camión sale ya. Llega en 3 horas."
+    : normalManana && conBlock
+      ? "Llega mañana 7:30. El block empieza cuando llegue."
+      : `Pedido hecho. ${cuando.charAt(0).toUpperCase()}${cuando.slice(1)}.`;
+  aviso(s, avisoLlega);
   if (avisosTope) aviso(s, "Parte del pedido se recortó por el tope del almacén.");
-  cerrarOfertaSita(s);
+  if (!mantener) {
+    if (s.sita) s.sita.ultima = null;
+    cerrarOfertaSita(s);
+  }
   return null;
+}
+
+export function pedirTambien(s: Estado): string | null {
+  const of = s.sita?.oferta;
+  const sig = of?.siguiente;
+  if (!of || !sig || !tieneItems(sig)) return "La etapa siguiente no pide material.";
+  const quedaMain = tieneItems(of.items);
+  const err = pedir(s, sig, !!of.urgente, quedaMain);
+  if (!err && quedaMain && s.sita?.oferta) s.sita.oferta.siguiente = undefined;
+  return err;
 }
 
 export function contratar(s: Estado, id: string): string | null {
   if (s.gente.length + s.reserva.length >= MAX_CUADRILLA) return "Ya son 8. No cabe nadie más.";
-  const i = s.candidatos.findIndex((c) => c.id === id);
-  if (i < 0) return "Esa persona ya no está en la oficina.";
-  const p = s.candidatos.splice(i, 1)[0]!;
+  const p = s.candidatos.find((c) => c.id === id);
+  if (!p) return "Esa persona ya no está en la oficina.";
+  if (s.gente.some((g) => g.id === id) || s.reserva.some((g) => g.id === id)) return null;
   const hoy = s.minuto < 9 * 60 && !s.nominaPagada;
   if (hoy) {
     p.activo = true;
@@ -3135,6 +3499,8 @@ export function contratar(s: Estado, id: string): string | null {
     aviso(s, `${p.nombre} empieza mañana.`);
   }
   diario(s, `Contrataste a ${p.nombre} ${p.apellido}, ${OFICIO_NOMBRE[p.oficio]}.`);
+  p.puesto = null;
+  p.cansancio = 0;
   if (s.gente.length + s.reserva.length >= 3) s.tut.parada = true;
   chequearTutorial(s);
   return null;
@@ -3190,19 +3556,15 @@ export function marcarLibre(s: Estado, id: string, valor: boolean) {
 }
 
 function pideCompra(need: Cantidades): boolean {
-  return COMPRA.some((m) => (need[m] ?? 0) > 0.02);
-}
-
-function faltaCompra(s: Estado): boolean {
-  const need = sumaNecesidad(s, s.etapa, true, true);
-  return COMPRA.some((m) => (need[m] ?? 0) - (s.inv[m]?.q ?? 0) - enCamino(s, m) > 0.02);
+  return COMPRA.some((m) => (need[m] ?? 0) > 1e-6);
 }
 
 function montoAdelanto(s: Estado): number {
-  const pendiente = Math.max(0, CONTRATO - s.cobrado + s.adelanto);
+  const precio = precioDe(s);
+  const pendiente = Math.max(0, precio - s.cobrado + s.adelanto);
   const tope = Math.round(pendiente * 0.3);
   const room = tope - s.adelanto;
-  const falta = CONTRATO - s.cobrado;
+  const falta = precio - s.cobrado;
   const monto = Math.round(Math.min(20000, Math.max(0, room), Math.max(0, falta)));
   return monto >= 100 ? monto : 0;
 }
@@ -3211,6 +3573,76 @@ export function puedeAdelantar(s: Estado, pedido = 0): boolean {
   if (s.adelantoDia === s.dia) return false;
   if (cajaLibre(s) - Math.max(0, pedido) >= 5000) return false;
   return montoAdelanto(s) >= 100;
+}
+
+export function textoTopeAdelanto(s: Estado): string {
+  return `Hasta el 30 % de lo que falta por cobrar, menos lo ya adelantado (${peso(s.adelanto)}). Tope ${peso(20000)}.`;
+}
+
+export function razonAdelanto(s: Estado): string {
+  if (s.adelantoDia === s.dia) return "Doña Carmen ya soltó un adelanto hoy.";
+  if (cajaLibre(s) >= 5000) return "Todavía tienes más de P$5,000 libres. Doña Carmen no suelta más.";
+  if (precioDe(s) - s.cobrado <= 1) return "Ya no queda nada por cobrar.";
+  if (montoAdelanto(s) < 100) return "Doña Carmen no suelta más hasta que se cobre un tramo.";
+  return "";
+}
+
+export interface CuentaPedido {
+  caja: number;
+  pedido: number;
+  jornales: number;
+  herramienta: number;
+  direccion: number;
+  nomina: number;
+  adelanto: number;
+  usaAdelanto: boolean;
+  libre: number;
+  alcanza: boolean;
+}
+
+export function cuentaPedido(s: Estado, total: number): CuentaPedido {
+  const d = desgloseNomina(s);
+  const base = s.caja - total - d.total;
+  let adelanto = 0;
+  let usa = false;
+  if (base < -0.5 && puedeAdelantar(s, total)) {
+    const m = montoAdelanto(s);
+    if (base + m >= -0.5) {
+      usa = true;
+      adelanto = m;
+    }
+  }
+  const libre = base + adelanto;
+  return {
+    caja: s.caja,
+    pedido: total,
+    jornales: d.jornales,
+    herramienta: d.herramienta,
+    direccion: d.direccion,
+    nomina: d.total,
+    adelanto,
+    usaAdelanto: usa,
+    libre,
+    alcanza: libre >= -0.5,
+  };
+}
+
+export function abrirDespacho(s: Estado) {
+  if (!s.firmado || s.entregada) return;
+  if (s.minuto >= 15 * 60 || s.nominaPagada) {
+    terminarJornada(s);
+    return;
+  }
+  s.panel = "despacho";
+}
+
+export function confirmarDespacho(s: Estado) {
+  if (s.panel === "despacho") s.panel = null;
+  terminarJornada(s);
+}
+
+export function seguirJornada(s: Estado) {
+  if (s.panel === "despacho") s.panel = null;
 }
 
 export function pedidoAlcanza(s: Estado, total: number): boolean {
@@ -3233,7 +3665,7 @@ export function adelantar(s: Estado, pedido = 0): string | null {
     if (cajaLibre(s) - Math.max(0, pedido) >= 5000)
       return "Todavía tienes más de P$5,000 libres. Doña Carmen no suelta más.";
     if (s.adelantoDia === s.dia) return "Doña Carmen ya soltó un adelanto hoy.";
-    if (CONTRATO - s.cobrado <= 1) return "Ya no queda nada por cobrar.";
+    if (precioDe(s) - s.cobrado <= 1) return "Ya no queda nada por cobrar.";
     return "Doña Carmen no suelta más hasta que se cobre un tramo.";
   }
   const monto = montoAdelanto(s);
@@ -3305,6 +3737,9 @@ export function siguienteDia(s: Estado) {
   s.lluviaOn = false;
   s.aviso14 = false;
   s.avisoNubes = false;
+  s.aguaDia = 0;
+  s.salidaMin = -1;
+  s.nominaHoy = 0;
   for (const p of s.reserva) s.gente.push(p);
   s.reserva = [];
   const sinCobro = s.caja < 0;
@@ -3376,6 +3811,33 @@ function distAlSolar(x: number, y: number): number {
   return Math.hypot(dx, dy);
 }
 
+function juntoAZanja(s: Estado): boolean {
+  if (distAlSolar(s.jugador.x, s.jugador.y) <= 1.5) return true;
+  return dist(s.jugador, SITIOS.obra) <= RADIO;
+}
+
+function juntoAlMuro(s: Estado): boolean {
+  if (distAlSolar(s.jugador.x, s.jugador.y) <= 1.5) return true;
+  return dist(s.jugador, SITIOS.obra) <= 1.5;
+}
+
+function distCaja(x: number, y: number, c: { x0: number; y0: number; x1: number; y1: number }): number {
+  const dx = Math.max(c.x0 - x, 0, x - c.x1);
+  const dy = Math.max(c.y0 - y, 0, y - c.y1);
+  return Math.hypot(dx, dy);
+}
+
+function distFerreteria(x: number, y: number): number {
+  const caja = {
+    x0: SITIOS.ferreteria.x - 4.1 / 2,
+    y0: SITIOS.ferreteria.y - 2.5 / 2,
+    x1: SITIOS.ferreteria.x + 4.1 / 2,
+    y1: SITIOS.ferreteria.y + 2.5 / 2,
+  };
+  const d = distCaja(x, y, caja);
+  return d <= 1 ? d : 99;
+}
+
 export function cercano(s: Estado): SitioCerca | null {
   const dObra = distAlSolar(s.jugador.x, s.jugador.y);
   const pts: SitioCerca[] = [
@@ -3387,7 +3849,7 @@ export function cercano(s: Estado): SitioCerca | null {
     { ...SITIOS.oficina, d: dist(s.jugador, SITIOS.oficina) },
     { ...SITIOS.entrada, d: dist(s.jugador, SITIOS.entrada) },
     { ...SITIOS.obra, d: dObra <= 1.5 ? dObra : 99 },
-    { ...SITIOS.ferreteria, d: dist(s.jugador, SITIOS.ferreteria) },
+    { ...SITIOS.ferreteria, d: distFerreteria(s.jugador.x, s.jugador.y) },
     { ...SITIOS.sombra, d: dist(s.jugador, SITIOS.sombra) },
   ];
   pts.sort((a, b) => a.d - b.d);
@@ -3442,7 +3904,7 @@ function anotarGolpeMaestro(s: Estado) {
   const k = String(s.dia);
   dias[k] = (dias[k] ?? 0) + 1;
   s.gritos ??= [];
-  s.gritos.push({ texto: "El maestro le dio", x: SITIOS.obra.x, y: SITIOS.obra.y });
+  s.gritos.push({ texto: "El maestro lo dijo", x: SITIOS.obra.x, y: SITIOS.obra.y });
   if (s.gritos.length > 6) s.gritos.splice(0, s.gritos.length - 6);
 }
 
@@ -3460,6 +3922,7 @@ function pulsoGolpeMaestro(s: Estado) {
   if (!s.firmado || s.entregada || s.minuto >= 15 * 60 || s.panel || s.pausa) return;
   s.sinGolpe = (s.sinGolpe ?? 0) + 1;
   if (s.sinGolpe < 15) return;
+  if (distAlSolar(s.jugador.x, s.jugador.y) > 3) return;
   if (lluviaAhora(s)) return;
   if (!hayPuestoUtil(s)) return;
   s.sinGolpe = 0;
@@ -3468,47 +3931,57 @@ function pulsoGolpeMaestro(s: Estado) {
 }
 
 export function golpe(s: Estado, alCompas: boolean): Flotante | null {
-  if (!s.firmado || s.entregada || s.panel || s.pausa) return null;
-  const sitio = cercano(s);
-  const ps = puntoSita(s);
-  const dSita = dist(s.jugador, ps);
-  if (sitio?.id === "almacen" || (dSita <= 1.15 && sitio?.id !== "oficina" && sitio?.id !== "obra" && sitio?.id !== "batea" && sitio?.id !== "ferreteria")) {
+  if (s.entregada || s.panel || s.pausa) return null;
+  const q = queHaceEspacio(s);
+  if (!s.firmado) {
+    if (q.hacer === "firma") {
+      abrirPanel(s, "contrato");
+      return null;
+    }
+    return flot("Doña Carmen está en la oficina", s.jugador.x, s.jugador.y, false);
+  }
+  if (q.hacer === "zanja" || q.hacer === "muro") return flot(q.verbo, s.jugador.x, s.jugador.y, false);
+  if (q.hacer === "sita") {
     hablarSita(s);
     return null;
   }
-  if (!sitio) return flot("Nada cerca", s.jugador.x, s.jugador.y, false);
+  const sitio = cercano(s);
+  if (q.hacer === "nada") return flot(q.detalle || "Nada cerca", s.jugador.x, s.jugador.y, false);
   s.stats.golpes += 1;
   if (alCompas) s.stats.compas += 1;
   const b = alCompas ? 1.25 : 1;
   const { x, y } = s.jugador;
-  if (sitio.id === "oficina") {
+  if (q.hacer === "oficina") {
     s.oficinaTab = "gente";
     abrirPanel(s, "oficina");
     return null;
   }
-  if (sitio.id === "ferreteria") {
+  if (q.hacer === "ferreteria") {
     abrirPanel(s, "ferreteria");
     return null;
   }
-  if (sitio.id === "sombra") return flot("Sombra", x, y, false);
-  if (sitio.id === "tanque" || sitio.id === "toma" || sitio.id === "monton" || sitio.id === "entrada")
+  if (sitio?.id === "sombra") return flot("Sombra", x, y, false);
+  if (sitio && (sitio.id === "tanque" || sitio.id === "toma" || sitio.id === "monton" || sitio.id === "entrada"))
     return flot(sitio.nombre, x, y, false);
-  if (sitio.id === "batea") {
+  if (q.hacer === "batea") {
     s.sinGolpe = 0;
     return golpeBatea(s, b, alCompas);
   }
-  if (sitio.id === "obra") {
+  if (q.hacer === "obra") {
     s.sinGolpe = 0;
-    return golpeObra(s, b, alCompas);
+    const f = golpeObra(s, b, alCompas);
+    if (f) return f;
+    return flot("Nada que hacer", x, y, false);
   }
-  return null;
+  return flot("Nada cerca", x, y, false);
 }
 
 function golpeBatea(s: Estado, b: number, oro: boolean): Flotante {
   const { x, y } = s.jugador;
   let curso = s.mezclas.find((m) => !m.lista);
   if (!curso) {
-    const tipo = tipoQueFalta(s) ?? (listos(s).some((w) => w.mezcla === "M") ? "M" : "H");
+    const tipo = tipoQueFalta(s);
+    if (!tipo) return flot("Nada que batir", x, y, false);
     const map = receta(tipo);
     if (!tieneMapa(s, map)) {
       if (aguaEsElFreno(s, map)) return flot("Sin agua", x, y, false);
@@ -3554,6 +4027,14 @@ function golpeObra(s: Estado, b: number, oro: boolean): Flotante | null {
   if (!w) {
     if (s.curando && s.curadoDias.length < 3 && s.etapa >= 8) return flot("Curado", x, y, false);
     return flot("Nada que hacer", x, y, false);
+  }
+  if (w.k === "achicar") {
+    if (lluviaAhora(s)) return flot("Sigue lloviendo", x, y, false);
+    const peon = s.gente.some((g) => g.activo && !g.fuera && !g.falto && (g.oficio === "peon" || g.oficio === "ayudante"));
+    if (!peon) return flot("Falta un peón", x, y, false);
+    const got = aplicar(s, w, 1);
+    if (got <= 1e-8) return flot(lluviaAhora(s) ? "Sigue lloviendo" : "Falta un peón", x, y, false);
+    return flot(`Achicar ${fmtCta(w.hecho)}/${fmtCta(w.q)}`, x, y, oro);
   }
   const dq = TAREAS[w.k].golpe * b;
   const antes = w.hecho;
@@ -3603,36 +4084,61 @@ function corto(w: W): string {
   return w.nombre;
 }
 
-export function accion(s: Estado): { tecla: string; verbo: string; detalle: string } {
+type HacerEspacio = "firma" | "nada" | "zanja" | "muro" | "sita" | "oficina" | "ferreteria" | "batea" | "obra" | "sitio";
+
+export function queHaceEspacio(s: Estado): { tecla: string; verbo: string; detalle: string; hacer: HacerEspacio } {
   const sitio = cercano(s);
-  if (!s.firmado) return { tecla: "Espacio", verbo: "Firma primero", detalle: "Doña Carmen te espera" };
-  if (!sitio) return { tecla: "Espacio", verbo: "Camina", detalle: "Nada a 2 metros" };
+  if (!s.firmado) {
+    if (sitio?.id === "oficina") return { tecla: "Espacio", verbo: "Firmar", detalle: "Doña Carmen, la dueña", hacer: "firma" };
+    return { tecla: "Espacio", verbo: "Camina", detalle: "", hacer: "nada" };
+  }
+  const achicar = listos(s).find((w) => w.k === "achicar");
+  if (achicar && !juntoAZanja(s)) {
+    return { tecla: "Espacio", verbo: "Camina a la zanja", detalle: `Achicar ${fmtCta(achicar.hecho)}/${fmtCta(achicar.q)}`, hacer: "zanja" };
+  }
+  if (achicar && juntoAZanja(s)) {
+    return { tecla: "Espacio", verbo: "Achicar", detalle: `${fmtCta(achicar.hecho)}/${fmtCta(achicar.q)}`, hacer: "obra" };
+  }
+  if (s.plomo && !juntoAlMuro(s)) {
+    return { tecla: "Espacio", verbo: "Camina al muro", detalle: "Plomear", hacer: "muro" };
+  }
+  if (s.plomo && juntoAlMuro(s)) {
+    return { tecla: "Espacio", verbo: "Plomear", detalle: "", hacer: "obra" };
+  }
+  const ps = s.sita ? puntoSita(s) : null;
+  const dSita = ps ? dist(s.jugador, ps) : 99;
+  const bloqueaSita = sitio?.id === "oficina" || sitio?.id === "obra" || sitio?.id === "batea" || sitio?.id === "ferreteria";
+  if (s.sita && (sitio?.id === "almacen" || (dSita <= 1.15 && !bloqueaSita))) {
+    return { tecla: "Espacio", verbo: "Almacén", detalle: "el libro del guardalmacén", hacer: "sita" };
+  }
+  if (!sitio) return { tecla: "Espacio", verbo: "Camina", detalle: "Nada a 2 metros", hacer: "nada" };
   if (sitio.id === "batea") {
     const c = s.mezclas.find((m) => !m.lista);
     return {
       tecla: "Espacio",
       verbo: "Mezclar",
       detalle: c ? `${Math.round(c.prog * 100)}% de ${c.tipo === "H" ? "hormigón" : "mortero"}` : "una tanda en el trompo",
+      hacer: "batea",
     };
   }
-  if (sitio.id === "almacen") return { tecla: "Espacio", verbo: "Almacén", detalle: "el libro de Sita" };
-  if (sitio.id === "oficina") return { tecla: "Espacio", verbo: "Oficina", detalle: "contrata, planos y teléfono" };
-  if (sitio.id === "ferreteria") return { tecla: "Espacio", verbo: "Ferretería El Cruce", detalle: "precio y entrega" };
-  if (sitio.id === "entrada") return { tecla: "Espacio", verbo: "Entrada", detalle: "aquí deja el camión" };
-  if (sitio.id === "tanque") return { tecla: "Espacio", verbo: "Tanque", detalle: s.inv.agua.q > 0.15 ? "tiene agua" : "está vacío" };
-  if (sitio.id === "toma") return { tecla: "Espacio", verbo: "Toma", detalle: "el agua del solar no se cobra" };
-  if (sitio.id === "monton") return { tecla: "Espacio", verbo: "Montón", detalle: "arena y grava" };
-  if (sitio.id === "sombra") return { tecla: "Espacio", verbo: "Sombra", detalle: "debajo del mango" };
-  if (s.plomo) return { tecla: "Espacio", verbo: "Plomear", detalle: "" };
+  if (sitio.id === "almacen") return { tecla: "Espacio", verbo: "Almacén", detalle: "el libro del guardalmacén", hacer: "sita" };
+  if (sitio.id === "oficina") return { tecla: "Espacio", verbo: "Oficina", detalle: "contrata, planos y teléfono", hacer: "oficina" };
+  if (sitio.id === "ferreteria") return { tecla: "Espacio", verbo: "Ferretería El Cruce", detalle: "precio y entrega", hacer: "ferreteria" };
+  if (sitio.id === "entrada") return { tecla: "Espacio", verbo: "Entrada", detalle: "aquí deja el camión", hacer: "sitio" };
+  if (sitio.id === "tanque") return { tecla: "Espacio", verbo: "Tanque", detalle: s.inv.agua.q > 0.15 ? "tiene agua" : "está vacío", hacer: "sitio" };
+  if (sitio.id === "toma") return { tecla: "Espacio", verbo: "Toma", detalle: "el agua del solar no se cobra", hacer: "sitio" };
+  if (sitio.id === "monton") return { tecla: "Espacio", verbo: "Montón", detalle: "arena y grava", hacer: "sitio" };
+  if (sitio.id === "sombra") return { tecla: "Espacio", verbo: "Sombra", detalle: "debajo del mango", hacer: "sitio" };
   if (s.curando && !s.regadoHoy && s.curadoDias.length < 3)
-    return { tecla: "Espacio", verbo: "Regar la viga", detalle: `${s.curadoDias.length}/3 días · 0.1 m³` };
+    return { tecla: "Espacio", verbo: "Regar la viga", detalle: `${s.curadoDias.length}/3 días · 0.1 m³`, hacer: "obra" };
   const w = listos(s).find((t) => t.k !== "regar");
-  if (!w) return { tecla: "Espacio", verbo: cuello(s), detalle: "el cartel de arriba dice por qué" };
-  return {
-    tecla: "Espacio",
-    verbo: w.nombre,
-    detalle: `${num(w.hecho, 1)} / ${num(w.q, 1)}`,
-  };
+  if (!w) return { tecla: "Espacio", verbo: cuello(s), detalle: "el cartel de arriba dice por qué", hacer: "obra" };
+  return { tecla: "Espacio", verbo: w.nombre, detalle: `${num(w.hecho, 1)} / ${num(w.q, 1)}`, hacer: "obra" };
+}
+
+export function accion(s: Estado): { tecla: string; verbo: string; detalle: string } {
+  const q = queHaceEspacio(s);
+  return { tecla: q.tecla, verbo: q.verbo, detalle: q.detalle };
 }
 
 function matsEnFalta(s: Estado, w: W): Mat[] {
@@ -3663,11 +4169,12 @@ function materialFalta(s: Estado, w: W): string | null {
   const pedido = loQueFalta(s);
   for (const m of matsEnFalta(s, w)) {
     const nom = MATERIALES[m].nombre;
-    if (enCamino(s, m) > 0) return `Falta ${nom}. Viene en el camión.`;
-    if ((s.entrada[m]?.q ?? 0) > 0.02) return `${nom} está en la entrada. Hay que acarrearlo.`;
+    const pide = (pedido[m] ?? 0) > 0;
+    if (!pide && enCamino(s, m) > 0) continue;
+    if (enCamino(s, m) > 0) return "Viene en el camión";
+    if ((s.entrada[m]?.q ?? 0) > 0.02) return `${nom} ya llegó a la entrada. Falta el acarreo.`;
     if (m === "tierra") return "Falta tierra. Sale de la zanja.";
-    if (m === "agua") continue;
-    if ((pedido[m] ?? 0) <= 0) continue;
+    if (m === "agua" || !pide) continue;
     return `Falta ${nom}. Pídelo en la Ferretería.`;
   }
   return null;
@@ -3714,6 +4221,8 @@ function matQueFrena(s: Estado): Mat | null {
 
 export function cuello(s: Estado): string {
   if (!s.entregada && !lluviaAhora(s) && s.minuto >= 15 * 60) {
+    if (s.salidaMin >= 0 && s.salidaMin < 15 * 60)
+      return `Se fueron a las ${horaDe(s.salidaMin)}. El día se paga completo.`;
     const w = trabajoSiguiente(s);
     const mf = w ? materialFalta(s, w) : null;
     const m = mf && mf.includes("Ferretería") ? matQueFrena(s) : null;
@@ -3726,6 +4235,7 @@ export function cuello(s: Estado): string {
 
 /** El cartel de faena, sin el cierre de las 15:00. Lo usan los ensayos para no cambiar el día. */
 export function cuelloLabor(s: Estado): string {
+  if (!s.firmado) return "Doña Carmen te espera en la oficina para firmar la caseta.";
   if (s.entregada) return "Obra entregada. Doña Carmen ya tiene su caseta.";
   if (lluviaAhora(s)) return "Aguacero. La cuadrilla está en el almacén.";
   if (s.plomo) return "Toca plomear: ve al muro y pulsa Espacio.";
@@ -3743,7 +4253,7 @@ export function cuelloLabor(s: Estado): string {
       return elegir(s, g)?.k === "replantear";
     });
     if (!alguien) return `${base} · Manda a alguien a replantear.`;
-    return `${base} · ${num(diag, 1)} de 2`;
+    return base;
   }
   if (def.id === "replanteo" && diag >= 2 - 1e-4 && s.minuto < s.escuadraHasta)
     return "Replanteo listo: escuadra comprobada 3, 4, 5";
@@ -3765,7 +4275,13 @@ export function cuelloLabor(s: Estado): string {
     s.blocksHoy >= TOPE_BLOCK_DIA - 1e-4 && def.id === "muros" && runDe(s, s.etapa, "block").hecho < BLOCKS_MURO - 1e-3;
   if (!topeHiladas) {
     const ultima = faltaTrasTanda(s);
-    if (ultima) return `Última tanda en el trompo. Después falta ${ultima}: pídela.`;
+    if (ultima === "sobro") return "Sobró una tanda en el trompo";
+    if (ultima === "entrada") {
+      const w = trabajoSiguiente(s);
+      const mf = w ? materialFalta(s, w) : null;
+      if (mf) return mf;
+    } else if (ultima === "camion") return "Viene en el camión";
+    else if (ultima) return `Última tanda en el trompo. Después falta ${ultima}: pídela.`;
   }
   if (siguiente) {
     const mf = materialFalta(s, siguiente);
@@ -3782,9 +4298,10 @@ export function cuelloLabor(s: Estado): string {
         if (lab === "batea") return true;
         return g.puesto === "batea" && lab === "agua";
       });
+      const puestoTrompo = s.gente.some((g) => g.activo && !g.fuera && !g.falto && g.puesto === "batea");
       const sinIng = (Object.entries(map) as [Mat, number][]).some(([k, n]) => s.inv[k].q < n - 1e-6);
       const vaPorAgua = s.gente.some((g) => laborDe(s, g) === "agua");
-      if (!cubreBatea) {
+      if (!cubreBatea && !puestoTrompo) {
         if (curso <= 0 && aguaEsElFreno(s, map) && !vaPorAgua) return "Sin agua en el tanque: manda a alguien por agua.";
         if (curso <= 0 && sinIng) return "El trompo está sin ingredientes.";
         return "Nadie en el Trompo: pon a alguien a batir.";
@@ -3797,23 +4314,23 @@ export function cuelloLabor(s: Estado): string {
       }
     }
   }
-  if (topeHiladas) return "Ya van 6 hiladas hoy. Mañana se sigue el muro.";
+  if (topeHiladas) return "Máximo 6 hiladas por día.";
   if (siguiente) return `${def.nombre}: ${siguiente.nombre} · ${num(siguiente.hecho, 1)} / ${num(siguiente.q, 1)}`;
   return `${def.nombre}: ${num(progresoEtapa(s) * 100, 0)}%`;
 }
 
 function faltaTrasTanda(s: Estado): string | null {
-  const queda = s.mezclas.some((m) => (m.lista && m.restante > 0.02) || (!m.lista && m.prog > 0.02));
+  const queda = s.mezclas.some((m) => (m.lista && m.restante > 1e-4) || (!m.lista && m.prog > 1e-4));
   if (!queda) return null;
-  const tipo = tipoQueFalta(s);
-  if (!tipo) return null;
-  const map = receta(tipo);
-  if (tieneMapa(s, map)) return null;
-  const orden: Mat[] = ["arena", "grava", "cemento", "agua"];
+  const usa = tandasRestantes(s, "H") > 1e-6 || tandasRestantes(s, "M") > 1e-6;
+  if (!usa) return "sobro";
+  const pedido = loQueFalta(s);
+  const orden: Mat[] = ["arena", "grava", "cemento"];
   for (const k of orden) {
-    const n = map[k];
-    if (!n) continue;
-    if ((s.inv[k]?.q ?? 0) + 1e-9 < n) return MATERIALES[k].nombre;
+    if ((pedido[k] ?? 0) <= 0 && (s.entrada[k]?.q ?? 0) <= 0.02 && enCamino(s, k) <= 0) continue;
+    if ((s.entrada[k]?.q ?? 0) > 0.02) return "entrada";
+    if (enCamino(s, k) > 0) return "camion";
+    if ((pedido[k] ?? 0) > 0) return MATERIALES[k].nombre;
   }
   return null;
 }
@@ -3934,7 +4451,7 @@ export function libreta(s: Estado) {
     costo,
     presupuesto: PRESUPUESTO_TOTAL,
     porHacer,
-    ganancia: CONTRATO - (costo + porHacer),
+    ganancia: precioDe(s) - (costo + porHacer),
     cobrado: s.cobrado,
     caja: s.caja,
     diario: s.diario,
@@ -3969,13 +4486,16 @@ export function informe(s: Estado) {
 }
 
 export function tramos(s: Estado): { nombre: string; monto: number; cobrado: boolean; nota: string }[] {
+  const precio = precioDe(s);
+  const anticipo = Math.round(precio * 0.3);
   const defs: { nombre: string; monto: number; etapa: number | null }[] = [
-    { nombre: "Anticipo 30%", monto: ANTICIPO, etapa: null },
-    { nombre: "Zapata 15%", monto: Math.round(CONTRATO * 0.15), etapa: 3 },
-    { nombre: "Columnas 20%", monto: Math.round(CONTRATO * 0.2), etapa: 5 },
-    { nombre: "Viga 15%", monto: Math.round(CONTRATO * 0.15), etapa: 6 },
-    { nombre: "Piso 5%", monto: Math.round(CONTRATO * 0.05), etapa: 7 },
-    { nombre: "Techo 15%", monto: Math.round(CONTRATO * 0.15), etapa: 8 },
+    { nombre: "Anticipo 30%", monto: anticipo, etapa: null },
+    { nombre: "Zapata 15%", monto: Math.round(precio * 0.15), etapa: 3 },
+    { nombre: "Muros 10%", monto: Math.round(precio * 0.1), etapa: 4 },
+    { nombre: "Columnas 10%", monto: Math.round(precio * 0.1), etapa: 5 },
+    { nombre: "Viga 15%", monto: Math.round(precio * 0.15), etapa: 6 },
+    { nombre: "Piso 5%", monto: Math.round(precio * 0.05), etapa: 7 },
+    { nombre: "Techo 15%", monto: Math.round(precio * 0.15), etapa: 8 },
   ];
   return defs.map((d) => ({
     nombre: d.nombre,

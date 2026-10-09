@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ETAPAS,
   OFICIO_COLOR,
@@ -13,10 +13,13 @@ import {
   cuello,
   pasoTutorial,
   puedeAdelantar,
+  razonAdelanto,
   reloj,
+  textoFaltaNomina,
+  textoTopeAdelanto,
   type Estado,
 } from "@/game/motor";
-import { alCambioGuia, cerrarGuia, guiaVisible } from "@/game/guia";
+import { alCambioGuia, cerrarGuia, guiaAnclar, guiaVisible } from "@/game/guia";
 
 export function Retrato({ oficio, letra }: { oficio: Oficio; letra: string }) {
   const c = OFICIO_COLOR[oficio];
@@ -67,13 +70,41 @@ const cortoDia = (dia: number): string => {
   return n.slice(0, 3);
 };
 
+function enPantalla(el: HTMLElement): boolean {
+  if (document.visibilityState === "hidden") return false;
+  const r = el.getBoundingClientRect();
+  return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight && r.right > 0 && r.left < window.innerWidth;
+}
+
 export function LineaGuia({ paso, mostrar }: { paso: number; mostrar: boolean }) {
   const [, bump] = useState(0);
+  const ref = useRef<HTMLParagraphElement>(null);
   useEffect(() => alCambioGuia(() => bump((n) => n + 1)), []);
+  useEffect(() => {
+    const alOcultar = () => {
+      if (document.visibilityState === "hidden") guiaVisible(paso, false);
+      bump((n) => n + 1);
+    };
+    document.addEventListener("visibilitychange", alOcultar);
+    return () => document.removeEventListener("visibilitychange", alOcultar);
+  }, [paso]);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!mostrar || !el || !enPantalla(el)) {
+      guiaVisible(paso, false);
+      return;
+    }
+    guiaAnclar(paso);
+    guiaVisible(paso, true);
+    return () => {
+      guiaVisible(paso, false);
+    };
+  });
   const visible = guiaVisible(paso, mostrar);
   if (!visible || paso < 0 || paso >= TUTORIAL.length) return null;
   return (
     <p
+      ref={ref}
       data-guia={paso}
       className="pointer-events-auto mx-auto mt-1 flex w-fit max-w-full items-center justify-center gap-2 border border-tinta/80 bg-papel/90 px-2 py-1 text-center font-hand text-sm leading-snug text-tinta"
     >
@@ -140,10 +171,25 @@ export function Hud({
   }, [firma]);
 
   if (s.panel === "menu") return null;
-  if (!s.firmado || s.panel === "contrato") {
-    if (s.panel !== "contrato") return null;
-    return <LineaGuia paso={paso} mostrar />;
+  if (!s.firmado) {
+    if (s.panel && s.panel !== "pausa") return null;
+    const espera = cuello(s);
+    return (
+      <div className="pointer-events-none absolute inset-0 z-10">
+        <div className="flex items-start justify-end px-2 pt-1.5 min-[900px]:pt-[52px]">
+          <button type="button" onClick={onPausa} className="pointer-events-auto min-h-11 border border-papel/40 bg-fondo/70 px-3 font-hand text-xl text-papel">
+            Pausa
+          </button>
+        </div>
+        {s.panel ? null : (
+          <div className="mx-auto mt-2 w-full max-w-xl px-3">
+            <p className="bg-papel/85 px-3 py-2 text-center font-hand text-base leading-tight text-tinta">{espera}</p>
+          </div>
+        )}
+      </div>
+    );
   }
+  if (s.panel === "contrato") return null;
   const r = reloj(s);
   const cartel = cuello(s);
   const faltaPuesto = cartel.startsWith("Nadie en");
@@ -155,21 +201,37 @@ export function Hud({
     (movil ? "text-base" : "text-sm");
   const mundo = !s.panel;
   const adelanto = puedeAdelantar(s) && !s.entregada;
+  const faltaNomina = mundo ? textoFaltaNomina(s) : null;
 
   return (
     <div className="pointer-events-none absolute inset-0 z-10 text-papel">
-      <div className="flex items-start justify-between gap-2 px-2 pt-1.5">
-        <div className="shrink-0 bg-fondo/55 px-2 py-1">
-          <div className="font-hand text-sm leading-none">
-            {r.hora} {cortoDia(s.dia)} {s.dia}
+      <div className="flex items-start justify-between gap-2 px-2 pt-1.5 min-[900px]:pt-[52px]">
+        <div className="shrink-0 bg-fondo/70 px-2.5 py-1.5">
+          <div className="flex items-end gap-1">
+            <svg viewBox="0 0 54 24" className="mb-0.5 h-6 w-14 shrink-0" aria-hidden="true">
+              <path d="M4 20 A23 16 0 0 0 50 20" fill="none" stroke="#e8dcc2" strokeWidth="1.2" />
+              {(() => {
+                const t = Math.min(1, Math.max(0, (s.minuto - 7 * 60) / (8 * 60)));
+                const a = Math.PI + t * Math.PI;
+                const cx = 27 + Math.cos(a) * 23;
+                const cy = 20 + Math.sin(a) * 16;
+                if (s.lluviaOn) {
+                  return <ellipse cx={cx} cy={cy} rx="5.5" ry="3.2" fill="#c5c0b6" stroke="#e8dcc2" strokeWidth="0.8" />;
+                }
+                return <circle cx={cx} cy={cy} r="2.6" fill="#f2d27a" stroke="#e8dcc2" strokeWidth="0.6" />;
+              })()}
+            </svg>
+            <div className="font-hand text-xl leading-none text-papel">
+              {r.hora} {cortoDia(s.dia)} {s.dia}
+            </div>
           </div>
           <div className="mt-1 h-0.5 w-full bg-tierra">
             <div className="h-full bg-oro" style={{ width: `${r.progreso * 100}%` }} />
           </div>
         </div>
         <div className="hidden h-12 min-w-[320px] flex-1 min-[900px]:block" aria-hidden="true" />
-        <div data-caja className={"pointer-events-auto relative shrink-0 bg-fondo/45 px-2 py-1 text-right " + (late ? "caja-latido" : "")}>
-          <div className="font-hand text-sm leading-none text-oro-brillo">{peso(s.caja)}</div>
+        <div data-caja className={"pointer-events-auto relative shrink-0 bg-fondo/70 px-2.5 py-1.5 text-right " + (late ? "caja-latido" : "")}>
+          <div className="font-hand text-xl leading-none text-[#f3e6c4]">{peso(s.caja)}</div>
           <div className="h-4 text-right leading-none">
             {adelanto ? (
               <button type="button" onClick={onAdelanto} className="font-hand text-[11px] text-oro underline">
@@ -205,8 +267,8 @@ export function Hud({
       </div>
 
       <div className="mx-auto mt-1 w-full max-w-xl px-3 min-[900px]:mt-2">
-        <p className="text-center font-hand text-sm leading-tight text-tinta">{cartel}</p>
-        <LineaGuia paso={paso} mostrar={paso !== 1 || s.gente.length + s.reserva.length === 0} />
+        <p className="bg-papel/85 px-3 py-1.5 text-center font-hand text-sm leading-tight text-tinta">{cartel}</p>
+        {s.panel || repiteCartel(TUTORIAL[paso] ?? "", cartel) ? null : <LineaGuia paso={paso} mostrar />}
         <div className="mt-1 flex justify-center gap-1.5">
           {ETAPAS.map((e, i) => {
             const lista = i < s.etapa || s.entregada;
@@ -226,12 +288,7 @@ export function Hud({
       </div>
 
       {mundo && avisos.length > 0 ? (
-        <div
-          className={
-            "pointer-events-auto absolute inset-x-0 flex flex-col items-center gap-1 px-3 " +
-            (movil ? "bottom-[15rem]" : "bottom-16")
-          }
-        >
+        <div className="pointer-events-auto mx-auto mt-2 flex w-full max-w-md flex-col items-center gap-1 px-3">
           {avisos.map((a) => (
             <button
               key={a.id}
@@ -245,10 +302,24 @@ export function Hud({
         </div>
       ) : null}
 
+      {faltaNomina ? (
+        <div className="pointer-events-auto mx-auto mt-2 w-full max-w-md border border-tinta bg-papel px-3 py-2 text-center font-hand text-base text-tinta">
+          <p>{faltaNomina}</p>
+          <p className="mt-1 text-sm">{textoTopeAdelanto(s)}</p>
+          {puedeAdelantar(s) ? (
+            <button type="button" onClick={onAdelanto} className="mt-2 min-h-11 border-2 border-tinta bg-papel-2 px-3 text-tinta">
+              Pedir adelanto a Doña Carmen
+            </button>
+          ) : (
+            <p className="mt-1 text-sm">{razonAdelanto(s)}</p>
+          )}
+        </div>
+      ) : null}
+
       {mundo && enAlcance ? (
         <p
           className={
-            "absolute inset-x-0 truncate px-16 text-center font-hand text-sm text-papel drop-shadow-[0_1px_0_#14100c] " +
+            "absolute inset-x-0 mx-auto max-w-xl truncate bg-papel/85 px-3 py-1.5 text-center font-hand text-sm text-tinta " +
             (movil ? "bottom-48" : "bottom-3")
           }
         >
@@ -272,8 +343,8 @@ export function Hud({
           type="button"
           onClick={onTerminar}
           className={
-            "pointer-events-auto absolute z-20 border border-papel/50 bg-fondo/50 font-hand text-sm text-papel " +
-            (movil ? "bottom-36 left-1/2 min-h-11 -translate-x-1/2 px-3" : "right-2 bottom-2 min-h-11 px-3")
+            "pointer-events-auto absolute z-20 border border-papel/40 bg-fondo font-hand text-papel " +
+            (movil ? "right-[8.6rem] bottom-4 min-h-11 px-3 text-base" : "right-2 bottom-2 min-h-11 px-3 text-xl")
           }
         >
           Terminar{movil ? "" : " (T)"}

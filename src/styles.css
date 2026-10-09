@@ -10,7 +10,7 @@
   --color-papel-2: #d9c9a6;
   --color-oro: #d4a73c;
   --color-oro-brillo: #f2d27a;
-  --color-rojo: #b8432f;
+  --color-rojo: #963222;
   --color-agua: #8fb3ad;
   --color-sello: #2f6b45;
   --color-ambar: #c47a2a;
@@ -22,7 +22,7 @@
   html,
   body,
   #root {
-    height: 100%;
+    height: 100dvh;
     background: var(--color-fondo);
     color: var(--color-papel);
   }
@@ -42,6 +42,57 @@
 
   button:disabled {
     cursor: not-allowed;
+  }
+}
+
+.trazo-casa {
+  fill: none;
+  stroke: #1d1712;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 900;
+  stroke-dashoffset: 900;
+  animation: trazo-casa 2s ease forwards;
+}
+
+.menu-luego {
+  opacity: 0;
+  animation: menu-luego 0.35s ease 2s forwards;
+}
+
+@keyframes trazo-casa {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes menu-luego {
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trazo-casa {
+    stroke-dashoffset: 0;
+    animation: none;
+  }
+  .menu-luego {
+    opacity: 1;
+    animation: none;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .velo-obra {
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+  .marco-obra {
+    width: min(46vw, 26rem);
+    max-height: 100dvh;
+    margin: 0;
   }
 }
 
