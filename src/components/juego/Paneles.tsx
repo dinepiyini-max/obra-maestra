@@ -36,6 +36,7 @@ import {
   asignar,
   cerrarPanel,
   confirmarDespacho,
+  confirmarNomina,
   contratar,
   cuentaPedido,
   despedir,
@@ -63,7 +64,9 @@ import {
   seguirJornada,
   siguienteDia,
   textoCajaLibre,
+  textoDiasSinSello,
   textoLlegada,
+  textoSinTarea,
   tramos,
   type Estado,
   type OficinaTab,
@@ -189,7 +192,7 @@ function Marco({
       }}
     >
       <section
-        className={`marco-obra relative w-full ${ancho} overflow-x-hidden overflow-y-auto border-2 border-tinta p-3 text-tinta shadow-[6px_8px_0_#1d1712] sm:p-5 ${alto || "max-h-[92dvh]"} ${hoja ? "hoja-libreta pl-8" : "papel-grano"}`}
+        className={`marco-obra relative w-full ${ancho} overflow-x-hidden overflow-y-auto overscroll-contain border-2 border-tinta p-3 text-tinta shadow-[6px_8px_0_#1d1712] sm:p-5 ${alto || "max-h-[92dvh]"} ${hoja ? "hoja-libreta pl-8" : "papel-grano"}`}
       >
         {hoja ? (
           <span className="pointer-events-none absolute top-6 bottom-6 left-2 flex w-3 flex-col justify-between" aria-hidden="true">
@@ -450,9 +453,9 @@ function Pestanas({
     ["libreta", "Libreta"],
   ];
   return (
-    <div className="mb-1 flex flex-nowrap gap-1 overflow-x-auto">
+    <div className="mb-1 grid grid-cols-5 gap-1">
       {items.map(([id, nombre]) => (
-        <button key={id} type="button" className={(tab === id ? btnPri : btn) + " min-h-8 shrink-0 px-2 py-1 text-sm"} onClick={() => onTab(id)}>
+        <button key={id} type="button" className={(tab === id ? btnPri : btn) + " min-h-8 px-1 py-1 text-xs sm:text-sm"} onClick={() => onTab(id)}>
           {nombre}
         </button>
       ))}
@@ -667,7 +670,7 @@ export function Paneles({
   };
 
   if (hoja === "confirmar") {
-    const sellos = s.etapas.filter((e) => e.sello).length;
+    const sellos = s.etapas.filter((e) => e.sello === "aprobado").length;
     const gente = s.gente.length + s.reserva.length;
     return (
       <HojaMenu>
@@ -928,7 +931,7 @@ export function Paneles({
       <Marco titulo="Diario" onCerrar={cerrar} hoja alto={ALTO_OFICINA}>
         <Pestanas tab="diario" onTab={ir} />
         <p className="mb-2 font-hand">{NOTA_ESCUADRA}</p>
-        <ul className="max-h-[50vh] space-y-1 overflow-y-auto font-hand text-sm">
+        <ul className="space-y-1 font-hand text-sm">
           {[...s.diario].reverse().map((d, i) => (
             <li key={i}>
               Día {d.dia} {horaDe(d.min)} · {d.texto}
@@ -1277,7 +1280,7 @@ export function Paneles({
     const total = matsAhora > 0 ? matsAhora + (urgente ? FLETE_URGENTE : FLETE) : 0;
     if (!forzado) {
       if (total <= 0) {
-        ponerNota("No hay nada que pedir.", true);
+        ponerNota("Nada que pedir.", true);
         return;
       }
       setFreno({ origen: "tel", urgente, total });
@@ -1307,7 +1310,7 @@ export function Paneles({
     return (
       <Marco titulo={s.panel === "almacen" ? "Almacén" : "Libreta"} onCerrar={cerrar} hoja alto={ALTO_OFICINA}>
         {s.panel === "libreta" ? (
-          <div className="mb-3 flex flex-wrap gap-1">
+          <div className="mb-3 flex flex-nowrap gap-1 overflow-x-auto">
             {(
               [
                 ["pre", "Plata"],
@@ -1318,7 +1321,7 @@ export function Paneles({
                 ["plano", "Plano"],
               ] as const
             ).map(([id, nombre]) => (
-              <button key={id} type="button" className={tab === id ? btnPri : btn} onClick={() => setTab(id)}>
+              <button key={id} type="button" className={(tab === id ? btnPri : btn) + " shrink-0"} onClick={() => setTab(id)}>
                 {nombre}
               </button>
             ))}
@@ -1328,7 +1331,7 @@ export function Paneles({
         {pestana === "dia" ? (
           <div>
             <p className="mb-2 font-hand">{NOTA_ESCUADRA}</p>
-            <ul className="max-h-[50vh] space-y-1 overflow-y-auto font-hand text-sm">
+            <ul className="space-y-1 font-hand text-sm">
             {[...lib.diario].reverse().map((d, i) => (
               <li key={i}>
                 Día {d.dia} {horaDe(d.min)} · {d.texto}
@@ -1367,7 +1370,7 @@ export function Paneles({
               </li>
             ))}
             <li className="pt-2">
-              Cobrado {peso(s.cobrado)} de {peso(CONTRATO)}
+              Cobrado {peso(s.cobrado)} de {peso(precioDe(s))}
             </li>
           </ul>
         ) : null}
@@ -1433,6 +1436,22 @@ export function Paneles({
     );
   }
 
+  if (s.panel === "nomina") {
+    return (
+      <Marco titulo="La nómina no alcanza">
+        <p className="font-hand">Hoy la caja no cubre la nómina. Puedes pedir el adelanto o pagar en rojo.</p>
+        <div className="mt-4 flex flex-col gap-2">
+          <button type="button" className={btnPri} onClick={() => act((st) => confirmarNomina(st, true))}>
+            Pedir adelanto y pagar
+          </button>
+          <button type="button" className={btn} onClick={() => act((st) => confirmarNomina(st, false))}>
+            Pagar en rojo
+          </button>
+        </div>
+      </Marco>
+    );
+  }
+
   if (s.panel === "finde") {
     const domingo = esDomingo(s.dia + 1);
     const pagada = s.nominaHoy > 0 ? s.nominaHoy : s.gente.reduce((a, g) => a + (g.activo && !g.falto ? jornalDe(g.oficio, g.rinde) : 0), 0);
@@ -1449,7 +1468,7 @@ export function Paneles({
           <p className="font-hand">Mezcla vencida después de las 3: {peso(s.mezclaTarde)}</p>
         ) : null}
         <p className="font-hand">
-          Etapas selladas: {s.etapas.filter((e) => e.sello).length} de 9.
+          Etapas selladas: {s.etapas.filter((e) => e.sello === "aprobado").length} de 9.
           {domingo ? " Mañana es domingo: se salta solo." : ""}
         </p>
         <p className="font-hand">{lineaAhora(s)}</p>
@@ -1466,7 +1485,7 @@ export function Paneles({
             </li>
           ))}
         </ul>
-        {s.lluvias.some((r) => r.dia === s.dia) ? (
+        {s.lluvias.some((r) => r.dia === s.dia && r.cae !== false) ? (
           <p className="mt-2 font-hand text-sm">
             Día de lluvia: se fueron a las {horaDe(s.salidaMin >= 0 ? s.salidaMin : s.minuto)} y el jornal se paga completo
           </p>
@@ -1483,6 +1502,18 @@ export function Paneles({
         ) : esSabado(s.dia) || domingo ? null : (
           <p className="mt-2 font-hand text-sm">Mañana viene la cuadrilla, si hay con qué pagarles.</p>
         )}
+        <p className="font-hand text-sm">{textoDiasSinSello(s)}</p>
+        {s.notaNomina ? <p className="mt-2 font-hand text-sm">{s.notaNomina}</p> : null}
+        {s.gente
+          .filter((g) => textoSinTarea(g))
+          .map((g) => (
+            <div key={g.id} className="mt-2 flex flex-wrap items-center gap-2">
+              <p className="font-hand text-sm">{textoSinTarea(g)}</p>
+              <button type="button" className={btn} onClick={() => act((st) => marcarLibre(st, g.id, true))}>
+                Libre mañana
+              </button>
+            </div>
+          ))}
         <p className="mt-2 font-hand text-sm">{pronosticoDia(s, 0)}</p>
         <p className="font-hand text-sm">{pronosticoDia(s, 1)}</p>
         <button type="button" className={`${btnPri} mt-4 w-full`} onClick={() => act((st) => siguienteDia(st))}>
@@ -1710,7 +1741,7 @@ function Plata({
   abierta: string | null;
   onAbre: (id: string | null) => void;
 }) {
-  const base = Math.max(1, CONTRATO);
+  const base = Math.max(1, precioDe(s) || CONTRATO);
   const wGas = Math.max(0, Math.min(100, (lib.costo / base) * 100));
   const wPor = Math.max(0, Math.min(100 - wGas, (lib.porHacer / base) * 100));
   const wOro = Math.max(0, 100 - wGas - wPor);

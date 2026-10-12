@@ -2985,7 +2985,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
   ctx.fillStyle = PAPEL;
   ctx.fillRect(-20, 0, w + 40, h);
 
-  const hoyLl = s.lluvias.find((r) => r.dia === s.dia);
+  const hoyLl = s.lluvias.find((r) => r.dia === s.dia && r.cae !== false);
   const llueve = s.lluviaOn || (hoyLl != null && s.minuto >= hoyLl.ini && s.minuto < hoyLl.fin);
   aplicarSol(s.minuto, llueve);
 
@@ -3745,7 +3745,7 @@ function mezclaTinta(t: number): string {
 
 function pintarNubes(ctx: CanvasRenderingContext2D, w: number, h: number, u: number, hv: number) {
   const pulso = Math.min(1, Math.max(0, u));
-  const techo = Math.max(188, Math.min(h * 0.34, 260));
+  const techo = 28;
   const fracs = [0.22, 0.48, 0.74].map((f, i) => f + (i - 1) * pulso * 0.04);
   const nube = (x: number, y: number, s: number, seed: number) => {
     ctx.beginPath();
@@ -3766,7 +3766,7 @@ function pintarNubes(ctx: CanvasRenderingContext2D, w: number, h: number, u: num
   ctx.save();
   for (let i = 0; i < 3; i++) {
     const s = 1.15 + (i === 1 ? 0.35 : 0) + pulso * 0.15;
-    nube(fracs[i]! * w, techo + (i === 1 ? 8 : 28), s, 300 + i + hv);
+    nube(fracs[i]! * w, techo + (i === 1 ? 4 : 10), s, 300 + i + hv);
   }
   ctx.restore();
 }

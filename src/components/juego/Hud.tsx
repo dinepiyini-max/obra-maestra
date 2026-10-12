@@ -16,6 +16,8 @@ import {
   razonAdelanto,
   reloj,
   textoFaltaNomina,
+  textoMezcla,
+  minutosMezcla,
   textoTopeAdelanto,
   type Estado,
 } from "@/game/motor";
@@ -146,6 +148,17 @@ export function Hud({
   onAdelanto: () => void;
   vuelo?: "entra" | "sale" | null;
 }) {
+  const [chico, setChico] = useState(false);
+  const [bajo, setBajo] = useState(false);
+  useEffect(() => {
+    const mq = () => {
+      setChico(window.innerWidth <= 420);
+      setBajo(window.innerHeight <= 500);
+    };
+    mq();
+    window.addEventListener("resize", mq);
+    return () => window.removeEventListener("resize", mq);
+  }, []);
   const quitar = useRef(onQuitar);
   quitar.current = onQuitar;
   const born = useRef(new Map<number, number>());
@@ -177,7 +190,7 @@ export function Hud({
     return (
       <div className="pointer-events-none absolute inset-0 z-10">
         <div className="flex items-start justify-end px-2 pt-1.5 min-[900px]:pt-[52px]">
-          <button type="button" onClick={onPausa} className="pointer-events-auto min-h-11 border border-papel/40 bg-fondo/70 px-3 font-hand text-xl text-papel">
+          <button type="button" onClick={onPausa} className={"pointer-events-auto border border-papel/40 bg-fondo/90 px-3 font-hand text-papel " + (chico ? "min-h-9 text-base" : "min-h-11 text-xl")}>
             Pausa
           </button>
         </div>
@@ -195,10 +208,10 @@ export function Hud({
   const faltaPuesto = cartel.startsWith("Nadie en");
   const acc = accion(s);
   const enAlcance = acc.verbo !== "Camina" && acc.verbo !== "Firma primero";
-  const avisos = s.avisos.filter((a) => !a.texto.includes("dañado") && !avisoRepite(a.texto, cartel)).slice(-2);
+  const avisos = s.avisos.filter((a) => !a.texto.includes("dañado") && !avisoRepite(a.texto, cartel)).slice(bajo ? -1 : -2);
   const btn =
-    "pointer-events-auto min-h-11 border border-papel/40 bg-fondo/40 px-2 font-hand text-papel " +
-    (movil ? "text-base" : "text-sm");
+    "pointer-events-auto border border-papel/40 bg-fondo/90 font-hand text-papel " +
+    (chico ? "min-h-9 px-1.5 text-xs" : movil ? "min-h-11 px-2 text-base" : "min-h-11 px-2 text-sm");
   const mundo = !s.panel;
   const adelanto = puedeAdelantar(s) && !s.entregada;
   const faltaNomina = mundo ? textoFaltaNomina(s) : null;
@@ -206,7 +219,7 @@ export function Hud({
   return (
     <div className="pointer-events-none absolute inset-0 z-10 text-papel">
       <div className="flex items-start justify-between gap-2 px-2 pt-1.5 min-[900px]:pt-[52px]">
-        <div className="shrink-0 bg-fondo/70 px-2.5 py-1.5">
+        <div className={"shrink-0 bg-fondo/90 px-2.5 py-1.5 " + (chico ? "max-w-[46%]" : "")}>
           <div className="flex items-end gap-1">
             <svg viewBox="0 0 54 24" className="mb-0.5 h-6 w-14 shrink-0" aria-hidden="true">
               <path d="M4 20 A23 16 0 0 0 50 20" fill="none" stroke="#e8dcc2" strokeWidth="1.2" />
@@ -221,7 +234,7 @@ export function Hud({
                 return <circle cx={cx} cy={cy} r="2.6" fill="#f2d27a" stroke="#e8dcc2" strokeWidth="0.6" />;
               })()}
             </svg>
-            <div className="font-hand text-xl leading-none text-papel">
+            <div className={"font-hand leading-none text-papel " + (chico ? "text-base" : "text-xl")}>
               {r.hora} {cortoDia(s.dia)} {s.dia}
             </div>
           </div>
@@ -230,8 +243,8 @@ export function Hud({
           </div>
         </div>
         <div className="hidden h-12 min-w-[320px] flex-1 min-[900px]:block" aria-hidden="true" />
-        <div data-caja className={"pointer-events-auto relative shrink-0 bg-fondo/70 px-2.5 py-1.5 text-right " + (late ? "caja-latido" : "")}>
-          <div className="font-hand text-xl leading-none text-[#f3e6c4]">{peso(s.caja)}</div>
+        <div data-caja className={"pointer-events-auto relative shrink-0 bg-fondo/90 px-2.5 py-1.5 text-right " + (late ? "caja-latido" : "") + (chico ? " max-w-[52%]" : "")}>
+          <div className={"font-hand leading-none text-[#f3e6c4] " + (chico ? "text-base" : "text-xl")}>{peso(s.caja)}</div>
           <div className="h-4 text-right leading-none">
             {adelanto ? (
               <button type="button" onClick={onAdelanto} className="font-hand text-[11px] text-oro underline">
@@ -267,7 +280,14 @@ export function Hud({
       </div>
 
       <div className="mx-auto mt-1 w-full max-w-xl px-3 min-[900px]:mt-2">
-        <p className="bg-papel/85 px-3 py-1.5 text-center font-hand text-sm leading-tight text-tinta">{cartel}</p>
+        <p className={"bg-papel/90 px-3 py-1.5 text-center font-hand leading-tight text-tinta " + (chico ? "text-xs" : "text-sm")}>{cartel}</p>
+        {(() => {
+          const mezcla = textoMezcla(s);
+          const mm = minutosMezcla(s);
+          if (!mezcla) return null;
+          const rojo = !!mm && mm.min <= 20;
+          return <p className={"mt-1 bg-papel/90 px-3 py-1 text-center font-hand text-sm " + (rojo ? "text-rojo" : "text-tinta")}>{mezcla}</p>;
+        })()}
         {s.panel || repiteCartel(TUTORIAL[paso] ?? "", cartel) ? null : <LineaGuia paso={paso} mostrar />}
         <div className="mt-1 flex justify-center gap-1.5">
           {ETAPAS.map((e, i) => {

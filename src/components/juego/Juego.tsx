@@ -176,7 +176,9 @@ function Palanca({ on }: { on: (ax: number, ay: number) => void }) {
   return (
     <div
       ref={ref}
-      className="absolute bottom-4 left-4 z-20 h-28 w-28 rounded-full border-2 border-papel/80 bg-fondo/50"
+      className="absolute bottom-4 left-4 z-20 h-28 w-28 touch-manipulation rounded-full border-2 border-papel/80 bg-fondo/50"
+      style={{ touchAction: "none" }}
+      onContextMenu={(e) => e.preventDefault()}
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture(e.pointerId);
         mover(e);
@@ -242,6 +244,7 @@ export function Juego() {
   const keys = useRef(new Set<string>());
   const joy = useRef({ ax: 0, ay: 0 });
   const dedo = useRef<{ x: number; y: number } | null>(null);
+  const dedoId = useRef<number | null>(null);
   const toque = useRef<{ x: number; y: number } | null>(null);
   const ultimo = useRef(-1);
   const audio = useRef<AudioContext | null>(null);
@@ -626,20 +629,32 @@ export function Juego() {
         className="absolute inset-0 h-full w-full"
         onPointerDown={(e) => {
           if (e.button !== 0) return;
+          if (dedoId.current != null && dedoId.current !== e.pointerId) return;
+          dedoId.current = e.pointerId;
           toque.current = { x: e.clientX, y: e.clientY };
+          if (e.pointerType === "mouse") {
+            const rect = e.currentTarget.getBoundingClientRect();
+            vis.current.mira = mundoDesde(e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height, vis.current);
+          }
           if (ajustes.control !== "arrastre") return;
           const s = estado.current;
           if (s.panel || s.pausa) return;
           e.currentTarget.setPointerCapture(e.pointerId);
-          dedo.current = mundoDe(e);
           desbloquear();
         }}
         onPointerMove={(e) => {
+          if (dedoId.current != null && e.pointerId !== dedoId.current) return;
           const rect = e.currentTarget.getBoundingClientRect();
-          vis.current.mira = mundoDesde(e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height, vis.current);
-          if (dedo.current && e.currentTarget.hasPointerCapture(e.pointerId)) dedo.current = mundoDe(e);
+          if (e.pointerType === "mouse") {
+            vis.current.mira = mundoDesde(e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height, vis.current);
+          }
+          const inicio = toque.current;
+          const movido = !!inicio && Math.hypot(e.clientX - inicio.x, e.clientY - inicio.y) >= 18;
+          if (ajustes.control === "arrastre" && movido && e.currentTarget.hasPointerCapture(e.pointerId)) dedo.current = mundoDe(e);
         }}
         onPointerUp={(e) => {
+          if (dedoId.current != null && e.pointerId !== dedoId.current) return;
+          dedoId.current = null;
           const inicio = toque.current;
           toque.current = null;
           const corto = !!inicio && Math.hypot(e.clientX - inicio.x, e.clientY - inicio.y) < 18;
@@ -652,6 +667,9 @@ export function Juego() {
           if (corto && !s.panel && !s.pausa && !s.entregada) intentarGolpe(vis.current.t);
         }}
         onPointerCancel={(e) => {
+          if (dedoId.current != null && e.pointerId !== dedoId.current) return;
+          dedoId.current = null;
+          toque.current = null;
           if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
           dedo.current = null;
           seguirDedo(estado.current, estado.current.jugador.x, estado.current.jugador.y, true);
@@ -707,9 +725,9 @@ export function Juego() {
       {movil && !snap.panel ? (
         <button
           type="button"
-          className="absolute right-4 bottom-4 z-20 min-h-16 min-w-24 border-2 border-tinta bg-oro px-4 font-display text-3xl text-tinta"
-          onPointerDown={(e) => {
-            e.preventDefault();
+          className="absolute right-4 bottom-4 z-20 min-h-16 min-w-24 touch-manipulation border-2 border-tinta bg-oro px-4 font-display text-3xl text-tinta"
+          style={{ touchAction: "manipulation" }}
+          onClick={() => {
             desbloquear();
             intentarGolpe(vis.current.t);
           }}
@@ -795,6 +813,7 @@ export function Juego() {
           act((s) => {
             s.pausa = false;
             if (!s.firmado) s.panel = null;
+            else if (s.entregada) s.panel = "informe";
             else if (s.sita?.oferta) {
               s.sita.fase = "nota";
               s.panel = "sita";

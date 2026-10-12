@@ -6,6 +6,7 @@ export const DIRECCION_DIA = 1750;
 export const FLETE = 1500;
 export const FLETE_URGENTE = 3000;
 export const HERRAMIENTA = 0.03;
+export const CURADO_DIAS = 7;
 export const MAX_CUADRILLA = 8;
 export const RADIO = 2;
 export const RADIO_LIDER = 4.5;
@@ -384,7 +385,7 @@ export const ETAPAS: EtapaDef[] = [
       {
         id: "huecos",
         k: "vaciar",
-        nombre: "Rellenar huecos",
+        nombre: "Rellenar huecos con hormigón",
         q: 7,
         mezcla: "H",
         mezclaQ: 7,
@@ -421,7 +422,7 @@ export const ETAPAS: EtapaDef[] = [
     id: "viga",
     n: 7,
     nombre: "Viga de amarre",
-    regla: "Luego se cura 3 días regando. El domingo cuenta solo.",
+    regla: "Luego se cura 7 días regando. El domingo cuenta solo si se regó el sábado.",
     tramo: 0.15,
     trabajos: [
       { id: "acero", k: "acero", nombre: "Acero de viga", q: 48.1, usa: { v38: 11, v14: 7, alambre: 3 } },

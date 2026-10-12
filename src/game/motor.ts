@@ -5,6 +5,7 @@ import {
   COMPRA,
   CONTRATO,
   CUADRILLA,
+  CURADO_DIAS,
   DIRECCION_DIA,
   EFI,
   ETAPAS,
@@ -76,7 +77,8 @@ export type Panel =
   | "pausa"
   | "sita"
   | "ferreteria"
-  | "despacho";
+  | "despacho"
+  | "nomina";
 
 export type OficinaTab = "gente" | "planos" | "telefono" | "diario" | "libreta";
 
@@ -118,6 +120,8 @@ export interface Persona {
   libre: boolean;
   noViene: boolean;
   moHoy: number;
+  /** Minutos de hoy sin tarea. Vuelve a 0 al amanecer. No entra en la caja. */
+  sinTareaHoy: number;
   aviso70: boolean;
   anim: string;
   trabajando: boolean;
@@ -178,6 +182,8 @@ export interface Lluvia {
   ini: number;
   fin: number;
   prob: number;
+  /** Si no hay dato, la lluvia cae. */
+  cae?: boolean;
 }
 
 export interface Sello {
@@ -217,6 +223,8 @@ export interface Estado {
   caja: number;
   cobrado: number;
   adelanto: number;
+  /** Día en que Doña Carmen ya soltó el adelanto. Uno por día. */
+  adelantoDia: number;
   costos: Record<Partida, { mo: number; mat: number }>;
   inv: Record<Mat, { q: number; valor: number }>;
   entrada: Partial<Record<Mat, { q: number; valor: number }>>;
@@ -278,8 +286,13 @@ export interface Estado {
   aguaDia: number;
   /** Nómina del día, en pesos enteros. */
   nominaHoy: number;
-  /** Día en que Doña Carmen ya soltó el adelanto. Uno por día. */
-  adelantoDia: number;
+  /** Día del último sello aprobado. Sanear lo rellena. */
+  selloDia: number;
+  /** Día en que el maestro aceptó pagar la nómina en rojo. */
+  nominaRoja: number;
+  notaNomina: string;
+  avisoOficioAlbanil: boolean;
+  avisoOficioAcero: boolean;
   /** Marca dia*10000+minuto de la última mezcla vencida. */
   morteroVencio: number;
   diasTrabajados: number;
@@ -294,8 +307,10 @@ export interface Estado {
   destino: { x: number; y: number } | null;
   /** Minutos de juego sin un Espacio del jugador en la obra o en el trompo. */
   sinGolpe: number;
-  /** El golpe automático cuenta al maestro como líder. No se guarda como regla. */
+  /** Ya no cuenta como albañil. Se deja en falso para partidas viejas. */
   maestroLider?: boolean;
+  /** 25 % de lo que el oficio ya rindió, por tarea. Pegar no lo aumenta. */
+  golpeBanco: Record<string, number>;
   gritos: { texto: string; x: number; y: number }[];
   sello: Sello | null;
   faltanManana: string[];
@@ -441,6 +456,7 @@ function personaDe(s: Estado, base: PersonaBase, i: number): Persona {
     libre: false,
     noViene: false,
     moHoy: 0,
+    sinTareaHoy: 0,
     aviso70: false,
     anim: "nada",
     trabajando: false,
@@ -452,16 +468,14 @@ function personaDe(s: Estado, base: PersonaBase, i: number): Persona {
 
 function planLluvia(s: Estado) {
   const out: Lluvia[] = [];
-  const hacer = (dia: number) => {
-    const ini = 11 * 60 + Math.floor(rngNext(s) * (3 * 60 + 46));
-    const dur = 90 + Math.floor(rngNext(s) * 91);
-    const prob = 60 + Math.floor(rngNext(s) * 21);
-    out.push({ dia, ini, fin: Math.min(ini + dur, 18 * 60 - 1), prob });
-  };
-  hacer(4);
-  for (let d = 3; d <= 48 && out.length < 3; d++) {
-    if (d <= 2 || d === 4 || esDomingo(d)) continue;
-    if (rngNext(s) < 0.16) hacer(d);
+  for (let d = 2; d <= 48 && out.length < 6; d++) {
+    if (esDomingo(d)) continue;
+    if (rngNext(s) >= 0.2) continue;
+    const ini = 9 * 60 + Math.floor(rngNext(s) * (6 * 60 + 31));
+    const dur = 60 + Math.floor(rngNext(s) * 121);
+    const prob = 30 + Math.floor(rngNext(s) * 51);
+    const cae = rngNext(s) * 100 < prob;
+    out.push({ dia: d, ini, fin: Math.min(ini + dur, 18 * 60 - 1), prob, cae });
   }
   s.lluvias = out;
 }
@@ -548,6 +562,11 @@ export function nueva(seed?: number): Estado {
     salidaMin: -1,
     aguaDia: 0,
     nominaHoy: 0,
+    selloDia: 1,
+    nominaRoja: 0,
+    notaNomina: "",
+    avisoOficioAlbanil: false,
+    avisoOficioAcero: false,
     adelantoDia: 0,
     morteroVencio: 0,
     diasTrabajados: 0,
@@ -573,6 +592,7 @@ export function nueva(seed?: number): Estado {
     mando: { ax: 0, ay: 0 },
     destino: null,
     sinGolpe: 0,
+    golpeBanco: {},
     gritos: [],
     sello: null,
     faltanManana: [],
@@ -654,6 +674,7 @@ export function sanear(s: Estado): Estado {
   for (const g of [...(s.gente ?? []), ...(s.reserva ?? []), ...(s.candidatos ?? [])]) {
     if (g.puesto && !okPuesto.has(g.puesto)) g.puesto = "obra";
     if (typeof g.dias !== "number" || !Number.isFinite(g.dias)) g.dias = 0;
+    if (typeof g.sinTareaHoy !== "number" || !Number.isFinite(g.sinTareaHoy)) g.sinTareaHoy = 0;
     if (typeof g.esperaZona !== "number" || !Number.isFinite(g.esperaZona)) g.esperaZona = 0;
     g.enCruce = !!g.enCruce;
   }
@@ -683,6 +704,7 @@ export function sanear(s: Estado): Estado {
   if (typeof s.sinGolpe !== "number" || !Number.isFinite(s.sinGolpe)) s.sinGolpe = 0;
   s.gritos ??= [];
   s.maestroLider = false;
+  s.golpeBanco = sanearBanco(s.golpeBanco);
   s.stats.muertoDetalle ??= {};
   s.stats.faltasLog ??= [];
   if (typeof s.adelantoDia !== "number" || !Number.isFinite(s.adelantoDia)) s.adelantoDia = 0;
@@ -699,6 +721,14 @@ export function sanear(s: Estado): Estado {
   if (typeof s.salidaMin !== "number" || !Number.isFinite(s.salidaMin)) s.salidaMin = -1;
   if (typeof s.aguaDia !== "number" || !Number.isFinite(s.aguaDia)) s.aguaDia = 0;
   if (typeof s.nominaHoy !== "number" || !Number.isFinite(s.nominaHoy)) s.nominaHoy = 0;
+  if (typeof s.selloDia !== "number" || !Number.isFinite(s.selloDia)) {
+    const hay = s.etapas?.some((e) => e?.sello === "aprobado");
+    s.selloDia = hay ? s.dia : 1;
+  }
+  if (typeof s.nominaRoja !== "number" || !Number.isFinite(s.nominaRoja)) s.nominaRoja = 0;
+  s.notaNomina = typeof s.notaNomina === "string" ? s.notaNomina : "";
+  s.avisoOficioAlbanil = !!s.avisoOficioAlbanil;
+  s.avisoOficioAcero = !!s.avisoOficioAcero;
   if (!s.sita || s.sita.fase == null || typeof s.sita.x !== "number") s.sita = sitaBase();
   else {
     s.sita.oferta ??= null;
@@ -1111,7 +1141,7 @@ function works(s: Estado): W[] {
 }
 
 function prereqOk(s: Estado, w: W): boolean {
-  if (w.reqCurado && s.curadoDias.length < 3) return false;
+  if (w.reqCurado && s.curadoDias.length < CURADO_DIAS) return false;
   const def = ETAPAS[s.etapa];
   if (!def) return false;
   if (w.despuesDe) {
@@ -1140,7 +1170,7 @@ function listos(s: Estado): W[] {
   if (s.blocksHoy >= TOPE_BLOCK_DIA - 1e-6) {
     for (let i = base.length - 1; i >= 0; i--) if (base[i]!.k === "block") base.splice(i, 1);
   }
-  if (s.curando && !s.regadoHoy && s.curadoDias.length < 3 && !fraguaActiva(s)) {
+  if (s.curando && !s.regadoHoy && s.curadoDias.length < CURADO_DIAS && !fraguaActiva(s)) {
     base.unshift({
       id: "regar",
       k: "regar",
@@ -1161,7 +1191,6 @@ function listos(s: Estado): W[] {
 function hayLider(s: Estado, k: Tarea): boolean {
   const lid = TAREAS[k].lider;
   if (!lid) return true;
-  if (s.maestroLider) return true;
   if (dist(s.jugador, SITIOS.obra) <= RADIO_LIDER) return true;
   return s.gente.some(
     (g) => g.activo && !g.fuera && !g.falto && distAlSolar(g.x, g.y) <= 1.5 && lid.includes(g.oficio),
@@ -1289,7 +1318,7 @@ function aplicar(s: Estado, w: W, dq: number): number {
       s.curadoDias.push(s.dia);
       s.regarProg = 0;
       w.setHecho(0);
-      aviso(s, `Viga regada. Van ${s.curadoDias.length} de 3 días.`);
+      aviso(s, `Viga regada. Van ${s.curadoDias.length} de ${CURADO_DIAS} días.`);
     }
   }
   return real;
@@ -1422,6 +1451,7 @@ function claveMuerto(s: Estado, g: Persona | null, hint?: "lluvia" | "camino" | 
 function anotarMuerto(s: Estado, g: Persona | null, pesos: number, minutos: number, hint?: "lluvia" | "camino" | "resto") {
   if (pesos <= 0 && minutos <= 0) return;
   const key = claveMuerto(s, g, hint);
+  if (g && key === "tarea") g.sinTareaHoy = (g.sinTareaHoy ?? 0) + minutos;
   const det = (s.stats.muertoDetalle ??= {});
   const row = (det[key] ??= { min: 0, pesos: 0, dias: {} });
   row.min += minutos;
@@ -1486,20 +1516,55 @@ function albaniles(s: Estado): number {
   return s.gente.filter((g) => g.activo && !g.fuera && !g.falto && g.oficio === "albanil").length;
 }
 
+function consumoPorMin(s: Estado, tipo: "H" | "M"): number {
+  let r = 0;
+  for (const w of listos(s)) {
+    if (w.mezcla !== tipo || !w.mezclaQ || w.q <= 0) continue;
+    const per = w.mezclaQ / w.q;
+    let gente = 0;
+    for (const g of s.gente) {
+      if (!g.activo || g.fuera || g.falto || g.puesto !== "obra") continue;
+      if (!puedeTarea(g.oficio, w.k)) continue;
+      gente += 1;
+      r += (TAREAS[w.k].rinde / 480) * Math.max(0.5, g.rinde) * per;
+    }
+    if (gente === 0) return 0;
+  }
+  return r;
+}
+
+/** No arranca una tanda que se vencería sin usarse. La primera, si la etapa la necesita, sí. */
+function tandaCabe(s: Estado, tipo: "H" | "M"): boolean {
+  let falta = 0;
+  for (const w of listos(s)) if (w.mezcla === tipo) falta += mezclaQueFalta(w);
+  const have = stockMezcla(s, tipo) + tandasEnCurso(s, tipo);
+  if (falta <= have + 0.02) return false;
+  const porMin = consumoPorMin(s, tipo);
+  const vida = tipo === "H" ? RECETA_H.vida : RECETA_M.vida;
+  const hastaFaena = Math.max(0, 15 * 60 - s.minuto);
+  const uso = porMin * Math.min(vida, hastaFaena);
+  if (have < 0.05) return hastaFaena > 20;
+  if (have + 0.05 >= Math.min(falta, Math.max(uso, 0))) return false;
+  if (uso < 0.2) return false;
+  return true;
+}
+
 function tipoQueFalta(s: Estado): "H" | "M" | null {
   const need: ("H" | "M")[] = [];
   for (const w of listos(s)) if (w.mezcla && !need.includes(w.mezcla)) need.push(w.mezcla);
   if (!need.length) return null;
-  const meta = Math.max(1, albaniles(s));
-  let best: "H" | "M" | null = null;
-  let bestReady = Infinity;
   for (const t of need) {
-    const ready = s.mezclas.filter((m) => m.lista && m.tipo === t && m.restante > 0.05).length;
-    const curso = s.mezclas.some((m) => !m.lista && m.tipo === t);
-    if (ready >= meta) continue;
-    if (curso) return t;
-    if (ready < bestReady) {
-      bestReady = ready;
+    if (s.mezclas.some((m) => !m.lista && m.tipo === t)) return t;
+  }
+  let best: "H" | "M" | null = null;
+  let bestGap = 0;
+  for (const t of need) {
+    if (!tandaCabe(s, t)) continue;
+    let falta = 0;
+    for (const w of listos(s)) if (w.mezcla === t) falta += mezclaQueFalta(w);
+    const gap = falta - stockMezcla(s, t);
+    if (gap > bestGap) {
+      bestGap = gap;
       best = t;
     }
   }
@@ -1527,8 +1592,8 @@ function lavarMezclas(s: Estado, motivo: string) {
   let n = 0;
   let vol = 0;
   for (const m of s.mezclas) {
-    const frac = m.lista ? m.restante : Math.max(m.prog, 0);
-    const c = m.costo * frac;
+    const frac = m.lista ? m.restante : 1;
+    const c = m.costo * (m.lista ? m.restante : 1);
     costo += c;
     n += frac;
     vol += volMezcla(m.tipo, frac);
@@ -1598,7 +1663,7 @@ function elegir(s: Estado, g: Persona): W | null {
 }
 
 function lluviaAhora(s: Estado): Lluvia | null {
-  return s.lluvias.find((r) => r.dia === s.dia && s.minuto >= r.ini && s.minuto < r.fin) ?? null;
+  return s.lluvias.find((r) => r.cae !== false && r.dia === s.dia && s.minuto >= r.ini && s.minuto < r.fin) ?? null;
 }
 
 function zanjaAbierta(s: Estado): boolean {
@@ -1729,7 +1794,7 @@ function trabajarPersona(s: Estado, g: Persona) {
     return;
   }
   const labor = laborDe(s, g);
-  if (g.puesto === "batea" && !bateaTieneTrabajo(s)) {
+  if (g.puesto === "batea" && !bateaTieneTrabajo(s) && (!labor || labor === "batea")) {
     cobrarMin(s, g, "muerto");
     g.trabajando = false;
     g.anim = "nada";
@@ -1795,6 +1860,7 @@ function trabajarPersona(s: Estado, g: Persona) {
   }
   const dq = ritmo(s, g, w.k);
   const got = aplicar(s, w, dq);
+  if (got > 0) anotarRindeGolpe(s, g, w, got);
   if (got > 0) fatiga(s, g, TAREAS[w.k].peso);
   cobrarMin(s, g, got > 0 ? w.partida : "muerto");
   g.trabajando = got > 0;
@@ -2124,7 +2190,7 @@ function obraEsperaMezcla(s: Estado): boolean {
 }
 
 function regarToca(s: Estado): boolean {
-  return s.curando && !s.regadoHoy && s.curadoDias.length < 3 && !fraguaActiva(s);
+  return s.curando && !s.regadoHoy && s.curadoDias.length < CURADO_DIAS && !fraguaActiva(s);
 }
 
 function puestoTieneTrabajo(s: Estado, g: Persona, puesto: Puesto): boolean {
@@ -2341,6 +2407,7 @@ export function continuarSello(s: Estado) {
   }
   s.etapas[i]!.sello = "aprobado";
   s.etapas[i]!.motivo = seal.motivo;
+  s.selloDia = s.dia;
   diario(s, pago > 0 ? `APROBADO: ${def.nombre}. Cobro: +${peso(pago)}.` : `APROBADO: ${def.nombre}.`);
   if (def.id === "zapata") s.fragua = programarFragua(s, "La zapata fragua. El block empieza mañana a las 7:00.");
   if (def.id === "columnas") s.fragua = programarFragua(s, "Las columnas fraguan. Mañana se puede seguir.");
@@ -2373,8 +2440,26 @@ function programarFragua(s: Estado, que: string): { dia: number; minuto: number;
   return { dia, minuto: 7 * 60, que };
 }
 
+function costoNominaHoy(s: Estado): { jornales: number; herr: number; direccion: number; total: number } {
+  let jornales = 0;
+  let herr = 0;
+  for (const g of s.gente) {
+    if (!g.activo || g.falto) continue;
+    const j = jornalDe(g.oficio, g.rinde);
+    jornales += j;
+    herr += Math.round(j * HERRAMIENTA);
+  }
+  const direccion = jornales > 0 && !s.direccionCobrada && s.firmado && !s.entregada ? DIRECCION_DIA : 0;
+  return { jornales, herr, direccion, total: jornales + herr + direccion };
+}
+
 function pagarNomina(s: Estado) {
   if (s.nominaPagada) return;
+  const previo = costoNominaHoy(s);
+  if (s.caja - previo.total < -0.5 && s.nominaRoja !== s.dia) {
+    s.panel = "nomina";
+    return;
+  }
   let total = 0;
   let herrSum = 0;
   for (const g of s.gente) {
@@ -2420,8 +2505,64 @@ function pagarNomina(s: Estado) {
   }
 }
 
+export function confirmarNomina(s: Estado, conAdelanto: boolean) {
+  if (s.nominaPagada) return;
+  if (conAdelanto) adelantar(s);
+  s.nominaRoja = s.dia;
+  if (s.panel === "nomina") s.panel = null;
+  pagarNomina(s);
+}
+
+function vieneManana(g: Persona, dia: number): boolean {
+  if (g.libre) return false;
+  if (g.cansancio >= 85) return false;
+  if (g.mania === "madrugador" && esSabado(dia)) return false;
+  return true;
+}
+
+export function nominaManana(s: Estado): number {
+  let dia = s.dia + 1;
+  if (esDomingo(dia)) dia += 1;
+  let jornales = 0;
+  let herr = 0;
+  for (const g of [...s.gente, ...s.reserva]) {
+    if (!vieneManana(g, dia)) continue;
+    const j = jornalDe(g.oficio, g.rinde);
+    jornales += j;
+    herr += Math.round(j * HERRAMIENTA);
+  }
+  if (jornales <= 0) return 0;
+  return jornales + herr + DIRECCION_DIA;
+}
+
+function adelantoManana(s: Estado): number {
+  const manana = esDomingo(s.dia + 1) ? s.dia + 2 : s.dia + 1;
+  if (manana - (s.selloDia ?? 1) > 18) return 0;
+  const monto = Math.round(Math.min(20000, topeAvance(s)));
+  return monto >= 100 ? monto : 0;
+}
+
+function avisarNominaManana(s: Estado) {
+  if (s.entregada) {
+    s.notaNomina = "";
+    return;
+  }
+  const nom = nominaManana(s);
+  const adel = adelantoManana(s);
+  const falta = nom - s.caja - adel;
+  if (falta <= 0.5) {
+    s.notaNomina = "";
+    return;
+  }
+  const texto = `Ojo: mañana la nómina es ${peso(nom)} y tienes ${peso(s.caja)} (más ${peso(adel)} de adelanto). Faltan ${peso(falta)}: da libre a alguien o sella una etapa.`;
+  s.notaNomina = texto;
+  if (!s.diario.some((d) => d.dia === s.dia && d.texto.startsWith("Ojo: mañana la nómina"))) diario(s, texto);
+  if (!s.avisos.some((a) => a.texto.startsWith("Ojo: mañana la nómina"))) aviso(s, texto);
+}
+
 function abrirFinde(s: Estado) {
   notarMezclaTarde(s);
+  avisarNominaManana(s);
   if (s.panel === "finde" || s.panel === "informe") return;
   if (!s.direccionCobrada && s.firmado && !s.entregada) {
     s.caja -= DIRECCION_DIA;
@@ -2537,7 +2678,7 @@ export function avanzarMinutos(s: Estado, n: number) {
     if (s.entregada || s.minuto >= 18 * 60) return;
     const panel = s.panel;
     paso(s);
-    if (s.panel === "sello" || s.panel === "finde" || s.panel === "informe") return;
+    if (s.panel === "sello" || s.panel === "finde" || s.panel === "informe" || s.panel === "nomina" || s.panel === "perdida") return;
     if (panel && panel !== "sello") s.panel = panel;
   }
 }
@@ -3529,10 +3670,10 @@ export function despedir(s: Estado, id: string) {
       const diff = Math.max(0, j - g.moHoy);
       s.costos.muerto.mo += diff;
       anotarMuerto(s, g, diff, j > 0 ? (diff * 480) / j : 0, "resto");
-      const herr = j * HERRAMIENTA;
+      const herr = Math.round(j * HERRAMIENTA);
       s.caja -= j + herr;
       s.costos.herramienta.mo += herr;
-      aviso(s, `Despediste a ${g.nombre}. Le pagaste el día (${peso(j)}).`);
+      aviso(s, `Despediste a ${g.nombre}. Le pagaste el día (${peso(j)}) y la herramienta (${peso(herr)}).`);
       diario(s, `Despediste a ${g.nombre} ${g.apellido}: −${peso(j + herr)}.`);
     } else {
       aviso(s, `Despediste a ${g.nombre}. Hoy no cobró.`);
@@ -3559,31 +3700,52 @@ function pideCompra(need: Cantidades): boolean {
   return COMPRA.some((m) => (need[m] ?? 0) > 1e-6);
 }
 
-function montoAdelanto(s: Estado): number {
+export function obraParada(s: Estado): boolean {
+  return s.dia - (s.selloDia ?? 1) > 18;
+}
+
+export function diasSinSello(s: Estado): number {
+  return Math.max(0, s.dia - (s.selloDia || 1));
+}
+
+export function textoDiasSinSello(s: Estado): string {
+  return `Días sin sello: ${diasSinSello(s)} de 18. A los 18, Doña Carmen no adelanta.`;
+}
+
+export function topeAvance(s: Estado): number {
   const precio = precioDe(s);
-  const pendiente = Math.max(0, precio - s.cobrado + s.adelanto);
-  const tope = Math.round(pendiente * 0.3);
-  const room = tope - s.adelanto;
-  const falta = precio - s.cobrado;
-  const monto = Math.round(Math.min(20000, Math.max(0, room), Math.max(0, falta)));
+  let suma = 0.3;
+  const hasta = Math.min(ETAPAS.length - 1, (s.etapa ?? 0) + 1);
+  for (let i = 0; i <= hasta; i++) suma += ETAPAS[i]!.tramo;
+  return Math.max(0, Math.round(precio * Math.min(1, suma) - s.cobrado));
+}
+
+function montoAdelanto(s: Estado): number {
+  if (obraParada(s)) return 0;
+  const monto = Math.round(Math.min(20000, topeAvance(s)));
   return monto >= 100 ? monto : 0;
 }
 
 export function puedeAdelantar(s: Estado, pedido = 0): boolean {
+  if (obraParada(s)) return false;
   if (s.adelantoDia === s.dia) return false;
   if (cajaLibre(s) - Math.max(0, pedido) >= 5000) return false;
   return montoAdelanto(s) >= 100;
 }
 
 export function textoTopeAdelanto(s: Estado): string {
-  return `Hasta el 30 % de lo que falta por cobrar, menos lo ya adelantado (${peso(s.adelanto)}). Tope ${peso(20000)}.`;
+  const dias = textoDiasSinSello(s);
+  if (obraParada(s)) return `Doña Carmen no adelanta con la obra parada: sella una etapa. ${dias}`;
+  if (montoAdelanto(s) < 100) return `Ya adelantó todo lo avanzado. Avanza la etapa para que suelte más. ${dias}`;
+  return `Doña Carmen adelanta hasta ${peso(montoAdelanto(s))} por día, a cuenta de lo avanzado (${peso(topeAvance(s))}). ${dias}`;
 }
 
 export function razonAdelanto(s: Estado): string {
+  if (obraParada(s)) return "Doña Carmen no adelanta con la obra parada: sella una etapa.";
   if (s.adelantoDia === s.dia) return "Doña Carmen ya soltó un adelanto hoy.";
   if (cajaLibre(s) >= 5000) return "Todavía tienes más de P$5,000 libres. Doña Carmen no suelta más.";
   if (precioDe(s) - s.cobrado <= 1) return "Ya no queda nada por cobrar.";
-  if (montoAdelanto(s) < 100) return "Doña Carmen no suelta más hasta que se cobre un tramo.";
+  if (montoAdelanto(s) < 100) return "Ya adelantó todo lo avanzado. Avanza la etapa para que suelte más.";
   return "";
 }
 
@@ -3662,11 +3824,12 @@ export function libreTrasPedido(s: Estado, total: number): number {
 
 export function adelantar(s: Estado, pedido = 0): string | null {
   if (!puedeAdelantar(s, pedido)) {
+    if (obraParada(s)) return "Doña Carmen no adelanta con la obra parada: sella una etapa.";
     if (cajaLibre(s) - Math.max(0, pedido) >= 5000)
       return "Todavía tienes más de P$5,000 libres. Doña Carmen no suelta más.";
     if (s.adelantoDia === s.dia) return "Doña Carmen ya soltó un adelanto hoy.";
     if (precioDe(s) - s.cobrado <= 1) return "Ya no queda nada por cobrar.";
-    return "Doña Carmen no suelta más hasta que se cobre un tramo.";
+    return "Ya adelantó todo lo avanzado. Avanza la etapa para que suelte más.";
   }
   const monto = montoAdelanto(s);
   s.caja += monto;
@@ -3713,8 +3876,14 @@ export function siguienteDia(s: Estado) {
   }
   let dia = s.dia + 1;
   if (esDomingo(dia)) {
-    diario(s, "Domingo: descanso. El cansancio se fue y el curado contó.");
-    if (s.curando && s.curadoDias.length < 3 && !s.curadoDias.includes(dia)) s.curadoDias.push(dia);
+    const regado = s.regadoHoy;
+    if (s.curando) {
+      if (regado && s.curadoDias.length < CURADO_DIAS && !s.curadoDias.includes(dia)) {
+        s.curadoDias.push(dia);
+        diario(s, "Domingo: descanso. La viga quedó regada el sábado y el curado contó.");
+      } else if (!regado) diario(s, "Domingo: descanso. La viga no se regó el sábado: el domingo no cuenta para el curado.");
+      else diario(s, "Domingo: descanso. La viga quedó regada el sábado y el curado contó.");
+    } else diario(s, "Domingo: descanso.");
     for (const g of s.gente) {
       g.cansancio = 0;
       g.noViene = false;
@@ -3752,6 +3921,7 @@ export function siguienteDia(s: Estado) {
     g.libre = false;
     g.fuera = false;
     g.moHoy = 0;
+    g.sinTareaHoy = 0;
     g.aviso70 = false;
     g.activo = true;
     g.falto = false;
@@ -3891,7 +4061,7 @@ function previewAplica(s: Estado, w: W): boolean {
 function obraListaParaGolpe(s: Estado): boolean {
   if (s.entregada || s.etapa >= 9) return false;
   if (s.plomo) return true;
-  if (s.curando && !s.regadoHoy && s.curadoDias.length < 3 && !fraguaActiva(s)) return s.inv.agua.q >= 0.1 - 1e-6;
+  if (s.curando && !s.regadoHoy && s.curadoDias.length < CURADO_DIAS && !fraguaActiva(s)) return s.inv.agua.q >= 0.1 - 1e-6;
   if (fraguaActiva(s)) return false;
   const w = listos(s).find((t) => t.k !== "regar");
   return !!w && previewAplica(s, w);
@@ -3908,12 +4078,61 @@ function anotarGolpeMaestro(s: Estado) {
   if (s.gritos.length > 6) s.gritos.splice(0, s.gritos.length - 6);
 }
 
+/** El 25 % de lo que el oficio acaba de rendir en ESA tarea. Otra tarea no lo borra, y pegar no lo sube. */
+function anotarRindeGolpe(s: Estado, g: Persona, w: W, producido: number) {
+  if (producido <= 0 || !oficioDelGolpe(g, w)) return;
+  const clave = claveGolpe(s, w);
+  s.golpeBanco[clave] = (s.golpeBanco[clave] ?? 0) + producido * 0.25;
+}
+
+function oficioDelGolpe(g: Persona, w: W): boolean {
+  const lid = TAREAS[w.k].lider;
+  if (lid) return lid.includes(g.oficio);
+  return puedeTarea(g.oficio, w.k);
+}
+
+function claveGolpe(s: Estado, w: W): string {
+  return `${s.etapa}:${w.id}`;
+}
+
+function hayOficioTrabajando(s: Estado, w: W): boolean {
+  const lid = TAREAS[w.k].lider;
+  for (const g of s.gente) {
+    if (!g.activo || g.fuera || g.falto || !g.trabajando || g.puesto !== "obra") continue;
+    if (!puedeTarea(g.oficio, w.k)) continue;
+    if (lid && !lid.includes(g.oficio)) continue;
+    const suya = elegir(s, g);
+    if (suya && suya.id === w.id) return true;
+  }
+  return false;
+}
+
+/** Como máximo el 25 % ya rendido por el oficio en esta tarea. Pegar más seguido no agranda el tope. */
+function tomarGolpe(s: Estado, w: W, b: number): number {
+  if (!hayOficioTrabajando(s, w)) return 0;
+  const tope = Math.max(0, s.golpeBanco[claveGolpe(s, w)] ?? 0);
+  return Math.min(TAREAS[w.k].golpe * b, tope);
+}
+
+function gastarGolpe(s: Estado, w: W, got: number) {
+  if (got <= 0) return;
+  const clave = claveGolpe(s, w);
+  s.golpeBanco[clave] = Math.max(0, (s.golpeBanco[clave] ?? 0) - got);
+}
+
+function sanearBanco(v: unknown): Record<string, number> {
+  if (!v || typeof v !== "object") return {};
+  const out: Record<string, number> = {};
+  for (const [k, n] of Object.entries(v as Record<string, unknown>)) {
+    if (typeof n === "number" && Number.isFinite(n) && n > 0) out[k] = n;
+  }
+  return out;
+}
+
 function golpeMaestro(s: Estado) {
-  s.maestroLider = true;
   const f = golpeObra(s, 1, false);
-  s.maestroLider = false;
   if (!f) return;
-  const vacio = /^(Nada que hacer|Falta material|Sin mezcla|Falta líder|Fragua|Falta agua|Curado)$/;
+  const vacio = /^(Nada que hacer|Falta material|Sin mezcla|Falta líder|Fragua|Falta agua|Curado|Nadie trabajando|Van a su ritmo)$/;
   if (vacio.test(f.texto)) return;
   anotarGolpeMaestro(s);
 }
@@ -4012,33 +4231,51 @@ function golpeObra(s: Estado, b: number, oro: boolean): Flotante | null {
     s.plomo = null;
     return flot("¡Plomo!", SITIOS.obra.x, SITIOS.obra.y, true);
   }
-  if (s.curando && !s.regadoHoy && s.curadoDias.length < 3) {
+  if (s.curando && !s.regadoHoy && s.curadoDias.length < CURADO_DIAS) {
     if (s.inv.agua.q < 0.1 - 1e-6) return flot("Falta agua", x, y, false);
     const c = usar(s, "agua", 0.1);
     s.costos.hormigon.mat += c;
     s.regadoHoy = true;
     s.curadoDias.push(s.dia);
     s.regarProg = 0;
-    return flot(`Regado ${s.curadoDias.length}/3`, x, y, true);
+    return flot(`Regado ${s.curadoDias.length}/${CURADO_DIAS}`, x, y, true);
   }
   if (fraguaActiva(s)) return flot("Fragua", x, y, false);
   const lista = listos(s).filter((w) => w.k !== "regar");
-  const w = lista[0];
+  const w = lista.find((t) => hayOficioTrabajando(s, t)) ?? lista[0];
   if (!w) {
-    if (s.curando && s.curadoDias.length < 3 && s.etapa >= 8) return flot("Curado", x, y, false);
+    if (s.curando && s.curadoDias.length < CURADO_DIAS && s.etapa >= 8) return flot("Curado", x, y, false);
     return flot("Nada que hacer", x, y, false);
   }
   if (w.k === "achicar") {
     if (lluviaAhora(s)) return flot("Sigue lloviendo", x, y, false);
-    const peon = s.gente.some((g) => g.activo && !g.fuera && !g.falto && (g.oficio === "peon" || g.oficio === "ayudante"));
-    if (!peon) return flot("Falta un peón", x, y, false);
-    const got = aplicar(s, w, 1);
+    const dq = tomarGolpe(s, w, b);
+    if (dq <= 1e-8) return flot(hayOficioTrabajando(s, w) ? "Van a su ritmo" : "Falta un peón", x, y, false);
+    const got = aplicar(s, w, dq);
+    gastarGolpe(s, w, got);
     if (got <= 1e-8) return flot(lluviaAhora(s) ? "Sigue lloviendo" : "Falta un peón", x, y, false);
     return flot(`Achicar ${fmtCta(w.hecho)}/${fmtCta(w.q)}`, x, y, oro);
   }
-  const dq = TAREAS[w.k].golpe * b;
+  const faltaOf = oficioQueFalta(s, w.k);
+  if (faltaOf === "albanil") {
+    if (!s.avisoOficioAlbanil) {
+      s.avisoOficioAlbanil = true;
+      aviso(s, "El block y el vaciado los hace un albañil. Contrata uno en la oficina.");
+    }
+    return flot("Falta un albañil", x, y, false);
+  }
+  if (faltaOf === "acero") {
+    if (!s.avisoOficioAcero) {
+      s.avisoOficioAcero = true;
+      aviso(s, "El acero lo arma un varillero o un albañil. Contrata uno en la oficina.");
+    }
+    return flot("Falta un varillero o albañil", x, y, false);
+  }
+  const dq = tomarGolpe(s, w, b);
+  if (dq <= 1e-8) return flot(hayOficioTrabajando(s, w) ? "Van a su ritmo" : "Nadie trabajando", x, y, false);
   const antes = w.hecho;
   const got = aplicar(s, w, dq);
+  gastarGolpe(s, w, got);
   if (got <= 1e-8) {
     if (TAREAS[w.k].lider && !hayLider(s, w.k)) return flot("Falta líder", x, y, false);
     if (w.mezcla && stockMezcla(s, w.mezcla) <= 1e-6) return flot("Sin mezcla", x, y, false);
@@ -4047,6 +4284,13 @@ function golpeObra(s: Estado, b: number, oro: boolean): Flotante | null {
   const unidad = unidadDe(w.k);
   const texto = `+${txtCant(w.hecho - antes, unidad)} ${corto(w)}`;
   return flot(texto, x, y, oro);
+}
+
+function oficioQueFalta(s: Estado, k: Tarea): "albanil" | "acero" | null {
+  if (k !== "block" && k !== "vaciar" && k !== "acero") return null;
+  const hay = s.gente.some((g) => g.activo && !g.fuera && !g.falto && puedeTarea(g.oficio, k));
+  if (hay) return null;
+  return k === "acero" ? "acero" : "albanil";
 }
 
 function unidadDe(k: Tarea): string {
@@ -4092,6 +4336,7 @@ export function queHaceEspacio(s: Estado): { tecla: string; verbo: string; detal
     if (sitio?.id === "oficina") return { tecla: "Espacio", verbo: "Firmar", detalle: "Doña Carmen, la dueña", hacer: "firma" };
     return { tecla: "Espacio", verbo: "Camina", detalle: "", hacer: "nada" };
   }
+  if (s.entregada) return { tecla: "Espacio", verbo: "Obra entregada", detalle: "", hacer: "nada" };
   const achicar = listos(s).find((w) => w.k === "achicar");
   if (achicar && !juntoAZanja(s)) {
     return { tecla: "Espacio", verbo: "Camina a la zanja", detalle: `Achicar ${fmtCta(achicar.hecho)}/${fmtCta(achicar.q)}`, hacer: "zanja" };
@@ -4129,8 +4374,8 @@ export function queHaceEspacio(s: Estado): { tecla: string; verbo: string; detal
   if (sitio.id === "toma") return { tecla: "Espacio", verbo: "Toma", detalle: "el agua del solar no se cobra", hacer: "sitio" };
   if (sitio.id === "monton") return { tecla: "Espacio", verbo: "Montón", detalle: "arena y grava", hacer: "sitio" };
   if (sitio.id === "sombra") return { tecla: "Espacio", verbo: "Sombra", detalle: "debajo del mango", hacer: "sitio" };
-  if (s.curando && !s.regadoHoy && s.curadoDias.length < 3)
-    return { tecla: "Espacio", verbo: "Regar la viga", detalle: `${s.curadoDias.length}/3 días · 0.1 m³`, hacer: "obra" };
+  if (s.curando && !s.regadoHoy && s.curadoDias.length < CURADO_DIAS)
+    return { tecla: "Espacio", verbo: "Regar la viga", detalle: `${s.curadoDias.length}/${CURADO_DIAS} días · 0.1 m³`, hacer: "obra" };
   const w = listos(s).find((t) => t.k !== "regar");
   if (!w) return { tecla: "Espacio", verbo: cuello(s), detalle: "el cartel de arriba dice por qué", hacer: "obra" };
   return { tecla: "Espacio", verbo: w.nombre, detalle: `${num(w.hecho, 1)} / ${num(w.q, 1)}`, hacer: "obra" };
@@ -4239,8 +4484,8 @@ export function cuelloLabor(s: Estado): string {
   if (s.entregada) return "Obra entregada. Doña Carmen ya tiene su caseta.";
   if (lluviaAhora(s)) return "Aguacero. La cuadrilla está en el almacén.";
   if (s.plomo) return "Toca plomear: ve al muro y pulsa Espacio.";
-  if (s.curando && !s.regadoHoy && s.curadoDias.length < 3)
-    return `Toca regar la viga · ${s.curadoDias.length}/3 días.`;
+  if (s.curando && !s.regadoHoy && s.curadoDias.length < CURADO_DIAS)
+    return `Toca regar la viga · ${s.curadoDias.length}/${CURADO_DIAS} días.`;
   const def = ETAPAS[s.etapa];
   if (!def) return "Obra entregada.";
   const diag = runDe(s, 0, "replantear").hecho;
@@ -4263,8 +4508,8 @@ export function cuelloLabor(s: Estado): string {
   if (fraguaActiva(s) && s.fragua) return s.fragua.que;
   const pendientes = works(s).filter((w) => w.hecho < w.q - 1e-4 && !w.soloMaestro);
   const siguiente = pendientes.find((w) => prereqOk(s, w)) ?? pendientes[0];
-  if (siguiente?.reqCurado && s.curadoDias.length < 3)
-    return `Curado de la viga · ${s.curadoDias.length}/3 días. El techo espera.`;
+  if (siguiente?.reqCurado && s.curadoDias.length < CURADO_DIAS)
+    return `Curado de la viga · ${s.curadoDias.length}/${CURADO_DIAS} días. El techo espera.`;
   if (siguiente && TAREAS[siguiente.k].lider && !hayLider(s, siguiente.k)) {
     const hayGente = s.gente.some((g) => g.activo && !g.fuera && distAlSolar(g.x, g.y) <= 1.5);
     if (hayGente) return "Falta un líder en la obra. Acércate o pon al oficio que manda.";
@@ -4336,7 +4581,7 @@ function faltaTrasTanda(s: Estado): string | null {
 }
 
 function vienenNubes(s: Estado): boolean {
-  const hoy = s.lluvias.find((r) => r.dia === s.dia);
+  const hoy = s.lluvias.find((r) => r.dia === s.dia && r.cae !== false);
   return !!hoy && s.minuto < hoy.ini && (s.entrada.cemento?.q ?? 0) >= 1;
 }
 
@@ -4515,11 +4760,12 @@ export function reloj(s: Estado): {
   const man = esDomingo(s.dia + 1) ? s.dia + 2 : s.dia + 1;
   const hoy = s.lluvias.find((r) => r.dia === s.dia);
   const ll = lluviaAhora(s);
-  let clima = "Sol";
+  let clima = "No llovió";
   if (ll) clima = "Aguacero";
-  else if (hoy && s.minuto < hoy.ini) clima = `Se nubla · ${hoy.prob}%`;
-  else if (hoy && s.minuto >= hoy.fin) clima = "Escampó";
-  const pMan = s.lluvias.find((r) => r.dia === man);
+  else if (hoy && hoy.cae !== false && s.minuto < hoy.ini) clima = `Se nubla · ${hoy.prob}%`;
+  else if (hoy && s.minuto >= hoy.ini && hoy.cae === false) clima = "No llovió";
+  else if (hoy && s.minuto >= hoy.fin) clima = hoy.cae === false ? "No llovió" : "Escampó";
+  const pMan = s.lluvias.find((r) => r.dia === man && r.cae !== false);
   if (!ll && pMan) clima += ` · mañana ${pMan.prob}%`;
   return {
     dia: `${diaSemana(s.dia)} · día ${s.dia}`,
@@ -4535,8 +4781,27 @@ export function pronosticoDia(s: Estado, delta: number): string {
   if (delta === 1 && esDomingo(d)) d += 1;
   const r = s.lluvias.find((x) => x.dia === d);
   const nom = delta === 0 ? "Hoy" : esDomingo(s.dia + 1) && delta === 1 ? "El lunes" : "Mañana";
-  if (!r) return `${nom}: sol`;
-  return `${nom}: aguacero ${r.prob}% desde las ${horaDe(r.ini)}`;
+  if (!r) return delta === 0 && s.minuto >= 15 * 60 ? `${nom}: no llovió` : `${nom}: sol`;
+  const hora = horaDe(r.ini);
+  if (delta > 0 || s.minuto < r.ini) return `${nom}: ${r.prob}% de aguacero, a eso de las ${hora}`;
+  if (r.cae === false) return `${nom}: amenazó lluvia y no cayó`;
+  return `${nom}: llovió desde las ${hora}`;
+}
+
+export function textoMezcla(s: Estado): string | null {
+  const m = minutosMezcla(s);
+  if (!m) return null;
+  const nom = m.tipo === "H" ? "Hormigón" : "Mortero";
+  if (!m.lista) return `${nom} batiendo · listo en ${m.min} min`;
+  return `${nom} listo · se vence en ${m.min} min`;
+}
+
+export function textoSinTarea(g: Persona): string | null {
+  const min = g.sinTareaHoy ?? 0;
+  if (min <= 4 * 60) return null;
+  const h = Math.round((min / 60) * 10) / 10;
+  const tx = Number.isInteger(h) ? String(h) : num(h);
+  return `${g.nombre} estuvo ${tx} h sin tarea. ¿Libre mañana?`;
 }
 
 export function etapaActual(s: Estado): EtapaDef | null {
