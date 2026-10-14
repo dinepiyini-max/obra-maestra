@@ -40,7 +40,7 @@ export function descuadre(s: Estado): number {
     for (const g of s.gente) if (g.activo && !g.falto) mo += g.moHoy;
   }
   const deuda = s.deudaNomina ?? 0;
-  const esperado = s.cobrado - (costos + alm + entrada + camino + mezcla - mo - deuda);
+  const esperado = s.cobrado + (s.fiado ?? 0) - (costos + alm + entrada + camino + mezcla - mo - deuda);
   return Math.round((s.caja - esperado) * 100) / 100;
 }
 

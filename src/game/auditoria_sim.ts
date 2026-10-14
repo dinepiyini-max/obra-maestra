@@ -6,6 +6,9 @@ import {
   accion,
   aceptarSita,
   adelantar,
+  fiar,
+  puedeFiar,
+  pedidoQueCabe,
   almacen,
   ancla,
   asignar,
@@ -575,6 +578,8 @@ export interface Cfg {
   cortarTemprano: boolean;
   /** v18: contrata la cuadrilla sugerida y hace caso al aviso de días de caja. */
   sugerida?: boolean;
+  /** v20: juega como el revisor a mano: no reserva nómina, usa «Pedir lo que alcanza» y toma la salida (fiado) cuando aparece. */
+  torpe?: boolean;
 }
 export const BOTS: Record<string, Cfg> = {
   principiante: { nombre: "principiante", cupo: 3, orden: "azar", horaPedido: 11 * 60, siguiente: false, olvido: 0.3, errorPuesto: 0.25, golpeCada: 20, fallaPlomo: 0.35, urgente: true, soloSita: false, cortarTemprano: false },
@@ -609,7 +614,7 @@ export function correr(seed: number, cfg0: Cfg, clima: Clima = "normal", precios
   for (const g of s.gente) asignar(s, g.id, "obra");
   s.jugador = { x: 19, y: 14.5 };
   s.tut.fin = true;
-  let guard = 0, pedidoDia = -1, olvidoHoy = false, diaOlvido = -1, diaAviso = -1;
+  let guard = 0, pedidoDia = -1, olvidoHoy = false, diaOlvido = -1, diaAviso = -1, diaSalida = -1, sinSalida = 0;
   const T = (p: string) => chequeo?.(s, p);
   while (!s.entregada && guard < 80000) {
     guard++;
@@ -633,6 +638,14 @@ export function correr(seed: number, cfg0: Cfg, clima: Clima = "normal", precios
       gestionarCfg(s, cfg, r, true); pedidoDia = s.dia; T("pedido");
     } else if (s.minuto < 15 * 60 && (s.minuto % 15 === 0 || laborCambia(s))) gestionarCfg(s, cfg, r, false);
     if (s.minuto < 7 * 60 + 8) silenciar(s);
+    if (cfg.torpe && puedeFiar(s) && s.minuto % 30 === 0) { fiar(s); T("fiar"); }
+    if (s.minuto === 10 * 60 && diaSalida !== s.dia) {
+      diaSalida = s.dia;
+      // Sin salida: falta material, no viene nada, la caja no lo paga y no hay adelanto ni fiado.
+      const falta = loQueFalta(s);
+      const costo = Object.entries(falta).reduce((a, [k, n]) => a + (n ?? 0) * MATERIALES[k as Mat].precio, 0) + FLETE;
+      if (Object.keys(falta).length && !s.pedidos.length && s.caja < costo && !puedeAdelantar(s, costo) && !puedeFiar(s) && !s.entregada) sinSalida++;
+    }
     if ((s.plomo || (s.curando && !s.regadoHoy && s.curadoDias.length < 7)) && s.minuto < 17 * 60 && !(s.plomo && r() < cfg.fallaPlomo / 30)) { s.jugador = { x: 19, y: 14.5 }; golpe(s, true); }
     if (s.minuto % cfg.golpeCada === 0 && s.minuto < 15 * 60) { s.jugador = { x: 19, y: 14.5 }; golpe(s, false); }
     tick(s, 0.2);
@@ -645,11 +658,19 @@ export function correr(seed: number, cfg0: Cfg, clima: Clima = "normal", precios
     } else if (!cfg.cortarTemprano && s.minuto >= 15 * 60 + 8 && s.nominaPagada && !s.panel && s.minuto >= 17 * 60 + 50) { /* deja correr */ }
   }
   ponerPrecios(seed, null);
-  return { s, guard, inf: informe(s), perdida: `${s.panel}` === "perdida" };
+  return { s, guard, inf: informe(s), perdida: `${s.panel}` === "perdida", sinSalida };
 }
 
-function pedirCfg(s: Estado, items: Record<string, number | undefined>, urg: boolean) {
+function pedirCfg(s: Estado, items: Record<string, number | undefined>, urg: boolean, cfg?: Cfg) {
   if (!Object.keys(items).length) return;
+  if (cfg?.torpe) {
+    // «Pedir lo que alcanza»: paga con la caja aunque la nómina quede corta; si no cabe todo, pide lo que cabe.
+    if (pedir(s, items, false) === null) return;
+    if (puedeAdelantar(s)) { adelantar(s); if (pedir(s, items, false) === null) return; }
+    const cabe = pedidoQueCabe(s, items as never, false, s.caja);
+    if (Object.keys(cabe).length) pedir(s, cabe, false);
+    return;
+  }
   const total = costoDe(items) + (urg ? FLETE_URGENTE - FLETE : 0);
   let err = pedir(s, items, urg);
   if (err && /12/.test(err)) { urg = false; err = pedir(s, items, false); }
@@ -685,8 +706,8 @@ function gestionarCfg(s: Estado, cfg: Cfg, r: () => number, conPedido: boolean) 
     }
   }
   if (conPedido) {
-    pedirCfg(s, loQueFalta(s), cfg.urgente && s.minuto < 12 * 60);
-    if (cfg.siguiente) pedirCfg(s, loQueFaltaSiguiente(s), false);
+    pedirCfg(s, loQueFalta(s), cfg.urgente && s.minuto < 12 * 60, cfg);
+    if (cfg.siguiente) pedirCfg(s, loQueFaltaSiguiente(s), false, cfg);
   }
   if (s.curando && s.curadoDias.length < 7 && s.etapa >= 8) for (const g of s.gente) marcarLibre(s, g.id, true);
 }
@@ -720,7 +741,7 @@ export function auditor() {
   let cajaAntes = NaN, cobradoAntes = NaN, adelAntes = 0;
   const chequeo: Chequeo = (s, paso) => {
     const L = libroDe(s);
-    const diff = s.caja - (s.cobrado - L.gastado);
+    const diff = s.caja - (s.cobrado + (s.fiado ?? 0) - L.gastado);
     if (Math.abs(diff) > 1) anota(`caja ≠ cobrado − gastado (${paso})`, `semilla ${s.seed} día ${s.dia} ${Math.floor(s.minuto / 60)}:${String(s.minuto % 60).padStart(2, "0")} diferencia ${diff.toFixed(2)} ${JSON.stringify(Object.fromEntries(Object.entries(L).map(([k, v]) => [k, Math.round(v)])))}`);
     if (textoFaltaNomina(s)) avisoHoy = s.dia;
     // la nómina se paga: ¿quedó la caja en rojo sin aviso previo?

@@ -7,6 +7,8 @@ import {
   abrirDespacho,
   abrirPanel,
   adelantar,
+  cobroDe,
+  fiar,
   cerrarPanel,
   continuarSello,
   golpe,
@@ -397,7 +399,7 @@ export function Juego() {
       if (st.panel !== "sello" || !st.sello) return;
       const ok = st.sello.ok;
       const def = ETAPAS[st.sello.etapa];
-      const neto = ok && def ? Math.max(0, Math.round(CONTRATO * def.tramo) - st.adelanto) : 0;
+      const neto = ok && def ? cobroDe(st, st.sello.etapa).neto : 0;
       if (neto > 0) {
         const ancla = selloAncla.current?.getBoundingClientRect();
         const px = x ?? (ancla ? ancla.left + ancla.width / 2 : window.innerWidth / 2);
@@ -725,6 +727,15 @@ export function Juego() {
         onAdelanto={() =>
           act((s) => {
             const e = adelantar(s);
+            if (e) {
+              s.avisoSeq += 1;
+              s.avisos.push({ id: s.avisoSeq, texto: e });
+            }
+          })
+        }
+        onFiar={() =>
+          act((s) => {
+            const e = fiar(s);
             if (e) {
               s.avisoSeq += 1;
               s.avisos.push({ id: s.avisoSeq, texto: e });

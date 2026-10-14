@@ -65,6 +65,9 @@ import {
   precioDe,
   adelantoUsado,
   faltaEnPedido,
+  cobroDe,
+  cuentaFiado,
+  fiar,
   faltaParaSellar,
   bonoEntrega,
   causasPerdida,
@@ -519,7 +522,7 @@ function ListaFilas({ s }: { s: Estado }) {
             <span>Días {g.dias ?? 0}</span>
             <span className="whitespace-nowrap">Jornal {peso(jornalDe(g.oficio, g.rinde))}</span>
             <span className="whitespace-nowrap">
-              {s.nominaPagada ? "Hoy: pagado" : g.activo && !g.falto ? `Por pagar a las 3: ${peso(seDebe(s, g))}` : "Hoy no cobra"}
+              {s.nominaPagada ? ((s.deudaNomina ?? 0) > 0.5 ? `Pagado en parte: la cuadrilla aún espera ${peso(s.deudaNomina ?? 0)}` : "Hoy: pagado") : g.activo && !g.falto ? `Por pagar a las 3: ${peso(seDebe(s, g))}` : "Hoy no cobra"}
             </span>
           </div>
         </li>
@@ -656,6 +659,8 @@ export function Paneles({
   const [pausaAjustes, setPausaAjustes] = useState(false);
   const [pausaHoja, setPausaHoja] = useState<null | "creditos">(null);
   const [freno, setFreno] = useState<null | { origen: "sita" | "tambien" | "tel"; urgente: boolean; total: number }>(null);
+  const [aceptaCorta, setAceptaCorta] = useState(false);
+  useEffect(() => setAceptaCorta(false), [freno]);
   const [angosta, setAngosta] = useState(false);
   const [telefono, setTelefono] = useState(false);
   const [hoja, setHoja] = useState<null | "como" | "obras" | "ajustes" | "creditos" | "confirmar">(null);
@@ -1168,8 +1173,19 @@ export function Paneles({
         {!cuenta.alcanza && !paga ? (
           <p className="mt-2 font-hand">No alcanza la caja para este pedido. {textoCajaLibre(s)}.</p>
         ) : null}
+        {!cuenta.alcanza && paga ? (
+          <label className="mt-2 flex min-h-11 items-center gap-2 border-2 border-rojo p-1 font-hand text-rojo" data-confirma-corta>
+            <input type="checkbox" className="h-6 w-6" checked={aceptaCorta} onChange={(e) => setAceptaCorta(e.target.checked)} />
+            Entiendo: la nómina de las 3 quedará corta por {peso(cuenta.faltaNomina)}, baja el ánimo y dos días seguidos se va un obrero.
+          </label>
+        ) : null}
+        {cuentaFiado(s) ? (
+          <button type="button" className={`${btn} mt-2`} data-fiar {...alToque(() => { setFreno(null); act((st) => void fiar(st)); })}>
+            Mejor fiado: lo de esta etapa ({peso(cuentaFiado(s)!.total)}), sale del próximo cobro
+          </button>
+        ) : null}
         <div className="mt-3 flex flex-wrap gap-2">
-          <button type="button" className={btnPri} disabled={!puede} {...alToque(() => confirmarFreno())}>
+          <button type="button" className={btnPri} disabled={!puede || (!cuenta.alcanza && !aceptaCorta)} {...alToque(() => confirmarFreno())}>
             {cuenta.alcanza ? "Confirmar" : paga ? "Pedir lo que alcanza" : "No alcanza la caja"}
           </button>
           <button type="button" className={btn} onClick={() => setFreno(null)}>
@@ -1203,6 +1219,16 @@ export function Paneles({
               {of.comeNomina || of.recorte ? "Pedir lo que alcanza" : "Pedir"}
             </button>
           )}
+          {cuentaFiado(s) ? (
+            <p className="w-full border-2 border-rojo p-1 font-hand text-sm" data-salida-sita>
+              Siempre hay salida: te fío lo que falta para sellar esta etapa. Doña Carmen me lo paga del próximo cobro.
+            </p>
+          ) : null}
+          {cuentaFiado(s) ? (
+            <button type="button" className={btnPri} data-fiar onClick={() => act((st) => void fiar(st))}>
+              Fiado: lo de esta etapa ({peso(cuentaFiado(s)!.total)})
+            </button>
+          ) : null}
           {of.siguiente &&
           Object.values(of.siguiente).some((n) => (n ?? 0) > 0) &&
           cuentaPedido(
@@ -1540,7 +1566,7 @@ export function Paneles({
       }
     }
     const linea = cobra
-      ? "Esta etapa cobra tramo"
+      ? `Cobra ${s.sello.cobroTexto ?? cobroDe(s, etapa).texto}`
       : proximo
         ? `Esta etapa no cobra; el próximo cobro es al aprobar ${proximo}`
         : "Esta etapa no cobra";

@@ -21,6 +21,7 @@ import {
   textoTopeAdelanto,
   type Estado,
   avisoSello,
+  cuentaFiado,
   desgloseNomina,
 } from "@/game/motor";
 import { alCambioGuia, cerrarGuia, guiaAnclar, guiaVisible } from "@/game/guia";
@@ -204,6 +205,7 @@ export function Hud({
   onTerminar,
   onQuitar,
   onAdelanto,
+  onFiar,
   vuelo,
 }: {
   s: Estado;
@@ -215,6 +217,7 @@ export function Hud({
   onTerminar: () => void;
   onQuitar: (id: number) => void;
   onAdelanto: () => void;
+  onFiar: () => void;
   vuelo?: "entra" | "sale" | null;
 }) {
   const [chico, setChico] = useState(false);
@@ -551,6 +554,15 @@ export function Hud({
         <p className="pointer-events-none mx-auto mt-1 max-w-md bg-papel/95 px-3 py-1 text-center font-hand text-sm text-tinta" data-falta-sello>
           {avisoSello(s)}
         </p>
+      ) : null}
+
+      {mundo && cuentaFiado(s) ? (
+        <div className="pointer-events-auto mx-auto mt-1 w-full max-w-md border-2 border-rojo bg-papel/95 px-3 py-1 font-hand text-sm text-tinta" data-salida>
+          <p>Sin caja ni adelanto para lo que falta. Salida: el guardalmacén fía {peso(cuentaFiado(s)!.total)} y se cobra solo del próximo tramo.</p>
+          <button type="button" onClick={onFiar} className="mt-1 min-h-11 border-2 border-tinta bg-papel-2 px-3 text-tinta">
+            Pedir fiado lo de esta etapa
+          </button>
+        </div>
       ) : null}
 
       {faltaNomina ? (

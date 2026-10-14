@@ -69,6 +69,12 @@ import {
   reloj,
   REGLAS_LIBRETA,
   avisoSello,
+  precioDe,
+  accionesNomina,
+  cobroDe,
+  cuentaFiado,
+  fiar,
+  faltaNominaTras,
   bonoEntrega,
   faltaEnPedido,
   textoSinTarea,
@@ -421,7 +427,7 @@ function cuadreCaja(s: Estado): number {
     for (const g of s.gente) if (g.activo && !g.falto) mo += g.moHoy;
   }
   const deuda = s.deudaNomina ?? 0;
-  const esperado = s.cobrado - (costos + valor(s.inv) + valor(s.entrada) + camino + mezcla - mo - deuda);
+  const esperado = s.cobrado + (s.fiado ?? 0) - (costos + valor(s.inv) + valor(s.entrada) + camino + mezcla - mo - deuda);
   return Math.round((s.caja - esperado) * 100) / 100;
 }
 
@@ -3531,3 +3537,105 @@ describe("v19: zapata, bono, coherencia, caminar con física", () => {
     assert.ok(pxCasilla * 2.5 > 50 && pxCasilla * 2.5 < 70, `px/s ${pxCasilla * 2.5}`);
   });
 });
+
+describe("v20: siempre hay salida, cobros claros, nómina coherente", () => {
+  const armada = () => {
+    const s = nueva(3);
+    firmar(s);
+    for (const c of s.candidatos.slice(0, 4)) contratar(s, c.id);
+    s.panel = null;
+    s.tut.fin = true;
+    s.etapa = 3;
+    s.selloDia = 1;
+    s.minuto = 8 * 60;
+    return s;
+  };
+
+  it("caja en 0, adelanto usado y falta material: el guardalmacén fía, se sella y se cobra neto", () => {
+    const s = armada();
+    s.adelanto = 20000;
+    s.adelantoDia = 1;
+    s.cobrado += 20000;
+    s.caja = 0;
+    for (const k of Object.keys(s.inv) as (keyof typeof s.inv)[]) s.inv[k] = { q: 0, valor: 0 } as never;
+    s.mezclas = [];
+    assert.ok(tieneMaterialFaltante(s));
+    assert.equal(puedeAdelantar(s), false);
+    const c = cuentaFiado(s);
+    assert.ok(c, "debe haber salida");
+    assert.equal(fiar(s), null);
+    assert.equal(s.caja, 0);
+    const fiado = s.fiado ?? 0;
+    assert.ok(fiado > 0);
+    assert.equal(s.pedidos.length, 1);
+    for (const t of ETAPAS[3]!.trabajos) s.runs[3]!.find((r) => r.id === t.id)!.hecho = t.q;
+    avanzarMinutos(s, 3);
+    assert.equal(s.panel, "sello");
+    assert.ok(s.sello?.ok);
+    const bruto = Math.round(precioDe(s) * ETAPAS[3]!.tramo);
+    const esperado = bruto - 20000 - fiado;
+    assert.match(cobroDe(s, 3).texto, /− P\$20,000 adelanto − P\$[\d,]+ fiado = P\$[\d,]+$/);
+    const caja0 = s.caja;
+    continuarSello(s);
+    assert.equal(s.etapas[3]!.sello, "aprobado");
+    assert.ok(Math.abs(s.caja - caja0 - esperado) < 0.5, `${s.caja - caja0} vs ${esperado}`);
+    assert.equal(s.fiado ?? 0, 0);
+  });
+
+  it("el cobro se muestra como tramo − adelanto = neto", () => {
+    const s = armada();
+    s.etapa = 4;
+    s.adelanto = 20000;
+    const c = cobroDe(s, 4);
+    assert.equal(c.texto, `${peso(c.bruto)} − P$20,000 adelanto = ${peso(c.bruto - 20000)}`);
+    assert.ok(accionesNomina(s).some((a) => a.includes("− P$20,000 adelanto =")));
+  });
+
+  it("nómina corta: el aviso no lleva signo menos y la Libreta lo sabe", () => {
+    const s = armada();
+    s.caja = 1000;
+    s.minuto = 14 * 60 + 59;
+    s.mezclas = [];
+    avanzarMinutos(s, 2);
+    if (s.panel === "nomina") confirmarNomina(s, false);
+    const a = s.avisos.find((x) => x.texto.startsWith("Nómina corta"));
+    assert.ok(a, JSON.stringify(s.avisos.map((x) => x.texto)));
+    assert.doesNotMatch(a!.texto, /−/);
+    assert.ok((s.deudaNomina ?? 0) > 0);
+  });
+
+  it("una sola cuenta de lo que falta para la nómina, con la deuda", () => {
+    const s = armada();
+    s.caja = 9000;
+    s.deudaNomina = 3000;
+    assert.equal(cuentaPedido(s, 4000).faltaNomina, faltaNominaTras(s, 4000));
+    assert.equal(faltaNominaTras(s, 4000), Math.max(0, desgloseNomina(s).total + 3000 - 5000));
+  });
+
+  it("la mezcla lista no se vence mientras espera el plomo", () => {
+    const s = armada();
+    s.mezclas = [{ tipo: "M", prog: 1, lista: true, vida: 3, costo: 100, restante: 1 }];
+    s.plomo = { umbral: 1, min: 0 };
+    for (const g of s.gente) g.puesto = null;
+    avanzarMinutos(s, 10);
+    assert.equal(s.mezclas.length, 1);
+  });
+
+  it("con el mando contra el tanque, resbala por el borde y no se pega", () => {
+    const s = armada();
+    s.jugador = { x: SITIOS.toma.x, y: SITIOS.toma.y };
+    const x0 = s.jugador.x;
+    const y0 = s.jugador.y;
+    for (let i = 0; i < 120; i++) {
+      s.panel = null;
+      s.mando.ax = 1;
+      s.mando.ay = 0;
+      tick(s, 1 / 60);
+    }
+    assert.ok(Math.hypot(s.jugador.x - x0, s.jugador.y - y0) > 0.5, `${s.jugador.x},${s.jugador.y}`);
+  });
+});
+
+function tieneMaterialFaltante(s: Estado): boolean {
+  return Object.values(loQueFalta(s)).some((n) => (n ?? 0) > 0);
+}

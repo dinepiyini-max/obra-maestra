@@ -19,7 +19,7 @@ export function cuadreCaja(s: Estado): number {
   for (const m of s.mezclas) mezcla += m.lista ? m.costo * m.restante : m.costo;
   let mo = 0;
   if (!s.nominaPagada) for (const g of s.gente) if (g.activo && !g.falto) mo += g.moHoy;
-  const esperado = s.cobrado - (costos + valor(s.inv) + valor(s.entrada) + camino + mezcla - mo - (s.deudaNomina ?? 0));
+  const esperado = s.cobrado + (s.fiado ?? 0) - (costos + valor(s.inv) + valor(s.entrada) + camino + mezcla - mo - (s.deudaNomina ?? 0));
   return Math.round((s.caja - esperado) * 100) / 100;
 }
 
@@ -34,6 +34,8 @@ export const PERFILES: Record<string, Cfg> = {
   // y juega igual de fino (golpe cada 5 min, sin olvidos ni errores de puesto, pide temprano y la etapa siguiente).
   // v19: experto = 4 con 2 albañiles (sin la sugerida): entrega antes y cobra el bono.
   experto: BOTS.experto!,
+  // v20: imita al revisor a mano: 6 de la lista, pide tarde (2 pm), olvida, no reserva nómina, «Pedir lo que alcanza».
+  torpe: { nombre: "torpe", cupo: 6, orden: "lista", horaPedido: 14 * 60, siguiente: false, olvido: 0.3, errorPuesto: 0.2, golpeCada: 20, fallaPlomo: 0.3, urgente: false, soloSita: false, cortarTemprano: false, torpe: true },
 };
 
 function climaDe(seed: number): Clima {
@@ -62,6 +64,6 @@ for (let seed = desde; seed <= hasta; seed++) {
     chequeo(r.s);
     ponerPrecios(seed, null);
   } else r = correr(seed, PERFILES[perfil!]!, clima, 0.15, chequeo);
-  console.log(JSON.stringify({ perfil, seed, clima, ent: r.s.entregada, perdida: !!r.perdida || r.s.panel === "perdida", dia: r.s.dia, gan: Math.round(r.inf.ganancia), caja: Math.round(r.s.caja), adelantos: (r.s.adelantoDia > 0 ? 1 : 0), rescate: !!r.s.rescateUsado, pasos, movs, difs, peor, gente: r.s.gente.length }));
+  console.log(JSON.stringify({ perfil, seed, clima, ent: r.s.entregada, perdida: !!r.perdida || r.s.panel === "perdida", dia: r.s.dia, gan: Math.round(r.inf.ganancia), caja: Math.round(r.s.caja), adelantos: (r.s.adelantoDia > 0 ? 1 : 0), rescate: !!r.s.rescateUsado, pasos, movs, difs, peor, gente: r.s.gente.length, sinSalida: (r as any).sinSalida ?? 0, fiado: !!r.s.diario?.some((d: any) => /fía/.test(d.texto)) }));
 }
 }
