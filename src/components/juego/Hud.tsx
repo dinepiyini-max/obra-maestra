@@ -20,6 +20,8 @@ import {
   minutosMezcla,
   textoTopeAdelanto,
   type Estado,
+  avisoSello,
+  desgloseNomina,
 } from "@/game/motor";
 import { alCambioGuia, cerrarGuia, guiaAnclar, guiaVisible } from "@/game/guia";
 import { VERSION_REPORTE, reportarObra } from "@/lib/reporte";
@@ -234,6 +236,7 @@ export function Hud({
     window.addEventListener("resize", mq);
     return () => window.removeEventListener("resize", mq);
   }, []);
+  const [nomAbierta, setNomAbierta] = useState(false);
   const quitar = useRef(onQuitar);
   quitar.current = onQuitar;
   const born = useRef(new Map<number, number>());
@@ -276,7 +279,7 @@ export function Hud({
     return (
       <div className="pointer-events-none absolute inset-0 z-10">
         <div className="flex items-start justify-end px-2 pt-1.5 min-[900px]:pt-[52px]">
-          <button type="button" onClick={onPausa} className={"pointer-events-auto border border-papel/40 bg-fondo/90 px-3 font-hand text-papel " + (chico ? "min-h-9 text-base" : "min-h-11 text-xl")}>
+          <button type="button" onClick={onPausa} className={"pointer-events-auto border border-papel/40 bg-fondo/90 px-3 font-hand text-papel " + (chico ? "min-h-11 min-w-11 text-base" : "min-h-11 text-xl")}>
             Pausa
           </button>
         </div>
@@ -302,7 +305,8 @@ export function Hud({
   const avisos = s.avisos.filter((a) => !a.texto.includes("dañado") && !avisoRepite(a.texto, cartel)).slice(-1);
   const btn =
     "pointer-events-auto border border-papel/40 bg-fondo/90 font-hand text-papel " +
-    (bajo ? "min-h-8 px-1.5 text-xs" : chico ? "min-h-9 px-1.5 text-xs" : movil ? "min-h-11 px-2 text-base" : "min-h-11 px-2 text-sm");
+    // v19: todo botón tocable mide al menos 44 px.
+    (bajo ? "min-h-11 min-w-11 px-1.5 text-xs" : chico ? "min-h-11 min-w-11 px-1.5 text-xs" : movil ? "min-h-11 min-w-11 px-2 text-base" : "min-h-11 min-w-11 px-2 text-sm");
   const mundo = !s.panel;
   const adelanto = puedeAdelantar(s) && !s.entregada;
   const faltaNomina = mundo ? textoFaltaNomina(s) : null;
@@ -543,17 +547,44 @@ export function Hud({
         <p className="pointer-events-auto mx-auto mt-2 max-w-md bg-papel px-3 py-1 text-center font-hand text-tinta">{avisoReporte}</p>
       ) : null}
 
+      {mundo && avisoSello(s) ? (
+        <p className="pointer-events-none mx-auto mt-1 max-w-md bg-papel/95 px-3 py-1 text-center font-hand text-sm text-tinta" data-falta-sello>
+          {avisoSello(s)}
+        </p>
+      ) : null}
+
       {faltaNomina ? (
-        <div className="pointer-events-auto mx-auto mt-2 w-full max-w-md border border-tinta bg-papel px-3 py-2 text-center font-hand text-base text-tinta">
-          <p>{faltaNomina}</p>
-          <p className="mt-1 text-sm">{textoTopeAdelanto(s)}</p>
-          {puedeAdelantar(s) ? (
-            <button type="button" onClick={onAdelanto} className="mt-2 min-h-11 border-2 border-tinta bg-papel-2 px-3 text-tinta">
-              Pedir adelanto a Doña Carmen
-            </button>
-          ) : (
-            <p className="mt-1 text-sm">{razonAdelanto(s)}</p>
-          )}
+        // v19: una línea compacta que se abre al tocarla, no una tarjeta fija en el centro.
+        <div className="pointer-events-auto mx-auto mt-1 w-full max-w-md bg-papel/95 font-hand text-tinta" data-nomina-linea>
+          <button
+            type="button"
+            aria-expanded={nomAbierta}
+            onClick={() => setNomAbierta((v) => !v)}
+            className="flex min-h-11 w-full items-center gap-2 border border-tinta px-3 text-left text-sm"
+          >
+            <span aria-hidden="true">{nomAbierta ? "▾" : "▸"}</span>
+            <span className="min-w-0 flex-1 truncate">{faltaNomina}</span>
+          </button>
+          {nomAbierta ? (
+            <div className="border border-t-0 border-tinta px-3 py-2 text-sm">
+              {(() => {
+                const d = desgloseNomina(s);
+                return (
+                  <p>
+                    Nómina de las 3: jornales {peso(d.jornales)} + herramienta {peso(d.herramienta)} + Dirección {peso(d.direccion)} = {peso(d.total)}
+                  </p>
+                );
+              })()}
+              <p>{textoTopeAdelanto(s)}</p>
+              {puedeAdelantar(s) ? (
+                <button type="button" onClick={onAdelanto} className="mt-2 min-h-11 border-2 border-tinta bg-papel-2 px-3 text-tinta">
+                  Pedir adelanto a Doña Carmen
+                </button>
+              ) : (
+                <p className="mt-1">{razonAdelanto(s)}</p>
+              )}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -589,11 +620,16 @@ export function Hud({
           {...alToque(onTerminar)}
           className={
             "pointer-events-auto absolute z-20 border border-papel/40 bg-fondo font-hand text-papel " +
-            (movil ? "right-[8.6rem] bottom-4 min-h-11 px-3 text-base" : "right-2 bottom-2 min-h-11 px-3 text-xl")
+            (movil ? "right-[8.6rem] bottom-4 min-h-11 min-w-11 px-3 text-base" : "right-2 bottom-2 min-h-11 min-w-11 px-3 text-xl")
           }
         >
           Terminar{movil ? "" : " (T)"}
         </button>
+      ) : null}
+      {s.pausa ? (
+        <div className="absolute left-1/2 top-14 z-30 -translate-x-1/2 border-2 border-papel bg-fondo px-4 py-1 font-display text-2xl text-papel" role="status" data-pausado>
+          Pausado · el reloj no corre
+        </div>
       ) : null}
     </div>
   );

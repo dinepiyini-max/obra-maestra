@@ -500,7 +500,7 @@ export function Juego() {
       }
       v.contrato = estado.current.panel === "contrato";
       if (v.hit > 0) v.hit -= dt;
-      else tick(estado.current, Math.min(0.1, dt * ajustesRef.current.vel));
+      else tick(estado.current, Math.min(0.1, dt), ajustesRef.current.vel);
       if (
         dedo.current &&
         ajustesRef.current.control === "arrastre" &&
@@ -554,6 +554,8 @@ export function Juego() {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter"].includes(e.code)) e.preventDefault();
+      // v19: Espacio es la acción del juego; nunca «pulsa» el botón que quedó enfocado (Pausa, menú).
+      if (e.code === "Space" && (e.target as HTMLElement | null)?.tagName === "BUTTON") (e.target as HTMLElement).blur();
       keys.current.add(e.code);
       desbloquear();
       const s = estado.current;
@@ -581,6 +583,7 @@ export function Juego() {
       else if (e.code === "Escape") act((st) => cerrarPanel(st));
     };
     const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space" && (e.target as HTMLElement | null)?.tagName === "BUTTON") e.preventDefault();
       keys.current.delete(e.code);
     };
     const blur = () => {
@@ -590,15 +593,15 @@ export function Juego() {
     const oculto = () => {
       if (document.hidden) guardar(estado.current);
     };
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
     window.addEventListener("blur", blur);
     document.addEventListener("visibilitychange", oculto);
     return () => {
       muerto = true;
       cancelAnimationFrame(raf);
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
       window.removeEventListener("blur", blur);
       document.removeEventListener("visibilitychange", oculto);
       if (import.meta.env.DEV) delete window.__controlsTest;

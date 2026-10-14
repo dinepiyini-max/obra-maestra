@@ -3465,7 +3465,8 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
         camisa: "#d7c4a3",
         casco: "#f7f3ea",
         letra: "M",
-        t: vis.t,
+        // v19: el paso va con lo caminado (una zancada cada ~1.1 casillas), no con el reloj de pantalla.
+        t: mov ? ((s.pasoFase ?? 0) * Math.PI * 2) / (7 * 1.1) : vis.t,
         trabaja: trabajaM && !mov,
         cansancio: 0,
         caminando: mov,

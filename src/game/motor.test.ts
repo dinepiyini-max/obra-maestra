@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { CONTRATO, DIRECCION_DIA, ETAPAS, FLETE, FLETE_URGENTE, HERRAMIENTA, MAPA, MATERIALES, NOTA_ESCUADRA, POR_HILADA, RECETA_H, RECETA_M, SITIOS, VEL_MAESTRO, BLOCKS_MURO, COMPRA, TAREAS, TUTORIAL, esSabado, horaDe, jornalDe, peso, type Puesto } from "./datos.ts";
+import { BONO_DIA, PLAZO_ENTREGA, CONTRATO, DIRECCION_DIA, ETAPAS, FLETE, FLETE_URGENTE, HERRAMIENTA, MAPA, MATERIALES, NOTA_ESCUADRA, POR_HILADA, RECETA_H, RECETA_M, SITIOS, VEL_MAESTRO, BLOCKS_MURO, COMPRA, TAREAS, TUTORIAL, esSabado, horaDe, jornalDe, peso, type Puesto } from "./datos.ts";
 import {
   abrirDespacho,
   accion,
@@ -68,8 +68,13 @@ import {
   causasPerdida,
   reloj,
   REGLAS_LIBRETA,
+  avisoSello,
+  bonoEntrega,
+  faltaEnPedido,
+  textoSinTarea,
   type Estado,
 } from "./motor.ts";
+import { proyectar, zoomDe } from "./dibujo.ts";
 
 function cabeNominaManana(s: Estado, conAdelanto = true): boolean {
   const manana = (s.dia + 1 - 1) % 7 === 6 ? s.dia + 2 : s.dia + 1;
@@ -2133,15 +2138,22 @@ describe("obra", () => {
     s.panel = null;
     s.jugador = { x: 6.2, y: 16.6 };
     const meta = { x: 12.2, y: 16.6 };
-    for (let i = 0; i < 80; i++) seguirDedo(s, meta.x, meta.y, false, 0.45);
+    // v19: el dedo marca el destino; el paso (con aceleración) lo da tick.
+    s.minuto = 8 * 60;
+    for (let i = 0; i < 60 * 8; i++) {
+      seguirDedo(s, meta.x, meta.y, false, 0.45);
+      s.panel = null;
+      tick(s, 1 / 60);
+      const dentro = s.jugador.x > 8.7 - 1.175 && s.jugador.x < 8.7 + 1.175 && s.jugador.y > 16.6 - 0.95 && s.jugador.y < 16.6 + 0.95;
+      assert.equal(dentro, false, `${s.jugador.x},${s.jugador.y}`);
+    }
     const x = s.jugador.x;
     const y = s.jugador.y;
-    const dentro = x > 8.7 - 1.175 && x < 8.7 + 1.175 && y > 16.6 - 0.95 && y < 16.6 + 0.95;
-    assert.equal(dentro, false, `${x},${y}`);
     assert.ok(x > 9.5, `no rodeó ${x},${y}`);
     seguirDedo(s, x, y, true);
-    assert.equal(s.vel, 0);
     assert.equal(s.destino, null);
+    for (let i = 0; i < 60; i++) tick(s, 1 / 60);
+    assert.ok(s.vel < 0.01, `no frenó ${s.vel}`);
   });
 
   it("la nómina de hoy es la misma en la cuenta y en el pago", () => {
@@ -2837,7 +2849,7 @@ describe("obra", () => {
     avanzarMinutos(nom, 1);
     const avisoNom = nom.avisos.find((a) => a.texto.startsWith("Se fueron"));
     assert.ok(avisoNom);
-    assert.match(avisoNom!.texto, /^Se fueron a las 3\. Nómina: −P\$[\d,]+\. Herramienta: −P\$[\d,]+\.$/);
+    assert.match(avisoNom!.texto, /^Se fueron a las 3\. Jornales P\$[\d,]+ \+ herramienta P\$[\d,]+ \+ Dirección P\$[\d,]+ = P\$[\d,]+\.$/);
     assert.ok(nom.diario.some((d) => d.texto.startsWith("Nómina: −") && d.texto.includes("Herramienta: −")));
 
     const muro = nueva(1);
@@ -3378,3 +3390,144 @@ describe("v18: caminar 20 min, adelanto único, ayuda al principiante", () => {
   });
 });
 
+
+describe("v19: zapata, bono, coherencia, caminar con física", () => {
+  it("zapata en 9.9996 de 10 (se ve 10/10) sella enseguida, sin pedir otra tanda", () => {
+    const s = nueva(3);
+    firmar(s);
+    for (const c of s.candidatos.slice(0, 4)) contratar(s, c.id);
+    s.panel = null;
+    s.tut.fin = true;
+    s.etapa = 3;
+    s.minuto = 9 * 60;
+    s.selloDia = 1;
+    s.runs[3]![0]!.hecho = 9.9996;
+    s.runs[3]![0]!.ini = true;
+    s.mezclas = [];
+    avanzarMinutos(s, 5);
+    assert.equal(s.panel, "sello");
+  });
+
+  it("si no puede sellar, dice qué falta", () => {
+    const s = nueva(3);
+    firmar(s);
+    for (const c of s.candidatos.slice(0, 4)) contratar(s, c.id);
+    s.panel = null;
+    s.etapa = 3;
+    s.runs[3]![0]!.hecho = 9.3;
+    s.mezclas = [];
+    const t = avisoSello(s);
+    assert.match(t, /Para sellar Vaciado de zapata falta: Vaciar zapata: 9[.,]3 de 10/);
+    assert.match(t, /Cemento/);
+  });
+
+  it("bono por entrega temprana: P$1,500 por día antes del día 30, y suma a la ganancia", () => {
+    assert.equal(BONO_DIA, 1500);
+    assert.equal(PLAZO_ENTREGA, 30);
+    const s = nueva(3);
+    firmar(s);
+    assert.equal(bonoEntrega(s, 20), 15000);
+    assert.equal(bonoEntrega(s, 30), 0);
+    assert.equal(bonoEntrega(s, 34), 0);
+  });
+
+  it("pausa: el reloj no corre", () => {
+    const s = nueva(3);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.panel = null;
+    s.pausa = true;
+    const m = s.minuto;
+    for (let i = 0; i < 600; i++) tick(s, 1 / 60);
+    assert.equal(s.minuto, m);
+  });
+
+  it("sin tarea solo para quien no tiene puesto", () => {
+    const s = nueva(3);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    const g = s.gente[0]!;
+    g.sinTareaHoy = 8 * 60;
+    g.puesto = "obra";
+    assert.equal(textoSinTarea(g), null);
+    g.puesto = null;
+    assert.match(textoSinTarea(g) ?? "", /sin tarea/);
+  });
+
+  it("si mañana es domingo, el block empieza el lunes", () => {
+    const s = nueva(3);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.panel = null;
+    s.dia = 6;
+    s.etapa = 3;
+    s.runs[3]![0]!.hecho = 10;
+    s.minuto = 10 * 60;
+    avanzarMinutos(s, 2);
+    continuarSello(s);
+    assert.ok(s.diario.some((d) => /block empieza el lunes/.test(d.texto)) || /el lunes/.test(JSON.stringify(s.fragua)), JSON.stringify(s.fragua));
+  });
+
+  it("pedido incompleto: avisa qué no trae", () => {
+    const s = nueva(3);
+    firmar(s);
+    s.etapa = 3;
+    const falta = loQueFalta(s);
+    const sin: Record<string, number> = { ...(falta as Record<string, number>) };
+    const k = Object.keys(sin)[0]!;
+    delete sin[k];
+    assert.ok(faltaEnPedido(s, sin).length >= 1);
+    assert.equal(faltaEnPedido(s, falta).length, 0);
+  });
+
+  const cruzar = (hz: number, ritmo: number) => {
+    const s = nueva(7);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.panel = null;
+    s.minuto = 7 * 60;
+    s.jugador.x = MAPA.x0 + 1;
+    s.jugador.y = MAPA.y0 + 1;
+    s.destino = { x: MAPA.x1 - 1, y: MAPA.y1 - 1 };
+    const m0 = s.minuto;
+    let real = 0;
+    let prev = 0;
+    let saltoMax = 0;
+    const vels: number[] = [];
+    for (let f = 0; f < 100000 && s.destino; f++) {
+      s.panel = null;
+      const x = s.jugador.x;
+      const y = s.jugador.y;
+      tick(s, 1 / hz, ritmo);
+      real += 1 / hz;
+      const d = Math.hypot(s.jugador.x - x, s.jugador.y - y);
+      if (s.destino) {
+        vels.push(d * hz);
+        saltoMax = Math.max(saltoMax, Math.abs(s.vel - prev));
+      }
+      prev = s.vel;
+    }
+    vels.sort((a, b) => a - b);
+    return { real, min: s.minuto - m0, crucero: vels[Math.floor(vels.length * 0.9)]!, primero: vels[0]!, saltoMax };
+  };
+
+  it("paso natural: 2.5 casillas/s a 60 y 120 Hz, con arranque suave y cruce ≤ 20 min de reloj", () => {
+    const a = cruzar(60, 1);
+    const b = cruzar(120, 1);
+    assert.ok(Math.abs(a.crucero - 2.5) < 0.05, `60 Hz ${a.crucero}`);
+    assert.ok(Math.abs(b.crucero - 2.5) < 0.05, `120 Hz ${b.crucero}`);
+    assert.ok(Math.abs(a.real - b.real) < 0.2, `${a.real} vs ${b.real}`);
+    assert.ok(a.min <= 20 && b.min <= 20, `${a.min} ${b.min}`);
+    assert.ok(a.primero < 0.3, `arranque ${a.primero}`);
+    assert.ok(a.saltoMax <= 12 / 60 + 1e-6, `salto ${a.saltoMax}`);
+    assert.ok(b.saltoMax <= 12 / 120 + 1e-6, `salto ${b.saltoMax}`);
+    const x2 = cruzar(60, 2);
+    assert.ok(Math.abs(x2.crucero - 2.5 * 1.3) < 0.07, `x2 ${x2.crucero}`);
+    // En pantalla (móvil, zoom 0.75): una casilla mide ≈24 px en horizontal.
+    const z = zoomDe(375, 667);
+    const p0 = proyectar(0, 0, 0, z);
+    const p1 = proyectar(1, 0, 0, z);
+    const pxCasilla = Math.hypot(p1.sx - p0.sx, p1.sy - p0.sy);
+    assert.ok(pxCasilla * 2.5 > 50 && pxCasilla * 2.5 < 70, `px/s ${pxCasilla * 2.5}`);
+  });
+});

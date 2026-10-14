@@ -32,8 +32,8 @@ export const PERFILES: Record<string, Cfg> = {
   intermedio_sin_sugerida: BOTS.intermedio!,
   // v18: el experto de v16/v17 contrataba 5 con 2 albañiles y se comía la caja (ver informe). Ahora usa la sugerida
   // y juega igual de fino (golpe cada 5 min, sin olvidos ni errores de puesto, pide temprano y la etapa siguiente).
-  experto: { ...BOTS.experto!, sugerida: true },
-  experto_cuadrilla5: { ...BOTS.experto!, sugerida: false, cupo: 5 },
+  // v19: experto = 4 con 2 albañiles (sin la sugerida): entrega antes y cobra el bono.
+  experto: BOTS.experto!,
 };
 
 function climaDe(seed: number): Clima {

@@ -7,6 +7,8 @@ import {
   CUADRILLA,
   CURADO_DIAS,
   DIRECCION_DIA,
+  BONO_DIA,
+  PLAZO_ENTREGA,
   EFI,
   ETAPAS,
   FLETE,
@@ -298,6 +300,10 @@ export interface Estado {
   rachaCorta: number;
   /** Doña Carmen ya soltó la mitad de una etapa. Una vez por obra. */
   rescateUsado: boolean;
+  /** v19: bono cobrado al entregar antes del plazo. */
+  bono?: number;
+  /** v19: pérdidas del día (mezcla vencida, mojado...) para el resumen de la noche. */
+  perdidasHoy?: { texto: string; pesos: number }[];
   /** El finde está parado en el domingo, a la espera del toque. */
   descanso: boolean;
   notaNomina: string;
@@ -313,6 +319,10 @@ export interface Estado {
   jugador: { x: number; y: number };
   yaw: number;
   vel: number;
+  /** v19: última dirección de paso (para frenar suave) y fase del paso según lo caminado. */
+  dirX?: number;
+  dirY?: number;
+  pasoFase?: number;
   mando: { ax: number; ay: number };
   destino: { x: number; y: number } | null;
   /** Waypoints del toque. No se guarda: sanear la vacía. */
@@ -881,6 +891,11 @@ export function precioDe(s: Estado): number {
   return s.precio > 0 ? s.precio : CONTRATO;
 }
 
+/** v19: bono de Doña Carmen por entregar antes del día del plazo. Una regla: BONO_DIA por día de adelanto. */
+export function bonoEntrega(s: Estado, dia = s.dia): number {
+  return Math.max(0, PLAZO_ENTREGA - dia) * BONO_DIA;
+}
+
 export function techoCarmen(seed: number): number {
   const u = hash2(seed >>> 0, 60);
   const i = Math.min(2, Math.floor(u * 3));
@@ -1317,7 +1332,9 @@ function aplicar(s: Estado, w: W, dq: number): number {
   }
   if (dq <= 1e-8) return 0;
   const antes = w.hecho;
-  const nuevo = Math.min(w.q, antes + dq);
+  let nuevo = Math.min(w.q, antes + dq);
+  // v19: lo que en pantalla ya es «10/10» cuenta como hecho; no pide otra tanda por una milésima.
+  if (w.q - nuevo <= casiLleno(w.q)) nuevo = w.q;
   w.setHecho(nuevo);
   w.hecho = nuevo;
   const real = nuevo - antes;
@@ -1659,7 +1676,17 @@ function lavarMezclas(s: Estado, motivo: string) {
   s.stats.costoPerdidas += costo;
   s.escombro = (s.escombro ?? 0) + vol;
   s.mezclas = [];
-  if (costo > 1) aviso(s, `${motivo} Se perdió mezcla por ${peso(costo)}.`);
+  if (costo > 1) {
+    aviso(s, `${motivo} Se perdió mezcla por ${peso(costo)}.`);
+    perdida(s, "Mezcla perdida", costo);
+  }
+}
+
+/** Anota una pérdida del día (ya está en su partida; no mueve la caja). */
+function perdida(s: Estado, texto: string, pesos: number) {
+  if (Math.round(pesos) < 1) return;
+  (s.perdidasHoy ??= []).push({ texto, pesos });
+  diario(s, `Pérdida: ${texto}, ${peso(pesos)}.`);
 }
 
 function envejecerMezclas(s: Estado) {
@@ -1675,7 +1702,10 @@ function envejecerMezclas(s: Estado) {
       s.escombro = (s.escombro ?? 0) + volMezcla(m.tipo, m.restante);
       s.morteroVencio = s.dia * 10000 + s.minuto;
       if (s.minuto >= 15 * 60) s.mezclaTarde = (s.mezclaTarde ?? 0) + c;
-      if (Math.round(c) >= 1) aviso(s, `Se venció el ${m.tipo === "H" ? "hormigón" : "mortero"} (${peso(c)}).`);
+      if (Math.round(c) >= 1) {
+        aviso(s, `Se venció el ${m.tipo === "H" ? "hormigón" : "mortero"} (${peso(c)}).`);
+        perdida(s, `${m.tipo === "H" ? "Hormigón" : "Mortero"} vencido a las ${horaDe(s.minuto)}`, c);
+      }
     } else siguen.push(m);
   }
   s.mezclas = siguen;
@@ -1785,6 +1815,7 @@ function comenzarLluvia(s: Estado, r: Lluvia) {
       apunte(s, "mojado", `Mojado ${pierde}`, "entrada");
       aviso(s, `La lluvia mojó ${pierde} fundas que estaban afuera (${peso(costo)}).`);
       diario(s, `Mojado ${pierde} fundas en la entrada.`);
+      perdida(s, `Cemento mojado (${pierde} fundas)`, costo);
     }
   }
 }
@@ -2393,14 +2424,47 @@ function puestoEfectivo(s: Estado, g: Persona): Puesto | null {
   return labor;
 }
 
+/** Margen por debajo del cual un trabajo ya se ve completo (10/10). */
+function casiLleno(q: number): number {
+  return Math.max(1e-4, q * 0.002);
+}
+
 function etapaCompleta(s: Estado): boolean {
   const def = ETAPAS[s.etapa];
   if (!def) return false;
   for (const t of def.trabajos) {
-    if (runDe(s, s.etapa, t.id).hecho < t.q - 1e-4) return false;
+    if (runDe(s, s.etapa, t.id).hecho < t.q - casiLleno(t.q)) return false;
   }
-  for (const e of s.extras) if (e.etapa === s.etapa && e.hecho < e.q - 1e-4) return false;
+  for (const e of s.extras) if (e.etapa === s.etapa && e.hecho < e.q - casiLleno(e.q)) return false;
   return true;
+}
+
+/** Lo que falta para sellar, solo cuando la etapa ya se ve casi lista (90% o más en cada trabajo). */
+export function avisoSello(s: Estado): string {
+  const def = ETAPAS[s.etapa];
+  if (!def || s.entregada || s.sello) return "";
+  for (const t of def.trabajos) if (runDe(s, s.etapa, t.id).hecho < t.q * 0.9) return "";
+  return faltaParaSellar(s);
+}
+
+/** Si la etapa no sella, qué falta, en palabras: trabajo pendiente, material, mezcla, plomo, lluvia o fragua. */
+export function faltaParaSellar(s: Estado): string {
+  const def = ETAPAS[s.etapa];
+  if (!def || s.entregada || s.sello) return "";
+  const partes: string[] = [];
+  for (const t of def.trabajos) {
+    const h = runDe(s, s.etapa, t.id).hecho;
+    if (h < t.q - casiLleno(t.q)) partes.push(`${t.nombre}: ${num(h, 1)} de ${num(t.q, 1)}`);
+  }
+  for (const e of s.extras) if (e.etapa === s.etapa && e.hecho < e.q - casiLleno(e.q)) partes.push(`${e.nombre}: ${num(e.hecho, 1)} de ${num(e.q, 1)}`);
+  if (!partes.length) return "";
+  const extra: string[] = [];
+  if (s.plomo) extra.push("plomo pendiente: dale con la plomada");
+  if (lluviaAhora(s)) extra.push("está lloviendo");
+  if (s.fragua && fraguaActiva(s)) extra.push("fraguando");
+  const c = cuello(s);
+  if (/Falta|Pídelo|mezcla|Mezcla/.test(c)) extra.push(c.replace(/\.$/, ""));
+  return `Para sellar ${def.nombre} falta: ${[...partes, ...extra].join("; ")}.`;
 }
 
 function revisar(s: Estado) {
@@ -2476,8 +2540,10 @@ export function continuarSello(s: Estado) {
   s.etapas[i]!.motivo = seal.motivo;
   s.selloDia = s.dia;
   diario(s, pago > 0 ? `APROBADO: ${def.nombre}. Cobro: +${peso(pago)}.` : `APROBADO: ${def.nombre}.`);
-  if (def.id === "zapata") s.fragua = programarFragua(s, "La zapata fragua. El block empieza mañana a las 7:00.");
-  if (def.id === "columnas") s.fragua = programarFragua(s, "Las columnas fraguan. Mañana se puede seguir.");
+  // v19: el domingo se descansa; si mañana es domingo, el block y el resto siguen el lunes.
+  const otroDia = esDomingo(s.dia + 1) ? "el lunes" : "mañana";
+  if (def.id === "zapata") s.fragua = programarFragua(s, `La zapata fragua. El block empieza ${otroDia} a las 7:00.`);
+  if (def.id === "columnas") s.fragua = programarFragua(s, `Las columnas fraguan. ${otroDia === "mañana" ? "Mañana" : "El lunes"} se puede seguir.`);
   if (def.id === "viga") {
     s.curando = true;
     s.curadoDias = [];
@@ -2488,6 +2554,13 @@ export function continuarSello(s: Estado) {
   s.sello = null;
   if (s.etapa >= 9) {
     s.entregada = true;
+    const bono = bonoEntrega(s);
+    if (bono > 0) {
+      s.caja += bono;
+      s.cobrado += bono;
+      s.bono = bono;
+      diario(s, `Bono por entrega temprana (${PLAZO_ENTREGA - s.dia} días antes del día ${PLAZO_ENTREGA}): +${peso(bono)}.`);
+    }
     if (!s.direccionCobrada) {
       s.caja -= DIRECCION_DIA;
       s.costos.direccion.mo += DIRECCION_DIA;
@@ -2621,7 +2694,7 @@ function pagarNomina(s: Estado) {
       const linea = `Nómina: −${peso(jornales)}. Herramienta: −${peso(herrSum)}.`;
       diario(s, linea);
       if (direccion > 0) diario(s, `Dirección del día: −${peso(direccion)}.`);
-      aviso(s, `${cabeza} ${linea}`);
+      aviso(s, `${cabeza} Jornales ${peso(jornales)} + herramienta ${peso(herrSum)} + Dirección ${peso(direccion)} = ${peso(jornales + herrSum + direccion)}.`);
     }
   }
 }
@@ -2814,11 +2887,12 @@ function paso(s: Estado) {
   } else if (!s.panel) revisar(s);
 }
 
-export function tick(s: Estado, dtReal: number) {
+export function tick(s: Estado, dtReal: number, ritmo = 1) {
   if (s.entregada || s.pausa) return;
   if (!s.firmado) {
     if (s.panel) return;
-    moverMaestro(s, clamp(dtReal, 0, 0.1));
+    const d = moverMaestro(s, clamp(dtReal, 0, 0.1), ritmo);
+    s.pasoFase = (s.pasoFase ?? 0) + d;
     return;
   }
   const sim = dtReal >= 0.15;
@@ -2830,10 +2904,13 @@ export function tick(s: Estado, dtReal: number) {
   }
   if (s.panel) return;
   const dt = clamp(dtReal, 0, 0.1);
-  moverMaestro(s, dt);
-  moverCuadrilla(s, dt);
+  const camino = moverMaestro(s, dt, ritmo);
+  s.pasoFase = (s.pasoFase ?? 0) + camino;
+  moverCuadrilla(s, dt * ritmo);
   if (s.gente.length + s.reserva.length === 0) return;
-  s.frac += dt * 5;
+  // v19: mientras el maestro camina, el reloj corre por lo caminado (cruzar el solar < 20 min);
+  // quieto, corre como siempre (5 min por segundo a x1).
+  s.frac += camino > 1e-4 ? camino * MIN_POR_CASILLA : sim ? dt * 5 : dt * 5 * ritmo;
   let n = 0;
   while (s.frac >= 1 && n < 8) {
     if (s.panel || s.entregada) break;
@@ -3118,37 +3195,76 @@ function rutaMasCorta(ax: number, ay: number, bx: number, by: number): { x: numb
   return path.length ? path : [{ x: gx, y: gy }];
 }
 
-function moverMaestro(s: Estado, dt: number) {
+/** v19: caminar con física. Velocidad en casillas por segundo real, con arranque y frenada suaves. */
+export const MAESTRO_VEL = VEL_MAESTRO; // casillas/s a x1
+export const MAESTRO_ACEL = 9; // casillas/s² al arrancar
+export const MAESTRO_FRENO = 12; // casillas/s² al frenar
+/** Minutos de reloj por casilla caminada: cruzar el solar (≈70 casillas) cuesta menos de 20 minutos. */
+export const MIN_POR_CASILLA = 0.26;
+/** A x2 el maestro camina un poco más rápido, no el doble. */
+export function multPaso(ritmo: number): number {
+  return ritmo >= 2 ? 1.3 : 1;
+}
+
+function acercar(v: number, meta: number, dt: number): number {
+  if (meta > v) return Math.min(meta, v + MAESTRO_ACEL * dt);
+  return Math.max(meta, v - MAESTRO_FRENO * dt);
+}
+
+/** Mueve al maestro y devuelve las casillas recorridas en este paso. */
+function moverMaestro(s: Estado, dt: number, ritmo = 1): number {
+  const vmax = MAESTRO_VEL * multPaso(ritmo);
+  const v0 = Math.max(0, s.vel || 0);
   const ax0 = s.mando.ax;
   const ay0 = s.mando.ay;
   const len = Math.hypot(ax0, ay0);
-  let dx = 0;
-  let dy = 0;
   const k = Math.SQRT1_2;
+  const x0 = s.jugador.x;
+  const y0 = s.jugador.y;
   if (len > 0.08) {
     const nx = ax0 / len;
     const ny = ay0 / len;
-    dx = (nx - ny) * k;
-    dy = (-nx - ny) * k;
+    const dx = (nx - ny) * k;
+    const dy = (-nx - ny) * k;
     s.yaw = Math.atan2(-nx, ny);
     s.destino = null;
     s.ruta = null;
-  } else if (s.destino) {
+    s.dirX = dx;
+    s.dirY = dy;
+    const v = acercar(v0, vmax * Math.min(1, len), dt);
+    const p = andar(x0, y0, x0 + dx * v * dt, y0 + dy * v * dt);
+    s.jugador.x = clamp(p.x, MAPA.x0, MAPA.x1);
+    s.jugador.y = clamp(p.y, MAPA.y0, MAPA.y1);
+    const av = Math.hypot(s.jugador.x - x0, s.jugador.y - y0);
+    s.vel = av < 1e-5 && v > 0 ? 0 : v;
+    return av;
+  }
+  if (s.destino) {
     const meta = s.destino;
     const ult = s.ruta?.[s.ruta.length - 1];
     if (!s.ruta || !ult || Math.hypot(ult.x - meta.x, ult.y - meta.y) > 0.08) {
-      s.ruta = rutaMasCorta(s.jugador.x, s.jugador.y, meta.x, meta.y);
+      s.ruta = rutaMasCorta(x0, y0, meta.x, meta.y);
     }
-    let queda = VEL_MAESTRO * dt;
+    let resta = 0;
+    let px = x0;
+    let py = y0;
+    for (const wp of s.ruta) {
+      resta += Math.hypot(wp.x - px, wp.y - py);
+      px = wp.x;
+      py = wp.y;
+    }
+    // Frena para llegar justo: v² = 2·freno·distancia.
+    const v = acercar(v0, Math.min(vmax, Math.sqrt(2 * MAESTRO_FRENO * resta) + 0.4), dt);
+    let queda = v * dt;
     const total = queda;
     let guard = 0;
-    while (s.ruta.length && queda > 1e-4 && guard < 8) {
+    while (s.ruta.length && queda > 1e-5 && guard < 8) {
       guard++;
       const wp = s.ruta[0]!;
       const dx0 = wp.x - s.jugador.x;
       const dy0 = wp.y - s.jugador.y;
       const d = Math.hypot(dx0, dy0);
-      if (d < 0.15) {
+      if (d < 0.05) {
         s.ruta.shift();
         continue;
       }
@@ -3159,84 +3275,64 @@ function moverMaestro(s: Estado, dt: number) {
       const av = Math.hypot(p.x - s.jugador.x, p.y - s.jugador.y);
       s.jugador.x = clamp(p.x, MAPA.x0, MAPA.x1);
       s.jugador.y = clamp(p.y, MAPA.y0, MAPA.y1);
-      if (av < 1e-4) {
+      if (av < 1e-5) {
         if (d < 0.8) s.ruta.shift();
         else break;
         continue;
       }
       queda -= av;
+      s.dirX = dx0 / d;
+      s.dirY = dy0 / d;
       const ax = (dx0 / d - dy0 / d) / (2 * k);
       const ay = -(dx0 / d + dy0 / d) / (2 * k);
       const l = Math.hypot(ax, ay) || 1;
       s.yaw = Math.atan2(-ax / l, ay / l);
-      if (Math.hypot(wp.x - s.jugador.x, wp.y - s.jugador.y) < 0.15) s.ruta.shift();
+      if (Math.hypot(wp.x - s.jugador.x, wp.y - s.jugador.y) < 0.05) s.ruta.shift();
     }
-    // Sin avance (meta dentro de un muro o un árbol): se queda donde llegó y no sigue «caminando».
-    if (!s.ruta.length || (total > 1e-3 && total - queda < 1e-4)) {
+    const av = Math.hypot(s.jugador.x - x0, s.jugador.y - y0);
+    // Sin avance (meta dentro de un muro o un árbol): se queda donde llegó.
+    if (!s.ruta.length || (total > 1e-3 && total - queda < 1e-5)) {
       s.destino = null;
       s.ruta = null;
       s.vel = 0;
-      return;
+      return av;
     }
-    s.vel = VEL_MAESTRO;
-    return;
-  } else {
-    s.vel = 0;
-    return;
+    s.vel = v;
+    return av;
   }
-  const paso = andar(s.jugador.x, s.jugador.y, s.jugador.x + dx * VEL_MAESTRO * dt, s.jugador.y + dy * VEL_MAESTRO * dt);
-  s.jugador.x = clamp(paso.x, MAPA.x0, MAPA.x1);
-  s.jugador.y = clamp(paso.y, MAPA.y0, MAPA.y1);
-  s.vel = VEL_MAESTRO;
+  // Sin mando: frena suave en la última dirección.
+  if (v0 <= 0) {
+    s.vel = 0;
+    return 0;
+  }
+  const v = acercar(v0, 0, dt);
+  const dx = s.dirX ?? 0;
+  const dy = s.dirY ?? 0;
+  const p = andar(x0, y0, x0 + dx * v * dt, y0 + dy * v * dt);
+  s.jugador.x = clamp(p.x, MAPA.x0, MAPA.x1);
+  s.jugador.y = clamp(p.y, MAPA.y0, MAPA.y1);
+  const av = Math.hypot(s.jugador.x - x0, s.jugador.y - y0);
+  s.vel = av < 1e-5 ? 0 : v;
+  return av;
 }
 
-export function seguirDedo(s: Estado, x: number, y: number, soltar: boolean, alcance = 4.4) {
+/** Arrastre con el dedo: fija la meta; el paso lo da moverMaestro con la misma física. */
+export function seguirDedo(s: Estado, x: number, y: number, soltar: boolean, _alcance = 0) {
+  void _alcance;
+  s.mando.ax = 0;
+  s.mando.ay = 0;
   if (soltar) {
     s.destino = null;
     s.ruta = null;
-    s.vel = 0;
-    s.mando.ax = 0;
-    s.mando.ay = 0;
     return;
   }
   const tx = clamp(x, MAPA.x0, MAPA.x1);
   const ty = clamp(y, MAPA.y0, MAPA.y1);
-  // El dedo arrastra por la ruta más corta: rodea muros y montones en vez de quedarse pegado.
-  const ult = s.ruta?.[s.ruta.length - 1];
-  if (!s.ruta || !ult || Math.hypot(ult.x - tx, ult.y - ty) > 0.6) s.ruta = rutaMasCorta(s.jugador.x, s.jugador.y, tx, ty);
-  let px = s.jugador.x;
-  let py = s.jugador.y;
-  let queda = Math.max(0, alcance);
-  for (let i = 0; i < 24 && queda > 0.01 && s.ruta.length; i++) {
-    const wp = s.ruta[0]!;
-    const d = Math.hypot(wp.x - px, wp.y - py);
-    if (d < 0.15) {
-      s.ruta.shift();
-      continue;
-    }
-    const st = Math.min(0.55, d, queda);
-    const nx = px + ((wp.x - px) / d) * st;
-    const ny = py + ((wp.y - py) / d) * st;
-    const p = andar(px, py, nx, ny, wp.x, wp.y);
-    const av = Math.hypot(p.x - px, p.y - py);
-    if (av < 1e-4) {
-      if (d < 0.8) {
-        s.ruta.shift();
-        continue;
-      }
-      s.ruta = null;
-      break;
-    }
-    queda -= av;
-    px = p.x;
-    py = p.y;
+  if (Math.hypot(tx - s.jugador.x, ty - s.jugador.y) < 0.1) {
+    s.destino = null;
+    return;
   }
-  s.jugador.x = clamp(px, MAPA.x0, MAPA.x1);
-  s.jugador.y = clamp(py, MAPA.y0, MAPA.y1);
-  s.destino = null;
-  s.mando.ax = 0;
-  s.mando.ay = 0;
-  s.vel = Math.hypot(tx - s.jugador.x, ty - s.jugador.y) > 0.2 ? VEL_MAESTRO : 0;
+  if (!s.destino || Math.hypot(s.destino.x - tx, s.destino.y - ty) > 0.3) s.destino = { x: tx, y: ty };
 }
 
 const ANCLA_OBRA = [
@@ -3623,6 +3719,18 @@ export function hojaGuardalmacen(s: Estado, cuando?: string): { todo: boolean; t
 
 export function loQueFalta(s: Estado): Cantidades {
   return cuerpoNota(s).items;
+}
+
+/** v19: materiales que la etapa necesita y este pedido no trae (o trae de menos). Para avisar antes de confirmar. */
+export function faltaEnPedido(s: Estado, items: Cantidades | undefined): string[] {
+  const falta = loQueFalta(s);
+  const out: string[] = [];
+  for (const [k, n] of Object.entries(falta) as [Mat, number][]) {
+    if (!(n > 1e-6)) continue;
+    const trae = items?.[k] ?? 0;
+    if (trae + 1e-6 < n) out.push(`${MATERIALES[k].nombre} (faltan ${num(n - trae, 2)} ${MATERIALES[k].unidad})`);
+  }
+  return out;
 }
 
 export function loQueFaltaSiguiente(s: Estado): Cantidades {
@@ -4452,6 +4560,7 @@ export function siguienteDia(s: Estado) {
   s.aguaDia = 0;
   s.salidaMin = -1;
   s.nominaHoy = 0;
+  s.perdidasHoy = [];
   for (const p of s.reserva) s.gente.push(p);
   s.reserva = [];
   for (const g of s.gente) {
@@ -5324,6 +5433,8 @@ export const REGLAS_LIBRETA = [
   "Doña Carmen adelanta una sola vez por obra: o el adelanto a cuenta de lo avanzado, o (si no se puede sellar ni pedirlo) la mitad de la etapa. Después, la nómina corta solo ofrece «Pagar lo que haya».",
   "Cuadrilla sugerida: al contratar, la oficina mira tu caja y te dice cuánta gente aguanta (un albañil siempre, el resto peones). Con P$25,000 o más, tres: un albañil y dos ayudantes; con menos, dos. Más gente acaba la caja antes del cobro.",
   "Aviso de la mañana: si la caja no paga más de 4 días de nómina con la cuadrilla de hoy, al amanecer sale «Te quedan X días de caja…». Sella la etapa que cobra o da libre a un peón.",
+  "Bono por entrega temprana: Doña Carmen paga P$1,500 por cada día que entregues antes del día 30 (entregar el día 20 = P$15,000). El día 30 o después, sin bono.",
+  "Nómina del día = jornales + herramienta (3% del jornal) + Dirección (P$1,750 si ese día hubo jornales). El aviso de las 3 muestra las tres partes y el total.",
   "Cada noche muestra el resumen y espera tu toque. Si hay mezcla en el trompo, avisa antes de dormir: se pierde.",
 ];
 
@@ -5342,7 +5453,8 @@ export function libreta(s: Estado) {
     costo,
     presupuesto: PRESUPUESTO_TOTAL,
     porHacer,
-    ganancia: precioDe(s) - (costo + porHacer),
+    ganancia: precioDe(s) + (s.bono ?? 0) - (costo + porHacer),
+    bono: s.bono ?? 0,
     cobrado: s.cobrado,
     caja: s.caja,
     diario: s.diario,
@@ -5446,6 +5558,8 @@ export function textoMezcla(s: Estado): string | null {
 }
 
 export function textoSinTarea(g: Persona): string | null {
+  // v19: con puesto asignado no está «sin tarea» (puede estar esperando material: eso va en Tiempo muerto).
+  if (g.puesto) return null;
   const min = g.sinTareaHoy ?? 0;
   if (min <= 4 * 60) return null;
   const h = Math.round((min / 60) * 10) / 10;

@@ -1,5 +1,9 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import {
+  ANTICIPO,
+  BONO_DIA,
+  KIT_PRECIO,
+  PLAZO_ENTREGA,
   COMPRA,
   CONTRATO,
   CAJA_INICIAL,
@@ -60,6 +64,9 @@ import {
   partesMuerto,
   precioDe,
   adelantoUsado,
+  faltaEnPedido,
+  faltaParaSellar,
+  bonoEntrega,
   causasPerdida,
   razonAdelanto,
   cuadrillaSugerida,
@@ -511,7 +518,9 @@ function ListaFilas({ s }: { s: Estado }) {
           <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
             <span>Días {g.dias ?? 0}</span>
             <span className="whitespace-nowrap">Jornal {peso(jornalDe(g.oficio, g.rinde))}</span>
-            <span className="whitespace-nowrap">Se debe {peso(seDebe(s, g))}</span>
+            <span className="whitespace-nowrap">
+              {s.nominaPagada ? "Hoy: pagado" : g.activo && !g.falto ? `Por pagar a las 3: ${peso(seDebe(s, g))}` : "Hoy no cobra"}
+            </span>
           </div>
         </li>
       ))}
@@ -863,6 +872,11 @@ export function Paneles({
           <p className="mt-2 font-hand text-xl leading-tight">Caseta de block 3x4</p>
           <p className="font-display text-4xl leading-none">{peso(pedido)}</p>
           <p className="font-hand text-lg leading-tight">Lo que no gastes es tuyo</p>
+          <p className="mt-1 font-hand text-sm leading-tight" data-kit>
+            Al firmar: anticipo {peso(ANTICIPO)} menos el kit de replanteo {peso(KIT_PRECIO)} (estacas, hilo, cal y escuadra para marcar la
+            caseta). Te quedan {peso(ANTICIPO - KIT_PRECIO)} en caja. Si entregas antes del día {PLAZO_ENTREGA}, Doña Carmen paga{" "}
+            {peso(BONO_DIA)} por cada día de adelanto.
+          </p>
           <AvisoRoto s={s} />
           {dicho ? (
             <p className="mt-3 font-hand text-tinta">
@@ -1127,6 +1141,11 @@ export function Paneles({
     const puede = cuenta.alcanza || paga;
     return (
       <Marco titulo="Antes de pedir" ancho="max-w-md" onCerrar={() => setFreno(null)}>
+        {freno.origen === "sita" && faltaEnPedido(s, s.sita?.oferta?.items).length ? (
+          <p className="mb-2 border-2 border-rojo p-1 font-hand text-rojo" data-incompleto>
+            Ojo: este pedido no trae todo. Falta: {faltaEnPedido(s, s.sita?.oferta?.items).join(", ")}.
+          </p>
+        ) : null}
         <ul className="space-y-1 font-hand text-lg">
           <li>Caja {peso(cuenta.caja)}</li>
           <li>− pedido {peso(cuenta.pedido)}</li>
@@ -1184,7 +1203,12 @@ export function Paneles({
               {of.comeNomina || of.recorte ? "Pedir lo que alcanza" : "Pedir"}
             </button>
           )}
-          {of.siguiente && Object.values(of.siguiente).some((n) => (n ?? 0) > 0) ? (
+          {of.siguiente &&
+          Object.values(of.siguiente).some((n) => (n ?? 0) > 0) &&
+          cuentaPedido(
+            s,
+            Object.entries(of.siguiente).reduce((a, [k, n]) => a + (n ?? 0) * MATERIALES[k as Mat].precio, 0) + fleteDe(s, of.urgente),
+          ).alcanza ? (
             <button
               type="button"
               className={btn}
@@ -1599,7 +1623,33 @@ export function Paneles({
         <p className="font-hand">Nómina {peso(pagada)}</p>
         <p className="font-hand">Herramienta {peso(herr)}</p>
         {direccion > 0 ? <p className="font-hand">Dirección {peso(direccion)}</p> : null}
-        <p className="font-hand">Total {peso(pagada + herr + direccion)}</p>
+        <p className="font-hand">
+          Total {peso(pagada + herr + direccion)} = jornales {peso(pagada)} + herramienta {peso(herr)} + Dirección {peso(direccion)}
+        </p>
+        <details className="font-hand text-sm">
+          <summary className="min-h-11 cursor-pointer py-2">Jornal de cada uno</summary>
+          <ul>
+            {s.gente
+              .filter((g) => g.activo && !g.falto)
+              .map((g) => (
+                <li key={g.id}>
+                  {g.nombre} ({OFICIO_NOMBRE[g.oficio]}): {peso(jornalDe(g.oficio, g.rinde))}
+                </li>
+              ))}
+          </ul>
+        </details>
+        {(s.perdidasHoy ?? []).length ? (
+          <div className="font-hand text-sm" data-perdidas>
+            <p>Pérdidas de hoy (ya van en su partida):</p>
+            <ul className="list-disc pl-5">
+              {(s.perdidasHoy ?? []).map((p, i) => (
+                <li key={i}>
+                  {p.texto}: {peso(p.pesos)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {(s.deudaNomina ?? 0) > 0.5 ? (
           <p className="font-hand">Deuda de nómina {peso(s.deudaNomina)}. Pasa a mañana y el ánimo ya bajó.</p>
         ) : null}
@@ -1698,7 +1748,8 @@ export function Paneles({
               <li>Días {inf.dias}</li>
               <li>Costo total {peso(inf.costo)}</li>
               <li>{inf.ganancia >= 0 ? `Ganancia ${peso(inf.ganancia)}` : `Pérdida ${peso(inf.ganancia)}`}</li>
-              <li>Tiempo muerto {peso(muerto?.real ?? 0)}</li>
+              <li>Tiempo muerto (jornal pagado sin trabajo) {peso(muerto?.real ?? 0)}</li>
+              {inf.bono > 0 ? <li>Bono por entrega temprana {peso(inf.bono)}</li> : <li>Sin bono: se entregó el día {PLAZO_ENTREGA} o después</li>}
               <li>Desplomes {s.desplomes}</li>
               <li>Ingeniera: {notaIng}</li>
             </ul>
@@ -1928,9 +1979,13 @@ function Plata({
         </div>
       </div>
       <p className="mt-1 flex justify-between gap-2 font-hand text-xs">
-        <span>{cifraCorta(lib.costo, angosta)}</span>
-        <span>{cifraCorta(lib.porHacer, angosta)}</span>
-        <span className="text-tinta">{cifraCorta(lib.ganancia, angosta)}</span>
+        <span>Gastado {cifraCorta(lib.costo, angosta)}</span>
+        <span>Falta gastar {cifraCorta(lib.porHacer, angosta)}</span>
+        <span className="text-tinta">Ganancia estimada {cifraCorta(lib.ganancia, angosta)}</span>
+      </p>
+      <p className="mt-1 font-hand text-xs text-tierra">
+        Cada fila: gastado de lo presupuestado. «Tiempo muerto» es jornal pagado sin trabajo (espera, lluvia, despacho temprano).
+        «Acarreo» es mover material de la entrada a la obra.
       </p>
       <ul className="mt-2">
         {lib.filas.map((f) => {
@@ -1943,7 +1998,7 @@ function Plata({
           const abierto = abierta === f.partida;
           return (
             <li key={f.partida} className="border-b border-tinta/15 py-1">
-              <button type="button" className="flex w-full min-w-0 items-center gap-2 text-left font-hand text-sm" onClick={() => onAbre(abierto ? null : f.partida)}>
+              <button type="button" className="flex min-h-11 w-full min-w-0 items-center gap-2 text-left font-hand text-sm" onClick={() => onAbre(abierto ? null : f.partida)}>
                 <span className={"w-16 shrink-0 sm:w-24 " + (angosta ? "whitespace-normal text-sm" : "truncate")}>{f.nombre}</span>
                 <span className="relative h-3 min-w-0 flex-1">
                   <span className="absolute top-0 h-3 border border-tinta" style={{ width: `${Math.max(hueco, tinta)}%` }} />

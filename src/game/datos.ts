@@ -3,6 +3,9 @@ export const ANTICIPO = 90_000;
 export const KIT_PRECIO = 600;
 export const CAJA_INICIAL = ANTICIPO - KIT_PRECIO;
 export const DIRECCION_DIA = 1750;
+/** v19: Doña Carmen paga P$1,500 por cada día que la obra se entrega antes del día 30. */
+export const PLAZO_ENTREGA = 30;
+export const BONO_DIA = 1500;
 export const FLETE = 1500;
 export const FLETE_URGENTE = 3000;
 export const HERRAMIENTA = 0.03;
@@ -10,7 +13,8 @@ export const CURADO_DIAS = 7;
 export const MAX_CUADRILLA = 8;
 export const RADIO = 2;
 export const RADIO_LIDER = 4.5;
-export const VEL_MAESTRO = 22;
+/** v19: paso de una persona, en casillas por segundo real (x1). */
+export const VEL_MAESTRO = 2.5;
 export const VEL_CUADRILLA = 2.8;
 export const HILADA_TOPE = 6;
 export const BLOCKS_MURO = 469;

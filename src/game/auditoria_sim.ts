@@ -579,7 +579,8 @@ export interface Cfg {
 export const BOTS: Record<string, Cfg> = {
   principiante: { nombre: "principiante", cupo: 3, orden: "azar", horaPedido: 11 * 60, siguiente: false, olvido: 0.3, errorPuesto: 0.25, golpeCada: 20, fallaPlomo: 0.35, urgente: true, soloSita: false, cortarTemprano: false },
   intermedio: { nombre: "intermedio", cupo: 4, orden: "lista", horaPedido: 7 * 60, siguiente: true, olvido: 0.1, errorPuesto: 0.08, golpeCada: 10, fallaPlomo: 0.1, urgente: false, soloSita: false, cortarTemprano: true },
-  experto: { nombre: "experto", cupo: 5, orden: "albaniles", horaPedido: 7 * 60, siguiente: true, olvido: 0, errorPuesto: 0, golpeCada: 5, fallaPlomo: 0, urgente: false, soloSita: false, cortarTemprano: true, sugerida: true },
+  // v19: con bono por entrega temprana, el experto apuesta a 4 con 2 albañiles para entregar antes.
+  experto: { nombre: "experto", cupo: 4, orden: "albaniles", horaPedido: 7 * 60, siguiente: true, olvido: 0, errorPuesto: 0, golpeCada: 5, fallaPlomo: 0, urgente: false, soloSita: false, cortarTemprano: true },
 };
 export const ESTRATEGIAS: Record<string, Cfg> = {
   A_dos_albaniles_c4: { ...BOTS.experto!, nombre: "A 2 albañiles, cuadrilla 4", cupo: 4 },
