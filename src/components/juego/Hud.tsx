@@ -307,7 +307,9 @@ export function Hud({
   const adelanto = puedeAdelantar(s) && !s.entregada;
   const faltaNomina = mundo ? textoFaltaNomina(s) : null;
   const quiereGuia = mundo && paso >= 0 && paso < TUTORIAL.length && !repiteCartel(TUTORIAL[paso] ?? "", cartel);
-  const guiaOn = quiereGuia && guiaVisible(paso, true);
+  // v18: los avisos de caja y adelanto pasan delante de la guía, para que el principiante los vea.
+  const urgente = avisos.length > 0 && /^(Te quedan|Ojo con el adelanto|Pasaron 18 días)/.test(avisos[0]!.texto);
+  const guiaOn = quiereGuia && !urgente && guiaVisible(paso, true);
   const avisoOn = mundo && !guiaOn && avisos.length > 0;
   const etapaNombre = ETAPAS[s.etapa]?.nombre ?? "Entrega";
 
@@ -345,6 +347,9 @@ export function Hud({
         <div className="flex items-center gap-2 bg-fondo/90 px-2 py-1 min-[900px]:mt-[52px]">
           <div className="font-hand text-sm leading-none whitespace-nowrap">
             {r.hora} {cortoDia(s.dia)} {s.dia}
+          </div>
+          <div className="truncate font-hand text-[11px] leading-none text-papel/80" data-clima>
+            {r.clima}
           </div>
           <div data-caja className={"font-hand text-sm leading-none text-[#f3e6c4] " + (late ? "caja-latido" : "")}>
             {peso(s.caja)}
@@ -394,6 +399,9 @@ export function Hud({
               <div className={"font-hand leading-none text-papel " + (chico ? "text-base" : "text-xl")}>
                 {r.hora} {cortoDia(s.dia)} {s.dia}
               </div>
+            </div>
+            <div className={"truncate font-hand leading-tight text-papel/80 " + (chico ? "text-[11px]" : "text-xs")} data-clima>
+              {r.clima}
             </div>
             <div className="mt-1 h-0.5 w-full bg-tierra">
               <div className="h-full bg-oro" style={{ width: `${r.progreso * 100}%` }} />

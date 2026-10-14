@@ -61,6 +61,13 @@ import {
   trianguloEscuadra,
   validar,
   avanzarMinutos,
+  cuadrillaSugerida,
+  diasDeCaja,
+  textoDiasCaja,
+  textoPlazoAdelanto,
+  causasPerdida,
+  reloj,
+  REGLAS_LIBRETA,
   type Estado,
 } from "./motor.ts";
 
@@ -3136,3 +3143,238 @@ describe("obra", () => {
     assert.equal(pasivo.s.panel, "perdida");
   });
 });
+
+describe("v18: caminar 20 min, adelanto único, ayuda al principiante", () => {
+  const prep = () => {
+    const s = nueva(7);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.panel = null;
+    s.minuto = 7 * 60;
+    return s;
+  };
+  const medir = (a: number[], b: number[], arrastre: boolean) => {
+    const s = prep();
+    s.jugador.x = a[0]!;
+    s.jugador.y = a[1]!;
+    if (!arrastre) s.destino = { x: b[0]!, y: b[1]! };
+    const m0 = s.minuto;
+    let fin = m0;
+    let quieto = 0;
+    for (let f = 0; f < 3000; f++) {
+      const px = s.jugador.x;
+      const py = s.jugador.y;
+      s.panel = null;
+      tick(s, 1 / 60);
+      if (arrastre) seguirDedo(s, b[0]!, b[1]!, false, VEL_MAESTRO / 60);
+      if (Math.hypot(s.jugador.x - px, s.jugador.y - py) > 1e-4) {
+        quieto = 0;
+        fin = s.minuto;
+      } else quieto++;
+      if (!arrastre && !s.destino) break;
+      if (quieto > 60) break;
+    }
+    return { min: fin - m0, colgado: !arrastre && !!s.destino, lejos: Math.hypot(s.jugador.x - b[0]!, s.jugador.y - b[1]!) };
+  };
+
+  it("de punta a punta del solar, tocando o arrastrando, son 20 minutos o menos", () => {
+    const pares = [
+      [[MAPA.x0 + 1, MAPA.y0 + 1], [MAPA.x1 - 1, MAPA.y1 - 1]],
+      [[MAPA.x1 - 1, MAPA.y0 + 1], [MAPA.x0 + 1, MAPA.y1 - 1]],
+      [[MAPA.x0 + 1, MAPA.y1 - 1], [MAPA.x1 - 1, MAPA.y0 + 1]],
+    ];
+    for (const [a, b] of pares) {
+      for (const arr of [false, true]) {
+        const r = medir(a!, b!, arr);
+        assert.ok(r.min <= 20, `${arr ? "arrastre" : "toque"} ${a} → ${b}: ${r.min} min`);
+        assert.ok(r.lejos < 1, `${arr ? "arrastre" : "toque"} ${a} → ${b} quedó a ${r.lejos.toFixed(1)}`);
+      }
+    }
+  });
+
+  it("caminar a cualquier punto (también dentro de un muro o árbol) termina en 20 minutos o menos", () => {
+    let r = 1;
+    const rnd = () => ((r = (r * 16807) % 2147483647), r / 2147483647);
+    for (let i = 0; i < 120; i++) {
+      const a = [MAPA.x0 + rnd() * (MAPA.x1 - MAPA.x0), MAPA.y0 + rnd() * (MAPA.y1 - MAPA.y0)];
+      const b = [MAPA.x0 + rnd() * (MAPA.x1 - MAPA.x0), MAPA.y0 + rnd() * (MAPA.y1 - MAPA.y0)];
+      for (const arr of [false, true]) {
+        const m = medir(a, b, arr);
+        assert.ok(m.min <= 20, `${arr ? "arrastre" : "toque"} ${a} → ${b}: ${m.min} min`);
+        assert.equal(m.colgado, false, `el toque ${a} → ${b} se quedó caminando`);
+      }
+    }
+    for (const sitio of Object.values(SITIOS)) {
+      const m = medir([MAPA.x0 + 1, MAPA.y0 + 1], [sitio.x, sitio.y], false);
+      assert.ok(m.min <= 20 && !m.colgado, `${sitio.nombre}: ${m.min} min`);
+    }
+  });
+
+  it("un solo adelanto por obra: después la nómina corta solo paga lo que haya", () => {
+    const s = nueva(2);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.etapa = 4;
+    s.dia = 5;
+    s.selloDia = 1;
+    s.caja = 100;
+    s.panel = null;
+    assert.equal(puedeAdelantar(s), true);
+    assert.equal(adelantar(s), null);
+    const adel = s.adelanto;
+    s.caja = 100;
+    s.dia = 6;
+    assert.equal(puedeAdelantar(s), false);
+    assert.equal(puedeRescate(s), false);
+    assert.match(razonAdelanto(s), /ya soltó/);
+    assert.notEqual(adelantar(s), null);
+    s.panel = "nomina";
+    const cobrado = s.cobrado;
+    confirmarNomina(s, true);
+    assert.equal(s.adelanto, adel);
+    assert.equal(s.cobrado, cobrado);
+  });
+
+  it("después del rescate tampoco hay adelanto", () => {
+    const s = nueva(2);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.etapa = 4;
+    s.dia = 30;
+    s.selloDia = 1;
+    s.caja = 100;
+    s.panel = null;
+    assert.equal(aceptarRescate(s), null);
+    s.caja = 100;
+    s.selloDia = s.dia;
+    assert.equal(puedeAdelantar(s), false);
+    assert.equal(puedeRescate(s), false);
+  });
+
+  it("la oficina sugiere una cuadrilla según la caja, siempre con albañil", () => {
+    for (const [caja, tam] of [[89400, 3], [40000, 3], [15000, 2]] as const) {
+      const s = nueva(3);
+      firmar(s);
+      s.caja = caja;
+      const sug = cuadrillaSugerida(s);
+      assert.equal(sug.ids.length, tam, `caja ${caja}`);
+      const elegidos = s.candidatos.filter((c) => sug.ids.includes(c.id));
+      assert.ok(elegidos.some((c) => c.oficio === "albanil"));
+      assert.ok(elegidos.every((c) => c.mania !== "madrugador"));
+      assert.match(sug.texto, /te conviene una cuadrilla de/);
+    }
+  });
+
+  it("al amanecer avisa «Te quedan X días de caja» y la Libreta lo explica", () => {
+    const s = nueva(3);
+    firmar(s);
+    for (const id of cuadrillaSugerida(s).ids) contratar(s, id);
+    s.panel = null;
+    s.caja = 30000;
+    s.dia = 2;
+    s.avisos = [];
+    siguienteDia(s);
+    const dias = diasDeCaja(s);
+    assert.ok(dias <= 4);
+    assert.ok(s.avisos.some((a) => a.texto.startsWith(`Te quedan ${dias} día`)), JSON.stringify(s.avisos));
+    assert.match(textoDiasCaja(s), /días? de caja/);
+    const lib = libreta(s);
+    assert.match(lib.diasCaja, /Te quedan/);
+    assert.ok(lib.sugerencia.length > 10);
+    assert.ok(REGLAS_LIBRETA.some((r) => r.includes("Cuadrilla sugerida")));
+    assert.ok(REGLAS_LIBRETA.some((r) => r.includes("Te quedan X días de caja")));
+    s.caja = 500000;
+    assert.equal(textoDiasCaja(s), "");
+  });
+
+  it("la caja libre resta la deuda de nómina de ayer y lo dice", () => {
+    const s = nueva(3);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.panel = null;
+    s.caja = 20000;
+    s.deudaNomina = 3000;
+    const sinDeuda = s.caja - nominaPendiente(s);
+    assert.equal(cajaLibre(s), sinDeuda - 3000);
+    assert.match(textoCajaLibre(s), /deuda de nómina P\$3,000/);
+    assert.equal(cuentaPedido(s, 1000).deuda, 3000);
+  });
+
+  it("la dirección de la noche solo se cobra si ese día hubo jornales", () => {
+    const s = nueva(3);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.panel = null;
+    for (const g of s.gente) {
+      g.activo = false;
+      g.falto = true;
+    }
+    s.minuto = 15 * 60;
+    const caja = s.caja;
+    const deuda = s.deudaNomina;
+    avanzarMinutos(s, 3 * 60 + 1);
+    assert.equal(s.caja, caja);
+    assert.equal(s.deudaNomina, deuda);
+    assert.equal(s.costos.direccion.mo, 0);
+  });
+
+  it("avisa antes de que venza el adelanto y no lo cuenta en «Faltan» si ya no está", () => {
+    const s = nueva(3);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.panel = null;
+    s.selloDia = 1;
+    s.dia = 18;
+    assert.match(textoPlazoAdelanto(s), /quedan 1 día/);
+    s.dia = 20;
+    assert.match(textoPlazoAdelanto(s), /ya no adelanta/);
+    s.dia = 5;
+    s.adelantoDia = 4;
+    assert.equal(textoPlazoAdelanto(s), "");
+  });
+
+  it("la barra de arriba muestra el % de lluvia caiga o no", () => {
+    const s = nueva(3);
+    firmar(s);
+    s.dia = 3;
+    s.minuto = 8 * 60;
+    s.lluvias = [{ dia: 3, ini: 11 * 60, fin: 12 * 60, prob: 40, cae: false }, { dia: 4, ini: 11 * 60, fin: 12 * 60, prob: 55, cae: false }];
+    const r1 = reloj(s).clima;
+    s.lluvias = s.lluvias.map((x) => ({ ...x, cae: true }));
+    const r2 = reloj(s).clima;
+    assert.equal(r1, r2);
+    assert.match(r1, /40%/);
+    assert.match(r1, /mañana 55%/);
+  });
+
+  it("la obra perdida lista quién se fue, qué día y la nómina corta", () => {
+    const s = nueva(3);
+    firmar(s);
+    s.diario.push({ dia: 9, min: 900, texto: "Nómina corta: se pagó P$0 de P$7,518. Quedan P$7,518 para mañana y el ánimo bajó." });
+    s.diario.push({ dia: 10, min: 900, texto: "Fefa se fue: dos días seguidos sin cobrar completo." });
+    s.deudaNomina = 7518;
+    const c = causasPerdida(s);
+    assert.deepEqual(c.salidas, ["Día 10: Fefa se fue: dos días seguidos sin cobrar completo."]);
+    assert.equal(c.cortas.length, 1);
+    assert.equal(c.deuda, 7518);
+  });
+
+  it("la víspera de una nómina corta da acciones concretas y avisa quién se va", () => {
+    const s = nueva(3);
+    firmar(s);
+    for (const id of cuadrillaSugerida(s).ids) contratar(s, id);
+    s.panel = null;
+    s.adelantoDia = 1;
+    s.caja = 1000;
+    s.rachaCorta = 1;
+    s.minuto = 18 * 60 - 1;
+    avanzarMinutos(s, 2);
+    const nota = s.diario.find((d) => d.texto.startsWith("Ojo: mañana la nómina"))?.texto ?? "";
+    assert.match(nota, /sella /);
+    assert.match(nota, /da libre a /);
+    assert.match(nota, /pide solo lo que falta/);
+    assert.match(nota, /mañana se va /);
+    assert.ok(!nota.includes("\n"));
+  });
+});
+

@@ -59,6 +59,11 @@ import {
   pedirTambien,
   partesMuerto,
   precioDe,
+  adelantoUsado,
+  causasPerdida,
+  razonAdelanto,
+  cuadrillaSugerida,
+  diasDeCaja,
   puedeAdelantar,
   puedeRescate,
   fraseRescate,
@@ -891,8 +896,38 @@ export function Paneles({
       <Marco titulo={`Contratar · ${cupo} de ${MAX_CUADRILLA}`} onCerrar={cerrar} hoja alto={ALTO_OFICINA}>
         <Pestanas tab="gente" onTab={ir} />
         <p className="mb-2 font-hand text-base leading-snug">
-          Para esta caseta alcanzan 4 o 5. Más gente gasta la caja antes del próximo cobro.
+          Más gente gasta la caja antes del próximo cobro. La sugerida mira cuánto aguanta tu caja.
         </p>
+        {(() => {
+          const sug = cuadrillaSugerida(s);
+          return (
+            <div className="mb-3 border-2 border-dashed border-tinta/60 p-2" data-sugerida>
+              <p className="font-hand text-base leading-snug">
+                <span className="font-bold">Sugerida para tu caja: </span>
+                {sug.texto}
+              </p>
+              {sug.ids.length ? (
+                <button
+                  type="button"
+                  className={`${btnPri} mt-2`}
+                  onClick={() =>
+                    act((st) => {
+                      for (const id of cuadrillaSugerida(st).ids) {
+                        const err = contratar(st, id);
+                        if (err) {
+                          decir(st, err);
+                          break;
+                        }
+                      }
+                    })
+                  }
+                >
+                  Contratar la sugerida
+                </button>
+              ) : null}
+            </div>
+          );
+        })()}
         <TablaContratar
           s={s}
           onTomar={(id) =>
@@ -974,6 +1009,16 @@ export function Paneles({
             <li key={t}>{t}</li>
           ))}
         </ul>
+        <div className="mb-3 border-2 border-dashed border-tinta/60 p-2 font-hand text-sm">
+          <p>
+            <span className="font-bold">Cuadrilla sugerida: </span>
+            {lib.sugerencia}
+          </p>
+          <p className="mt-1">
+            <span className="font-bold">Días de caja: </span>
+            {lib.diasCaja || `La caja paga ${diasDeCaja(s) >= 99 ? "todo" : `${diasDeCaja(s)} días`} de nómina con la cuadrilla de hoy. Si baja a 4 o menos, avisa al amanecer.`}
+          </p>
+        </div>
         <ListaFilas s={s} />
         <div className="mt-4">
           <Plata lib={lib} s={s} angosta={angosta} abierta={partidaAbierta} onAbre={setPartidaAbierta} />
@@ -1089,6 +1134,7 @@ export function Paneles({
             − nómina de hoy {peso(cuenta.nomina)} (jornales {peso(cuenta.jornales)}, herramienta {peso(cuenta.herramienta)}, Dirección{" "}
             {peso(cuenta.direccion)})
           </li>
+          {cuenta.deuda > 0.5 ? <li>− deuda de nómina de ayer {peso(cuenta.deuda)}</li> : null}
           {cuenta.usaAdelanto ? <li>+ adelanto {peso(cuenta.adelanto)}</li> : null}
           <li>= libre {peso(cuenta.libre)}</li>
         </ul>
@@ -1506,16 +1552,23 @@ export function Paneles({
         </p>
         {(s.deudaNomina ?? 0) > 0.5 ? <p className="mt-2 font-hand">Deuda de ayer: {peso(s.deudaNomina)}.</p> : null}
         {puedeRescate(s) ? <p className="mt-2 font-hand">{fraseRescate(s)}</p> : null}
+        {!puedeAdelantar(s) && !puedeRescate(s) ? (
+          <p className="mt-2 font-hand">
+            Sin adelanto: {adelantoUsado(s) ? "Doña Carmen ya soltó el adelanto de esta obra. No hay otro." : razonAdelanto(s) || "Doña Carmen no adelanta hoy."}
+          </p>
+        ) : null}
         <div className="mt-4 flex flex-col gap-2">
           {puedeRescate(s) ? (
             <button type="button" className={btnPri} onClick={() => act((st) => aceptarRescate(st))}>
               Aceptar la mitad de la etapa
             </button>
           ) : null}
-          <button type="button" className={btnPri} onClick={() => act((st) => confirmarNomina(st, true))}>
-            Pedir adelanto y pagar
-          </button>
-          <button type="button" className={btn} onClick={() => act((st) => confirmarNomina(st, false))}>
+          {puedeAdelantar(s) ? (
+            <button type="button" className={btnPri} onClick={() => act((st) => confirmarNomina(st, true))}>
+              Pedir adelanto y pagar
+            </button>
+          ) : null}
+          <button type="button" className={puedeAdelantar(s) || puedeRescate(s) ? btn : btnPri} onClick={() => act((st) => confirmarNomina(st, false))}>
             Pagar lo que haya
           </button>
         </div>
@@ -1669,6 +1722,36 @@ export function Paneles({
             ? "No quedó nadie trabajando. La obra se perdió."
             : "Doña Carmen ya tiene su caseta."}
         </p>
+        {perdida
+          ? (() => {
+              const c = causasPerdida(s);
+              return (
+                <div className="mt-2 border-2 border-rojo/60 p-2 font-hand text-sm" data-causas>
+                  <p className="font-bold">Por qué se perdió (del diario)</p>
+                  {c.salidas.length ? (
+                    <ul className="mt-1 list-disc pl-5">
+                      {c.salidas.map((x, i) => (
+                        <li key={i}>{x}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>Nadie se fue por la nómina.</p>
+                  )}
+                  {c.cortas.length ? (
+                    <>
+                      <p className="mt-1 font-bold">Nóminas cortas: {c.cortas.length}</p>
+                      <ul className="list-disc pl-5">
+                        {c.cortas.slice(-6).map((x, i) => (
+                          <li key={i}>{x}</li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : null}
+                  {c.deuda > 0.5 ? <p className="mt-1">Deuda de nómina al cerrar: {peso(c.deuda)}.</p> : null}
+                </div>
+              );
+            })()
+          : null}
         <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
           <Dato etiqueta="Días" valor={String(inf.dias)} />
           <Dato etiqueta="Costo" valor={peso(inf.costo)} />

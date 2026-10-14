@@ -2520,6 +2520,15 @@ function costoNominaHoy(s: Estado): { jornales: number; herr: number; direccion:
   return { jornales, herr, direccion, total: jornales + herr + direccion };
 }
 
+/** El que se iría primero si la nómina vuelve a quedar corta: el de menos ánimo; a igual ánimo, el que no manda. */
+export function quienSeVa(s: Estado): Persona | null {
+  const lista = [...s.gente, ...s.reserva];
+  if (!lista.length) return null;
+  const lider = (g: Persona) => g.oficio === "albanil" || g.oficio === "varillero" || g.oficio === "carpintero";
+  lista.sort((a, b) => (a.animo ?? 100) - (b.animo ?? 100) || Number(lider(a)) - Number(lider(b)));
+  return lista[0]!;
+}
+
 function seVaObrero(s: Estado) {
   const lista = [...s.gente, ...s.reserva];
   if (!lista.length) {
@@ -2527,9 +2536,7 @@ function seVaObrero(s: Estado) {
     diario(s, "No quedó nadie trabajando. La obra se perdió.");
     return;
   }
-  const lider = (g: Persona) => g.oficio === "albanil" || g.oficio === "varillero" || g.oficio === "carpintero";
-  lista.sort((a, b) => (a.animo ?? 100) - (b.animo ?? 100) || Number(lider(a)) - Number(lider(b)));
-  const g = lista[0]!;
+  const g = quienSeVa(s)!;
   const gi = s.gente.findIndex((x) => x.id === g.id);
   if (gi >= 0) s.gente.splice(gi, 1);
   else {
@@ -2595,7 +2602,7 @@ function pagarNomina(s: Estado) {
   if (corto > 0.5) {
     s.rachaCorta = (s.rachaCorta ?? 0) + 1;
     for (const g of [...s.gente, ...s.reserva]) g.animo = Math.max(0, (g.animo ?? 100) - 25);
-    const frase = `Nómina corta: se pagó ${peso(pago)} de ${peso(totalDue)}. Quedan ${peso(s.deudaNomina)} para mañana y el ánimo bajó.`;
+    const frase = `Nómina corta: se pagó −${peso(pago)} de ${peso(totalDue)}. Quedan ${peso(s.deudaNomina)} para mañana y el ánimo bajó.`;
     diario(s, frase);
     aviso(s, frase);
     if (s.rachaCorta >= 2) {
@@ -2621,7 +2628,7 @@ function pagarNomina(s: Estado) {
 
 export function confirmarNomina(s: Estado, conAdelanto: boolean) {
   if (s.nominaPagada) return;
-  if (conAdelanto) adelantar(s);
+  if (conAdelanto && puedeAdelantar(s)) adelantar(s);
   s.nominaRoja = s.dia;
   if (s.panel === "nomina") s.panel = null;
   pagarNomina(s);
@@ -2650,7 +2657,8 @@ export function nominaManana(s: Estado): number {
 }
 
 function adelantoManana(s: Estado): number {
-  if ((s.adelantoDia ?? 0) > 0) return 0;
+  if (adelantoUsado(s)) return 0;
+  if (precioDe(s) - s.cobrado <= 1) return 0;
   const manana = esDomingo(s.dia + 1) ? s.dia + 2 : s.dia + 1;
   if (manana - (s.selloDia ?? 1) > 18) return 0;
   const monto = Math.round(Math.min(20000, topeAvance(s)));
@@ -2664,22 +2672,47 @@ function avisarNominaManana(s: Estado) {
   }
   const nom = nominaManana(s);
   const adel = adelantoManana(s);
-  const falta = nom - s.caja - adel;
+  const deuda = deudaPendiente(s);
+  const falta = nom + deuda - s.caja - adel;
   if (falta <= 0.5) {
     s.notaNomina = "";
     return;
   }
-  const texto = `Ojo: mañana la nómina es ${peso(nom)} y tienes ${peso(s.caja)} (más ${peso(adel)} de adelanto). Faltan ${peso(falta)}: da libre a alguien o sella una etapa.`;
+  const conDeuda = deuda > 0.5 ? ` más ${peso(deuda)} de deuda` : "";
+  const conAdel = adel > 0 ? ` (más ${peso(adel)} de adelanto)` : " (sin adelanto disponible)";
+  const texto = `Ojo: mañana la nómina es ${peso(nom)}${conDeuda} y tienes ${peso(s.caja)}${conAdel}. Faltan ${peso(falta)}: ${accionesNomina(s).join("; ")}.${textoSeVaManana(s)}`;
   s.notaNomina = texto;
   if (!s.diario.some((d) => d.dia === s.dia && d.texto.startsWith("Ojo: mañana la nómina"))) diario(s, texto);
   if (!s.avisos.some((a) => a.texto.startsWith("Ojo: mañana la nómina"))) aviso(s, texto);
+}
+
+/** Dos o tres cosas concretas para cubrir la nómina de mañana. */
+export function accionesNomina(s: Estado): string[] {
+  const out: string[] = [];
+  const prox = ETAPAS.slice(s.etapa).find((e) => e.tramo > 0);
+  if (prox && !s.entregada) out.push(`sella ${prox.nombre} (cobra ${peso(Math.round(precioDe(s) * prox.tramo))})`);
+  const ayuda = [...s.gente, ...s.reserva]
+    .filter((g) => !g.libre && (g.oficio === "peon" || g.oficio === "ayudante"))
+    .sort((a, b) => jornalDe(b.oficio, b.rinde) - jornalDe(a.oficio, a.rinde))[0];
+  if (ayuda) out.push(`da libre a ${ayuda.nombre} (−${peso(jornalDe(ayuda.oficio, ayuda.rinde))})`);
+  else out.push("da libre a alguien");
+  out.push("pide solo lo que falta para hoy");
+  return out;
+}
+
+/** Si ya hubo un día de nómina corta, quién se va mañana si se repite. */
+export function textoSeVaManana(s: Estado): string {
+  if ((s.rachaCorta ?? 0) < 1) return "";
+  const g = quienSeVa(s);
+  return g ? ` Si vuelve a quedar corta, mañana se va ${g.nombre}.` : "";
 }
 
 function abrirFinde(s: Estado) {
   notarMezclaTarde(s);
   avisarNominaManana(s);
   if (s.panel === "finde" || s.panel === "informe" || s.panel === "perdida") return;
-  if (!s.direccionCobrada && s.firmado && !s.entregada) {
+  // v18: la dirección se cobra con la misma regla que el pronóstico: solo si ese día se pagaron jornales.
+  if (!s.direccionCobrada && s.firmado && !s.entregada && (s.nominaHoy ?? 0) > 0.5) {
     const pago = Math.min(Math.max(0, s.caja), DIRECCION_DIA);
     s.caja -= pago;
     s.costos.direccion.mo += DIRECCION_DIA;
@@ -2687,7 +2720,9 @@ function abrirFinde(s: Estado) {
     if (resta > 0.5) s.deudaNomina = (s.deudaNomina ?? 0) + resta;
     s.direccionCobrada = true;
     s.diasTrabajados += 1;
-    diario(s, resta > 0.5 ? `Dirección del día: se pagó ${peso(pago)}. Quedan ${peso(resta)} de deuda.` : `Dirección del día: −${peso(DIRECCION_DIA)}.`);
+    const texto = resta > 0.5 ? `Dirección del día: se pagó −${peso(pago)}. Quedan ${peso(resta)} de deuda para la nómina de mañana.` : `Dirección del día: −${peso(DIRECCION_DIA)}.`;
+    diario(s, texto);
+    if (resta > 0.5) aviso(s, texto);
   }
   if (s.mezclas.length && !s.diario.some((d) => d.dia === s.dia && d.texto.startsWith("Hay mezcla en el trompo"))) {
     const texto = "Hay mezcla en el trompo. Si duermes, se pierde.";
@@ -3105,6 +3140,7 @@ function moverMaestro(s: Estado, dt: number) {
       s.ruta = rutaMasCorta(s.jugador.x, s.jugador.y, meta.x, meta.y);
     }
     let queda = VEL_MAESTRO * dt;
+    const total = queda;
     let guard = 0;
     while (s.ruta.length && queda > 1e-4 && guard < 8) {
       guard++;
@@ -3135,7 +3171,8 @@ function moverMaestro(s: Estado, dt: number) {
       s.yaw = Math.atan2(-ax / l, ay / l);
       if (Math.hypot(wp.x - s.jugador.x, wp.y - s.jugador.y) < 0.15) s.ruta.shift();
     }
-    if (!s.ruta.length) {
+    // Sin avance (meta dentro de un muro o un árbol): se queda donde llegó y no sigue «caminando».
+    if (!s.ruta.length || (total > 1e-3 && total - queda < 1e-4)) {
       s.destino = null;
       s.ruta = null;
       s.vel = 0;
@@ -3164,18 +3201,32 @@ export function seguirDedo(s: Estado, x: number, y: number, soltar: boolean, alc
   }
   const tx = clamp(x, MAPA.x0, MAPA.x1);
   const ty = clamp(y, MAPA.y0, MAPA.y1);
+  // El dedo arrastra por la ruta más corta: rodea muros y montones en vez de quedarse pegado.
+  const ult = s.ruta?.[s.ruta.length - 1];
+  if (!s.ruta || !ult || Math.hypot(ult.x - tx, ult.y - ty) > 0.6) s.ruta = rutaMasCorta(s.jugador.x, s.jugador.y, tx, ty);
   let px = s.jugador.x;
   let py = s.jugador.y;
   let queda = Math.max(0, alcance);
-  for (let i = 0; i < 8 && queda > 0.01; i++) {
-    const d = Math.hypot(tx - px, ty - py);
-    if (d < 0.08) break;
+  for (let i = 0; i < 24 && queda > 0.01 && s.ruta.length; i++) {
+    const wp = s.ruta[0]!;
+    const d = Math.hypot(wp.x - px, wp.y - py);
+    if (d < 0.15) {
+      s.ruta.shift();
+      continue;
+    }
     const st = Math.min(0.55, d, queda);
-    const nx = px + ((tx - px) / d) * st;
-    const ny = py + ((ty - py) / d) * st;
-    const p = andar(px, py, nx, ny, tx, ty);
+    const nx = px + ((wp.x - px) / d) * st;
+    const ny = py + ((wp.y - py) / d) * st;
+    const p = andar(px, py, nx, ny, wp.x, wp.y);
     const av = Math.hypot(p.x - px, p.y - py);
-    if (av < 1e-4) break;
+    if (av < 1e-4) {
+      if (d < 0.8) {
+        s.ruta.shift();
+        continue;
+      }
+      s.ruta = null;
+      break;
+    }
     queda -= av;
     px = p.x;
     py = p.y;
@@ -3183,7 +3234,6 @@ export function seguirDedo(s: Estado, x: number, y: number, soltar: boolean, alc
   s.jugador.x = clamp(px, MAPA.x0, MAPA.x1);
   s.jugador.y = clamp(py, MAPA.y0, MAPA.y1);
   s.destino = null;
-  s.ruta = null;
   s.mando.ax = 0;
   s.mando.ay = 0;
   s.vel = Math.hypot(tx - s.jugador.x, ty - s.jugador.y) > 0.2 ? VEL_MAESTRO : 0;
@@ -3320,22 +3370,34 @@ export function nominaPendiente(s: Estado): number {
   return desgloseNomina(s).total;
 }
 
+/** Deuda de nómina que arrastra la caja (la de ayer, o la de hoy si ya se pagó corta). Se cobra en la próxima nómina. */
+export function deudaPendiente(s: Estado): number {
+  const d = s.deudaNomina ?? 0;
+  return d > 0.5 ? d : 0;
+}
+
 export function textoFaltaNomina(s: Estado): string | null {
   if (!s.firmado || s.entregada || s.nominaPagada || s.minuto >= 15 * 60) return null;
-  const falta = nominaPendiente(s) - s.caja;
+  const falta = nominaPendiente(s) + deudaPendiente(s) - s.caja;
   if (falta <= 0.5) return null;
-  return `Falta ${peso(falta)} para la nómina de las 3`;
+  return deudaPendiente(s) > 0
+    ? `Falta ${peso(falta)} para la nómina de las 3 (incluye ${peso(deudaPendiente(s))} de deuda de ayer)`
+    : `Falta ${peso(falta)} para la nómina de las 3`;
 }
 
 export function cajaLibre(s: Estado): number {
-  return s.caja - nominaPendiente(s);
+  return s.caja - nominaPendiente(s) - deudaPendiente(s);
 }
 
 export function textoCajaLibre(s: Estado): string {
   const nomina = nominaPendiente(s);
-  const libre = s.caja - nomina;
-  if (nomina <= 0.5) return `Caja libre ${peso(libre)}`;
-  return `Caja libre ${peso(libre)} = caja ${peso(s.caja)} menos nómina de hoy ${peso(nomina)}`;
+  const deuda = deudaPendiente(s);
+  const libre = s.caja - nomina - deuda;
+  const partes: string[] = [];
+  if (nomina > 0.5) partes.push(`nómina de hoy ${peso(nomina)}`);
+  if (deuda > 0.5) partes.push(`deuda de nómina ${peso(deuda)}`);
+  if (!partes.length) return `Caja libre ${peso(libre)}`;
+  return `Caja libre ${peso(libre)} = caja ${peso(s.caja)} menos ${partes.join(" y ")}`;
 }
 
 function sumaNecesidad(s: Estado, idx: number, restante: boolean, enteras = false): Cantidades {
@@ -4142,9 +4204,14 @@ function montoAdelanto(s: Estado): number {
   return monto >= 100 ? monto : 0;
 }
 
+/** Doña Carmen adelanta una sola vez por obra (el adelanto o la mitad de la etapa, no los dos). */
+export function adelantoUsado(s: Estado): boolean {
+  return (s.adelantoDia ?? 0) > 0 || !!s.rescateUsado;
+}
+
 export function puedeAdelantar(s: Estado, pedido = 0): boolean {
   if (obraParada(s)) return false;
-  if ((s.adelantoDia ?? 0) > 0) return false;
+  if (adelantoUsado(s)) return false;
   if (cajaLibre(s) - Math.max(0, pedido) >= 5000) return false;
   return montoAdelanto(s) >= 100;
 }
@@ -4158,7 +4225,7 @@ export function textoTopeAdelanto(s: Estado): string {
 
 export function razonAdelanto(s: Estado): string {
   if (obraParada(s)) return "Doña Carmen no adelanta con la obra parada: sella una etapa.";
-  if ((s.adelantoDia ?? 0) > 0) return "Doña Carmen ya soltó el adelanto de esta obra.";
+  if (adelantoUsado(s)) return "Doña Carmen ya soltó el adelanto de esta obra.";
   if (cajaLibre(s) >= 5000) return "Todavía tienes más de P$5,000 libres. Doña Carmen no suelta más.";
   if (precioDe(s) - s.cobrado <= 1) return "Ya no queda nada por cobrar.";
   if (montoAdelanto(s) < 100) return "Ya adelantó todo lo avanzado. Avanza la etapa para que suelte más.";
@@ -4172,6 +4239,8 @@ export interface CuentaPedido {
   herramienta: number;
   direccion: number;
   nomina: number;
+  /** Deuda de nómina de ayer, que también sale a las 3. */
+  deuda: number;
   adelanto: number;
   usaAdelanto: boolean;
   libre: number;
@@ -4184,7 +4253,8 @@ export interface CuentaPedido {
 
 export function cuentaPedido(s: Estado, total: number): CuentaPedido {
   const d = desgloseNomina(s);
-  const base = s.caja - total - d.total;
+  const deuda = deudaPendiente(s);
+  const base = s.caja - total - d.total - deuda;
   let adelanto = 0;
   let usa = false;
   if (base < -0.5 && puedeAdelantar(s, total)) {
@@ -4202,12 +4272,13 @@ export function cuentaPedido(s: Estado, total: number): CuentaPedido {
     herramienta: d.herramienta,
     direccion: d.direccion,
     nomina: d.total,
+    deuda,
     adelanto,
     usaAdelanto: usa,
     libre,
     alcanza: libre >= -0.5,
     pagaCaja: s.caja + 0.5 >= total,
-    faltaNomina: Math.max(0, d.total - (s.caja - total)),
+    faltaNomina: Math.max(0, d.total + deuda - (s.caja - total)),
   };
 }
 
@@ -4275,6 +4346,7 @@ export function aceptarRescate(s: Estado): string | null {
   s.cobrado += monto;
   s.adelanto += monto;
   s.rescateUsado = true;
+  s.adelantoDia = Math.max(1, s.dia);
   const frase = fraseRescate(s);
   diario(s, frase);
   aviso(s, frase);
@@ -4294,7 +4366,7 @@ export function adelantar(s: Estado, pedido = 0): string | null {
   s.caja += monto;
   s.cobrado += monto;
   s.adelanto += monto;
-  s.adelantoDia = s.dia;
+  s.adelantoDia = Math.max(1, s.dia);
   diario(s, `Adelanto de Doña Carmen: +${peso(monto)}.`);
   aviso(s, `Doña Carmen soltó ${peso(monto)}. Se descuenta del próximo tramo.`);
   return null;
@@ -4418,6 +4490,16 @@ export function siguienteDia(s: Estado) {
   s.candidatos = generarCandidatos(s);
   s.faltanManana = [];
   diario(s, `Amaneció ${diaSemana(s.dia)}. Día ${s.dia}.`);
+  const plazo = textoPlazoAdelanto(s);
+  if (plazo) {
+    diario(s, plazo);
+    aviso(s, plazo);
+  }
+  const caja = textoDiasCaja(s);
+  if (caja) {
+    diario(s, caja);
+    aviso(s, caja);
+  }
   if (s.gente.length + s.reserva.length === 0) {
     s.panel = "perdida";
     diario(s, "No quedó nadie trabajando. La obra se perdió.");
@@ -5043,7 +5125,8 @@ function faltaTrasTanda(s: Estado): string | null {
 }
 
 function vienenNubes(s: Estado): boolean {
-  const hoy = s.lluvias.find((r) => r.dia === s.dia && r.cae !== false);
+  // v18: avisa con cualquier pronóstico de hoy, caiga o no; no adelanta el dado.
+  const hoy = s.lluvias.find((r) => r.dia === s.dia);
   return !!hoy && s.minuto < hoy.ini && (s.entrada.cemento?.q ?? 0) >= 1;
 }
 
@@ -5143,10 +5226,104 @@ function quedaPresupuesto(s: Estado, p: Partida, real: number): number {
   return Math.max(0, pre - real);
 }
 
+
+// ======== v18: ayuda al principiante ========
+
+/** Nómina de un día con esta gente: jornales, herramienta y dirección. */
+export function nominaDiaDe(gente: { oficio: Persona["oficio"]; rinde: number }[]): number {
+  if (!gente.length) return 0;
+  let j = 0;
+  for (const g of gente) j += jornalDe(g.oficio, g.rinde);
+  return j + Math.round(j * HERRAMIENTA) + DIRECCION_DIA;
+}
+
+/** Días hábiles que paga la caja con la cuadrilla de hoy (sin contar cobros). */
+export function diasDeCaja(s: Estado): number {
+  const nom = nominaDiaDe([...s.gente, ...s.reserva].filter((g) => !g.libre));
+  if (nom <= 0) return 99;
+  return Math.max(0, Math.floor((s.caja - (s.deudaNomina ?? 0)) / nom));
+}
+
+export interface Sugerencia {
+  ids: string[];
+  nombres: string[];
+  nominaDia: number;
+  dias: number;
+  texto: string;
+}
+
+/** Cuadrilla que la caja de hoy aguanta: un albañil y peones o ayudantes que no faltan (tres con P$25,000 o más, si no dos). */
+export function cuadrillaSugerida(s: Estado): Sugerencia {
+  const equipo = [...s.gente, ...s.reserva];
+  const caja = s.caja - (s.deudaNomina ?? 0);
+  // Probado en 40 obras por perfil (sim_v18): tres con un albañil entrega más que cuatro o cinco sin colchón.
+  const tam = caja >= 25000 ? 3 : 2;
+  const quiereAlb = 1;
+  const libres = s.candidatos.filter((c) => !equipo.some((g) => g.id === c.id));
+  const elegidos: Persona[] = [];
+  const tieneAlb = equipo.filter((g) => g.oficio === "albanil").length;
+  const albs = libres.filter((c) => c.oficio === "albanil").sort((a, b) => b.rinde - a.rinde);
+  for (const c of albs.slice(0, Math.max(0, quiereAlb - tieneAlb))) elegidos.push(c);
+  const ayuda = libres
+    .filter((c) => (c.oficio === "peon" || c.oficio === "ayudante") && c.mania !== "madrugador")
+    .sort((a, b) => b.rinde / jornalDe(b.oficio, b.rinde) - a.rinde / jornalDe(a.oficio, a.rinde));
+  for (const c of ayuda) {
+    if (equipo.length + elegidos.length >= tam) break;
+    elegidos.push(c);
+  }
+  const todos = [...equipo, ...elegidos];
+  const nominaDia = nominaDiaDe(todos);
+  const dias = nominaDia > 0 ? Math.floor(caja / nominaDia) : 99;
+  const nombres = elegidos.map((c) => `${c.nombre} (${OFICIO_NOMBRE[c.oficio]})`);
+  let texto: string;
+  if (!elegidos.length) texto = `Con tu caja (${peso(caja)}) no hace falta contratar más: la cuadrilla de ${todos.length} cuesta ${peso(nominaDia)} al día.`;
+  else
+    texto = `Con tu caja (${peso(caja)}) te conviene una cuadrilla de ${todos.length}: ${nombres.join(", ")}. Nómina ${peso(nominaDia)} al día, la caja aguanta unos ${dias} días.`;
+  return { ids: elegidos.map((c) => c.id), nombres, nominaDia, dias, texto };
+}
+
+/** Para la pantalla «Obra perdida»: quién se fue y qué día, y cuánto faltó de nómina, sacado del diario. */
+export function causasPerdida(s: Estado): { salidas: string[]; cortas: string[]; deuda: number } {
+  const salidas: string[] = [];
+  const cortas: string[] = [];
+  for (const d of s.diario) {
+    if (/ se fue: /.test(d.texto)) salidas.push(`Día ${d.dia}: ${d.texto}`);
+    else if (d.texto.startsWith("Nómina corta:")) cortas.push(`Día ${d.dia}: ${d.texto}`);
+  }
+  return { salidas, cortas, deuda: deudaPendiente(s) };
+}
+
+/** Aviso de la mañana cuando el adelanto está por vencer o ya venció (18 días sin sellar). */
+export function textoPlazoAdelanto(s: Estado): string {
+  if (adelantoUsado(s) || s.entregada || !s.firmado) return "";
+  const sin = s.dia - (s.selloDia || 1);
+  const queda = 18 - sin;
+  if (sin === 19) return "Pasaron 18 días sin sellar una etapa: Doña Carmen ya no adelanta. Sella una etapa para que vuelva.";
+  if (queda >= 0 && queda <= 2) {
+    const d = queda === 0 ? "hoy es el último día" : `quedan ${queda} ${queda === 1 ? "día" : "días"}`;
+    return `Ojo con el adelanto: Doña Carmen solo adelanta hasta 18 días sin sellar; ${d}.`;
+  }
+  return "";
+}
+
+/** Aviso de la mañana: cuántos días de nómina quedan en la caja. */
+export function textoDiasCaja(s: Estado): string {
+  const nom = nominaDiaDe([...s.gente, ...s.reserva].filter((g) => !g.libre));
+  if (nom <= 0 || s.entregada) return "";
+  const dias = diasDeCaja(s);
+  if (dias > 4) return "";
+  const prox = ETAPAS.slice(s.etapa).find((e) => e.tramo > 0);
+  const cobro = prox ? ` El próximo cobro es al aprobar ${prox.nombre}.` : "";
+  const dd = dias === 1 ? "día" : "días";
+  return `Te quedan ${dias} ${dd} de caja con esta cuadrilla (${peso(nom)} al día).${cobro} Si no llegas, da libre a un peón.`;
+}
+
 export const REGLAS_LIBRETA = [
   "Pedir lo que alcanza: si la caja paga el pedido, el guardalmacén lo suelta aunque la nómina quede corta, y dice cuánto faltará.",
   "Nómina corta: se paga lo que hay y el resto es deuda de mañana. Baja el ánimo. Dos días seguidos, un obrero se va. La obra se pierde solo si no queda nadie.",
-  "Doña Carmen adelanta una sola vez por obra, a cuenta de lo avanzado. Si no puedes sellar ni pedir ese adelanto, suelta una vez la mitad de la etapa y lo descuenta de la entrega.",
+  "Doña Carmen adelanta una sola vez por obra: o el adelanto a cuenta de lo avanzado, o (si no se puede sellar ni pedirlo) la mitad de la etapa. Después, la nómina corta solo ofrece «Pagar lo que haya».",
+  "Cuadrilla sugerida: al contratar, la oficina mira tu caja y te dice cuánta gente aguanta (un albañil siempre, el resto peones). Con P$25,000 o más, tres: un albañil y dos ayudantes; con menos, dos. Más gente acaba la caja antes del cobro.",
+  "Aviso de la mañana: si la caja no paga más de 4 días de nómina con la cuadrilla de hoy, al amanecer sale «Te quedan X días de caja…». Sella la etapa que cobra o da libre a un peón.",
   "Cada noche muestra el resumen y espera tu toque. Si hay mezcla en el trompo, avisa antes de dormir: se pierde.",
 ];
 
@@ -5170,6 +5347,8 @@ export function libreta(s: Estado) {
     caja: s.caja,
     diario: s.diario,
     almacen: almacen(s),
+    sugerencia: cuadrillaSugerida(s).texto,
+    diasCaja: textoDiasCaja(s),
   };
 }
 
@@ -5231,11 +5410,12 @@ export function reloj(s: Estado): {
   const ll = lluviaAhora(s);
   let clima = "No llovió";
   if (ll) clima = "Aguacero";
-  else if (hoy && hoy.cae !== false && s.minuto < hoy.ini) clima = `Se nubla · ${hoy.prob}%`;
+  // v18: el % se muestra igual caiga o no; la barra no adelanta el dado de la lluvia.
+  else if (hoy && s.minuto < hoy.ini) clima = `Se nubla · ${hoy.prob}%`;
   else if (hoy && s.minuto >= hoy.ini && hoy.cae === false) clima = "No llovió";
   else if (hoy && s.minuto >= hoy.fin) clima = hoy.cae === false ? "No llovió" : "Escampó";
-  const pMan = s.lluvias.find((r) => r.dia === man && r.cae !== false);
-  if (!ll && pMan) clima += ` · mañana ${pMan.prob}%`;
+  const pMan = s.lluvias.find((r) => r.dia === man);
+  if (!ll) clima += pMan ? ` · mañana ${pMan.prob}%` : " · mañana sol";
   return {
     dia: `${diaSemana(s.dia)} · día ${s.dia}`,
     hora: horaDe(s.minuto),
