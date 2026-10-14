@@ -1,6 +1,10 @@
 #!/bin/sh
 set -e
 cd /workspace
+if [ -z "$GITHUB_REPORT_TOKEN" ] && command -v gh >/dev/null 2>&1; then
+  GITHUB_REPORT_TOKEN=$(gh auth token 2>/dev/null || true)
+  export GITHUB_REPORT_TOKEN
+fi
 if curl -sf -o /dev/null --max-time 1 http://127.0.0.1:8080/; then
   exit 0
 fi

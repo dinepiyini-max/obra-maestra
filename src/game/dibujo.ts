@@ -19,6 +19,7 @@ import {
   cuello,
   flecha,
   ancla,
+  puntoSita,
   señalesReplanteo,
   trianguloEscuadra,
   type Estado,
@@ -70,7 +71,8 @@ const TIERRA3 = "#e2d4b8";
 const ACERA = "#d9d0c0";
 const CALLE = "#cbbda8";
 
-export function zoomDe(w: number): number {
+export function zoomDe(w: number, h = 800): number {
+  if (h > 0 && h <= 430) return Math.min(0.58, Math.max(0.42, h / 680));
   return w < 760 ? 0.75 : 1.35;
 }
 
@@ -167,7 +169,7 @@ function anclaDe(vis: { ancla?: number }): number {
 }
 
 export function puntoEnPantalla(x: number, y: number, alt: number, w: number, h: number, cam: Cam) {
-  const z = zoomDe(w);
+  const z = zoomDe(w, h);
   const o = proyectar(cam.x, cam.y, 0, z);
   const q = proyectar(x, y, alt, z);
   return { x: w / 2 + (q.sx - o.sx), y: h * 0.56 + (q.sy - o.sy) };
@@ -180,7 +182,7 @@ function pantallaDe(x: number, y: number, alt: number, vis: Vis, w: number, h: n
 }
 
 export function mundoDesde(px: number, py: number, w: number, h: number, vis: Vis): { x: number; y: number } {
-  const z = zoomDe(vis.ancho || w);
+  const z = zoomDe(vis.ancho || w, h);
   const o = proyectar(vis.cam.x, vis.cam.y, 0, z);
   const sx = px - w / 2 + o.sx;
   const sy = py - h * anclaDe(vis) + o.sy;
@@ -2965,13 +2967,13 @@ function poseCrew(
 export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: Estado, vis: Vis, dpr = 1) {
   etiquetasVivas.length = 0;
   colaEti.length = 0;
-  const z = zoomDe(w);
+  const z = zoomDe(w, h);
   vis.ancho = w;
   const sigue = 1 - Math.exp(-vis.dt * 4.5);
   const meta = vis.foco ?? s.jugador;
   vis.cam.x += (meta.x - vis.cam.x) * sigue;
   vis.cam.y += (meta.y - vis.cam.y) * sigue;
-  vis.ancla = 0.56;
+  vis.ancla = h <= 430 ? 0.46 : 0.56;
   if (vis.contrato && w < 900) {
     const of = proyectar(SITIOS.oficina.x, SITIOS.oficina.y, 0, z);
     const cam = proyectar(vis.cam.x, vis.cam.y, 0, z);
@@ -3254,9 +3256,9 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
   }
 
   if (s.sita) {
-    const enCasa = s.sita.fase === "casa";
-    const sx = enCasa ? SITIOS.oficina.x - 0.35 : s.sita.x;
-    const sy = enCasa ? SITIOS.oficina.y + 0.72 : s.sita.y;
+    const sitio = puntoSita(s);
+    const sx = sitio.x;
+    const sy = sitio.y;
     const camina = s.sita.fase === "yendo" || s.sita.fase === "vuelta";
     const conPapel = s.sita.fase === "yendo" || s.sita.fase === "nota";
     const p = to(sx, sy);
@@ -3399,6 +3401,20 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
   }
 
   const mp = to(s.jugador.x, s.jugador.y);
+  if (s.destino && !s.panel && !s.pausa) {
+    const d = to(s.destino.x, s.destino.y);
+    ctx.save();
+    ctx.strokeStyle = "#d4a73c";
+    ctx.lineWidth = Math.max(2, w / 420);
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, Math.max(8, w / 90), 0, Math.PI * 2);
+    ctx.moveTo(d.x - 7, d.y);
+    ctx.lineTo(d.x + 7, d.y);
+    ctx.moveTo(d.x, d.y - 7);
+    ctx.lineTo(d.x, d.y + 7);
+    ctx.stroke();
+    ctx.restore();
+  }
   if (!s.entregada) {
   const sitio = cercano(s);
   const dxM = Math.max(SOLAR.x0 - s.jugador.x, 0, s.jugador.x - SOLAR.x1);
@@ -3581,13 +3597,37 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
     }
   }
 
-  if (!s.firmado) {
+  if (!s.entregada) {
     const f = flecha(s);
     if (f) {
       const p = to(f.x, f.y, 3.5);
+      const margen = 36;
+      const dentro = p.x >= margen && p.x <= w - margen && p.y >= margen && p.y <= h - margen;
+      let x = p.x;
+      let y = p.y;
+      let rot = 0;
+      if (!dentro) {
+        const cx = w / 2;
+        const cy = Math.min(h * 0.42, h - margen - 8);
+        const dx = p.x - cx;
+        const dy = p.y - cy;
+        let tHit = 1;
+        if (Math.abs(dx) > 1e-4) {
+          const tx = dx > 0 ? (w - margen - cx) / dx : (margen - cx) / dx;
+          if (tx > 0) tHit = Math.min(tHit, tx);
+        }
+        if (Math.abs(dy) > 1e-4) {
+          const ty = dy > 0 ? (h - margen - cy) / dy : (margen - cy) / dy;
+          if (ty > 0) tHit = Math.min(tHit, ty);
+        }
+        x = cx + dx * tHit;
+        y = cy + dy * tHit;
+        rot = Math.atan2(dy, dx) - Math.PI / 2;
+      }
       const bob = Math.sin(vis.t * 4) * 7;
       ctx.save();
-      ctx.translate(p.x, p.y + bob);
+      ctx.translate(x, y + (dentro ? bob : 0));
+      ctx.rotate(rot);
       ctx.fillStyle = "#b8432f";
       ctx.strokeStyle = TINTA;
       ctx.lineWidth = 1.6;
@@ -3731,7 +3771,7 @@ function marcaCuello(s: Estado): { x: number; y: number; glifo: Glifo } | null {
   if (c.includes("camión") || c.startsWith("Hay cemento")) return { x: SITIOS.entrada.x, y: SITIOS.entrada.y, glifo: c.startsWith("Hay cemento") ? "saco" : "reloj" };
   if (c.includes("acarrear") || c.includes("en la entrada"))
     return { x: SITIOS.entrada.x, y: SITIOS.entrada.y, glifo: "saco" };
-  if (c.includes("Ferretería")) return { x: SITIOS.oficina.x, y: SITIOS.oficina.y, glifo: "saco" };
+  if (c.includes("guardalmacén")) return { x: SITIOS.almacen.x, y: SITIOS.almacen.y, glifo: "saco" };
   if (c.includes("trompo") || c.includes("Trompo") || c.includes("mezcla") || c.includes("ingredientes")) return { x: SITIOS.batea.x, y: SITIOS.batea.y, glifo: "cubo" };
   return null;
 }

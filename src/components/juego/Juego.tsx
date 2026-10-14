@@ -26,6 +26,7 @@ declare global {
       getPos: () => { x: number; y: number };
       setKeys: (codes: string[]) => void;
       setPos: (x: number, y: number) => void;
+      estado: () => Estado;
     };
   }
 }
@@ -149,7 +150,7 @@ function sonidoObra(s: Estado): "pala" | "carretilla" | "trompo" | "cuchara" | "
   return null;
 }
 
-function Palanca({ on }: { on: (ax: number, ay: number) => void }) {
+function Palanca({ on, compacto }: { on: (ax: number, ay: number) => void; compacto?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const [knob, setKnob] = useState({ x: 0, y: 0 });
   const mover = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -176,7 +177,7 @@ function Palanca({ on }: { on: (ax: number, ay: number) => void }) {
   return (
     <div
       ref={ref}
-      className="absolute bottom-4 left-4 z-20 h-28 w-28 touch-manipulation rounded-full border-2 border-papel/80 bg-fondo/50"
+      className={"absolute bottom-3 left-3 z-20 touch-manipulation rounded-full border-2 border-papel/80 bg-fondo/50 " + (compacto ? "h-16 w-16" : "h-28 w-28")}
       style={{ touchAction: "none" }}
       onContextMenu={(e) => e.preventDefault()}
       onPointerDown={(e) => {
@@ -190,7 +191,7 @@ function Palanca({ on }: { on: (ax: number, ay: number) => void }) {
       onPointerCancel={soltar}
     >
       <div
-        className="absolute top-1/2 left-1/2 h-12 w-12 rounded-full border-2 border-tinta bg-papel"
+        className={"absolute top-1/2 left-1/2 rounded-full border-2 border-tinta bg-papel " + (compacto ? "h-7 w-7" : "h-12 w-12")}
         style={{ transform: `translate(calc(-50% + ${knob.x}px), calc(-50% + ${knob.y}px))` }}
       />
     </div>
@@ -210,6 +211,7 @@ export function Juego() {
   if (estado.current == null) estado.current = pack.current!.s;
   const [seguir, setSeguir] = useState(() => pack.current?.seguir ?? false);
   const [movil, setMovil] = useState(false);
+  const [bajo, setBajo] = useState(false);
   const [late, setLate] = useState(false);
   const [vuelo, setVuelo] = useState<"entra" | "sale" | null>(null);
   const [vueloSello, setVueloSello] = useState<{ id: number; texto: string; x: number; y: number; tx: number; ty: number } | null>(null);
@@ -287,8 +289,12 @@ export function Juego() {
     if (k.has("KeyW") || k.has("ArrowUp")) ay += 1;
     if (k.has("KeyS") || k.has("ArrowDown")) ay -= 1;
     if (ax === 0 && ay === 0 && ajustesRef.current.control !== "arrastre") {
-      ax = joy.current.ax;
-      ay = joy.current.ay;
+      const jx = joy.current.ax;
+      const jy = joy.current.ay;
+      if (!s.destino || Math.hypot(jx, jy) > 0.2) {
+        ax = jx;
+        ay = jy;
+      }
     }
     s.mando.ax = ax;
     s.mando.ay = ay;
@@ -315,7 +321,10 @@ export function Juego() {
   );
 
   useEffect(() => {
-    const mq = () => setMovil(window.matchMedia("(pointer: coarse)").matches || window.innerWidth < 900);
+    const mq = () => {
+      setMovil(window.matchMedia("(pointer: coarse)").matches || window.innerWidth < 900);
+      setBajo(window.innerHeight <= 430);
+    };
     mq();
     window.addEventListener("resize", mq);
     return () => window.removeEventListener("resize", mq);
@@ -439,6 +448,7 @@ export function Juego() {
           vis.current.cam.x = x;
           vis.current.cam.y = y;
         },
+        estado: () => estado.current,
       };
     }
 
@@ -628,7 +638,7 @@ export function Juego() {
         ref={canvasRef}
         className="absolute inset-0 h-full w-full"
         onPointerDown={(e) => {
-          if (e.button !== 0) return;
+          if (e.pointerType === "mouse" ? e.button !== 0 : e.button > 0) return;
           if (dedoId.current != null && dedoId.current !== e.pointerId) return;
           dedoId.current = e.pointerId;
           toque.current = { x: e.clientX, y: e.clientY };
@@ -664,7 +674,13 @@ export function Juego() {
             seguirDedo(estado.current, estado.current.jugador.x, estado.current.jugador.y, true);
           }
           const s = estado.current;
-          if (corto && !s.panel && !s.pausa && !s.entregada) intentarGolpe(vis.current.t);
+          if (corto && !s.panel && !s.pausa && !s.entregada) {
+            const m = mundoDe(e);
+            s.destino = { x: m.x, y: m.y };
+            s.mando.ax = 0;
+            s.mando.ay = 0;
+            joy.current = { ax: 0, ay: 0 };
+          }
         }}
         onPointerCancel={(e) => {
           if (dedoId.current != null && e.pointerId !== dedoId.current) return;
@@ -717,6 +733,7 @@ export function Juego() {
 
       {movil && !snap.panel && ajustes.control !== "arrastre" ? (
         <Palanca
+          compacto={bajo}
           on={(ax, ay) => {
             joy.current = { ax, ay };
           }}
@@ -725,7 +742,7 @@ export function Juego() {
       {movil && !snap.panel ? (
         <button
           type="button"
-          className="absolute right-4 bottom-4 z-20 min-h-16 min-w-24 touch-manipulation border-2 border-tinta bg-oro px-4 font-display text-3xl text-tinta"
+          className={"absolute right-3 bottom-3 z-20 touch-manipulation border-2 border-tinta bg-oro font-display text-tinta " + (bajo ? "min-h-11 min-w-16 px-2 text-xl" : "min-h-16 min-w-24 px-4 text-3xl")}
           style={{ touchAction: "manipulation" }}
           onClick={() => {
             desbloquear();

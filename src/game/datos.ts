@@ -10,7 +10,7 @@ export const CURADO_DIAS = 7;
 export const MAX_CUADRILLA = 8;
 export const RADIO = 2;
 export const RADIO_LIDER = 4.5;
-export const VEL_MAESTRO = 4.5;
+export const VEL_MAESTRO = 22;
 export const VEL_CUADRILLA = 2.8;
 export const HILADA_TOPE = 6;
 export const BLOCKS_MURO = 469;
@@ -548,9 +548,9 @@ export const OBRAS_MENU = [
 ];
 
 export const TUTORIAL = [
-  "Firma el contrato.",
+  "Muévete con las flechas o el joystick; Espacio o ¡Dale! hace la acción; T termina el día.",
   "Contrata en la oficina.",
-  "Manda al albañil a replantear.",
+  "Toca Cuadrilla, luego Puesto y Obra, para mandar al albañil a replantear.",
   "Pide «Lo que falta» para arrancar.",
   "Manda a alguien a acarrear.",
   "Que alguien busque agua.",

@@ -39,14 +39,18 @@ export function descuadre(s: Estado): number {
   if (!s.nominaPagada) {
     for (const g of s.gente) if (g.activo && !g.falto) mo += g.moHoy;
   }
-  const esperado = s.cobrado - (costos + alm + entrada + camino + mezcla - mo);
+  const deuda = s.deudaNomina ?? 0;
+  const esperado = s.cobrado - (costos + alm + entrada + camino + mezcla - mo - deuda);
   return Math.round((s.caja - esperado) * 100) / 100;
 }
 
 function atender(s: Estado) {
   if (s.panel === "nomina") confirmarNomina(s, true);
   if (s.panel === "sello") continuarSello(s);
-  if (s.panel === "finde") siguienteDia(s);
+  if (s.panel === "finde") {
+    siguienteDia(s);
+    if (s.descanso) siguienteDia(s);
+  }
 }
 
 describe("dinero", () => {

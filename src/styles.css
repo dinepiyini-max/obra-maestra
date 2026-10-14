@@ -226,9 +226,24 @@
   background-size: 8px 8px;
 }
 
-.juego-root,
+html,
+body {
+  touch-action: manipulation;
+}
+
 .juego-root canvas {
   touch-action: none;
+}
+
+.juego-root button,
+.juego-root a,
+.juego-root input,
+.juego-root select,
+.juego-root textarea,
+.juego-root label,
+.velo-obra,
+.marco-obra {
+  touch-action: manipulation;
 }
 
 @media (prefers-reduced-motion: reduce) {
