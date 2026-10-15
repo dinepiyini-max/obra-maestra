@@ -61,8 +61,7 @@ import {
   type PersonaBase,
   type Puesto,
   type Tarea,
-  type TrabajoDef,
-} from "./datos.ts";
+  type TrabajoDef, pesoCaja} from "./datos.ts";
 
 export type Panel =
   | null
@@ -1107,6 +1106,44 @@ function espacio(s: Estado, m: Mat): number {
   return 9999;
 }
 
+const GRUPO_TOPE: Partial<Record<Mat, Mat[]>> = {
+  v38: ["v14"],
+  v14: ["v38"],
+  plywood: ["pino", "abeto"],
+  pino: ["plywood", "abeto"],
+  abeto: ["plywood", "pino"],
+};
+
+/** v21: lo que el almacén tiene de su mismo grupo (madera o varilla) y esta etapa ya no usa. El guardalmacén lo recibe de vuelta para hacer sitio. */
+function sobraDevolvible(s: Estado, g: Mat): number {
+  const need = necesidadActual(s)[g] ?? 0;
+  return Math.max(0, (s.inv[g]?.q ?? 0) - need);
+}
+
+function devolvible(s: Estado, m: Mat): number {
+  let n = 0;
+  for (const g of GRUPO_TOPE[m] ?? []) n += sobraDevolvible(s, g);
+  return n;
+}
+
+/** v21: devuelve sobrantes del grupo (al precio en libros) hasta dejar sitio para `falta`. */
+function devolverPara(s: Estado, m: Mat, falta: number) {
+  let resta = falta;
+  for (const g of GRUPO_TOPE[m] ?? []) {
+    if (resta <= 1e-6) break;
+    const sl = s.inv[g];
+    if (!sl) continue;
+    const q = Math.min(sobraDevolvible(s, g), resta);
+    if (q <= 1e-6) continue;
+    const v = sl.q > 0 ? (sl.valor * q) / sl.q : 0;
+    sl.q -= q;
+    sl.valor -= v;
+    s.caja += v;
+    resta -= q;
+    diario(s, `Devuelto al guardalmacén para hacer sitio: ${num(q, 2)} ${MATERIALES[g].unidad} de ${MATERIALES[g].nombre} (+${peso(v)}).`);
+  }
+}
+
 function runDe(s: Estado, etapa: number, id: string): Run {
   const list = s.runs[etapa];
   let r = list?.find((x) => x.id === id);
@@ -1660,6 +1697,13 @@ function volMezcla(tipo: "H" | "M", frac: number): number {
   if (frac <= 1e-8) return 0;
   if (tipo === "H") return frac * (RECETA_H.arena + RECETA_H.grava + RECETA_H.agua);
   return frac * (RECETA_M.arena + RECETA_M.agua);
+}
+
+/** v21: lo que vale la mezcla hecha que se pierde si se va a dormir con ella. */
+export function mezclaDeNoche(s: Estado): number {
+  let c = 0;
+  for (const m of s.mezclas) c += m.costo * (m.lista ? m.restante : 1);
+  return Math.round(c);
 }
 
 function lavarMezclas(s: Estado, motivo: string) {
@@ -2526,8 +2570,15 @@ export function cuentaFiado(s: Estado): { items: Cantidades; total: number } | n
   const total = mats + fleteDe(s, false);
   if (cajaLibre(s) >= total - 0.5) return null;
   if (puedeAdelantar(s, total)) return null;
-  if (total > cobroDe(s, prox).neto + 0.5) return null;
+  if (total > limiteFiado(s) + 0.5) return null;
   return { items, total };
+}
+
+/** v21: lo fiado se descuenta de los tramos que faltan (uno tras otro). El tope es lo que queda por cobrar. */
+export function limiteFiado(s: Estado): number {
+  let suma = 0;
+  for (let i = s.etapa; i < ETAPAS.length; i++) if (ETAPAS[i]!.tramo > 0) suma += Math.round(precioDe(s) * ETAPAS[i]!.tramo);
+  return Math.max(0, suma - s.adelanto - (s.fiado ?? 0));
 }
 
 export function puedeFiar(s: Estado): boolean {
@@ -2539,9 +2590,11 @@ export function fiar(s: Estado): string | null {
   const c = cuentaFiado(s);
   if (!c) return "El guardalmacén solo fía lo que falta para sellar la etapa, cuando la caja y el adelanto no alcanzan.";
   const caja = s.caja;
-  s.caja += c.total + 10;
+  // Caja de paso para que el pedido salga aunque la caja esté en cero o negativa; luego vuelve a su valor.
+  const paso = c.total + 1e6;
+  s.caja = paso;
   const err = pedir(s, c.items, false, true);
-  const pagado = caja + c.total + 10 - s.caja;
+  const pagado = paso - s.caja;
   s.caja = caja;
   if (err) return err;
   s.fiado = (s.fiado ?? 0) + pagado;
@@ -2826,7 +2879,7 @@ function avisarNominaManana(s: Estado) {
   }
   const conDeuda = deuda > 0.5 ? ` más ${peso(deuda)} de deuda` : "";
   const conAdel = adel > 0 ? ` (más ${peso(adel)} de adelanto)` : " (sin adelanto disponible)";
-  const texto = `Ojo: mañana la nómina es ${peso(nom)}${conDeuda} y tienes ${peso(s.caja)}${conAdel}. Faltan ${peso(falta)}: ${accionesNomina(s).join("; ")}.${textoSeVaManana(s)}`;
+  const texto = `Ojo: mañana la nómina es ${peso(nom)}${conDeuda} y tienes ${pesoCaja(s.caja)}${conAdel}. Faltan ${peso(falta)}: ${accionesNomina(s).join("; ")}.${textoSeVaManana(s)}`;
   s.notaNomina = texto;
   if (!s.diario.some((d) => d.dia === s.dia && d.texto.startsWith("Ojo: mañana la nómina"))) diario(s, texto);
   if (!s.avisos.some((a) => a.texto.startsWith("Ojo: mañana la nómina"))) aviso(s, texto);
@@ -3587,8 +3640,8 @@ export function textoCajaLibre(s: Estado): string {
   const partes: string[] = [];
   if (nomina > 0.5) partes.push(`nómina de hoy ${peso(nomina)}`);
   if (deuda > 0.5) partes.push(`deuda de nómina ${peso(deuda)}`);
-  if (!partes.length) return `Caja libre ${peso(libre)}`;
-  return `Caja libre ${peso(libre)} = caja ${peso(s.caja)} menos ${partes.join(" y ")}`;
+  if (!partes.length) return `Caja libre ${pesoCaja(libre)}`;
+  return `Caja libre ${pesoCaja(libre)} = caja ${pesoCaja(s.caja)} menos ${partes.join(" y ")}`;
 }
 
 function sumaNecesidad(s: Estado, idx: number, restante: boolean, enteras = false): Cantidades {
@@ -3697,7 +3750,7 @@ function cuantizarPedido(s: Estado, m: Mat, bruto: number, hay: number, vienen: 
   const paso = pasoCompra(m);
   let q = Math.ceil((n - 1e-9) / paso) * paso;
   if (m !== "cemento") {
-    const esp = espacio(s, m) - enCamino(s, m);
+    const esp = espacio(s, m) + devolvible(s, m) - enCamino(s, m);
     q = Math.min(q, Math.max(0, Math.floor((esp + 1e-9) / paso) * paso));
   }
   if (q <= 1e-6) return 0;
@@ -4226,7 +4279,7 @@ export function pedir(s: Estado, items: Cantidades, urgente: boolean, mantener =
     const paso = pasoCompra(k);
     let q = Math.ceil((n - 1e-9) / paso) * paso;
     if (k !== "cemento") {
-      const esp = espacio(s, k) - enCamino(s, k);
+      const esp = espacio(s, k) + devolvible(s, k) - enCamino(s, k);
       const cabe = Math.max(0, Math.floor((esp + 1e-9) / paso) * paso);
       if (q > cabe + 1e-6) avisosTope = true;
       q = Math.min(q, cabe);
@@ -4239,13 +4292,17 @@ export function pedir(s: Estado, items: Cantidades, urgente: boolean, mantener =
   const llega = llegadaPedido(s, urgente);
   const flete = fleteDe(s, urgente);
   const total = mats + flete;
-  if (total > s.caja + 0.5) return `No alcanza la caja. Tienes ${peso(s.caja)} y el pedido es ${peso(total)}.`;
+  if (total > s.caja + 0.5) return `No alcanza la caja. Tienes ${pesoCaja(s.caja)} y el pedido es ${peso(total)}.`;
   let cementoNuevo = limpio.cemento ?? 0;
   if (cementoNuevo > 0) {
     const bajoTecho = s.inv.cemento.q;
     const ya = (s.entrada.cemento?.q ?? 0) + enCamino(s, "cemento");
     const afuera = Math.max(0, bajoTecho + ya + cementoNuevo - 20);
     if (afuera >= 1) aviso(s, `${num(afuera, 0)} fundas van a quedar afuera del techo.`);
+  }
+  for (const [k, q] of Object.entries(limpio) as [Mat, number][]) {
+    const hueco = espacio(s, k) - enCamino(s, k);
+    if (k !== "cemento" && q > hueco + 1e-6) devolverPara(s, k, q - hueco);
   }
   s.caja -= total;
   s.costos.fletes.mat += flete;
@@ -5485,9 +5542,9 @@ export function cuadrillaSugerida(s: Estado): Sugerencia {
   const dias = nominaDia > 0 ? Math.floor(caja / nominaDia) : 99;
   const nombres = elegidos.map((c) => `${c.nombre} (${OFICIO_NOMBRE[c.oficio]})`);
   let texto: string;
-  if (!elegidos.length) texto = `Con tu caja (${peso(caja)}) no hace falta contratar más: la cuadrilla de ${todos.length} cuesta ${peso(nominaDia)} al día.`;
+  if (!elegidos.length) texto = `Con tu caja (${pesoCaja(caja)}) no hace falta contratar más: la cuadrilla de ${todos.length} cuesta ${peso(nominaDia)} al día.`;
   else
-    texto = `Con tu caja (${peso(caja)}) te conviene una cuadrilla de ${todos.length}: ${nombres.join(", ")}. Nómina ${peso(nominaDia)} al día, la caja aguanta unos ${dias} días.`;
+    texto = `Con tu caja (${pesoCaja(caja)}) te conviene una cuadrilla de ${todos.length}: ${nombres.join(", ")}. Nómina ${peso(nominaDia)} al día, la caja aguanta unos ${dias} días.`;
   return { ids: elegidos.map((c) => c.id), nombres, nominaDia, dias, texto };
 }
 

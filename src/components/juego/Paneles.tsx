@@ -27,6 +27,7 @@ import {
   jornalDe,
   num,
   peso,
+  pesoCaja,
   type Cantidades,
   type Mat,
   type Oficio,
@@ -65,6 +66,7 @@ import {
   precioDe,
   adelantoUsado,
   faltaEnPedido,
+  mezclaDeNoche,
   cobroDe,
   cuentaFiado,
   fiar,
@@ -85,6 +87,7 @@ import {
   seguirJornada,
   siguienteDia,
   textoCajaLibre,
+  desgloseNomina,
   textoDiasSinSello,
   textoLlegada,
   textoSinTarea,
@@ -717,7 +720,7 @@ export function Paneles({
       <HojaMenu>
         <h2 className="font-display text-4xl leading-none">¿Empezar una obra nueva?</h2>
         <p className="mt-3 font-hand">
-          Pierdes: día {s.dia} y {sellos} de 9 etapas selladas; caja {peso(s.caja)} y lo que hay en el almacén; tu cuadrilla ({gente}{" "}
+          Pierdes: día {s.dia} y {sellos} de 9 etapas selladas; caja {pesoCaja(s.caja)} y lo que hay en el almacén; tu cuadrilla ({gente}{" "}
           personas) y la lista de días.
         </p>
         <p className="mt-2 font-hand">
@@ -1127,6 +1130,11 @@ export function Paneles({
         <p className="font-hand text-lg">
           Son las {horaDe(s.minuto)}. Si los despachas, el día se paga completo ({peso(n)}). ¿Despachar?
         </p>
+        {mezclaDeNoche(s) > 0 ? (
+          <p className="mt-2 border-2 border-rojo p-1 font-hand text-rojo" data-mezcla-noche>
+            Ojo: hay mezcla hecha. Si se queda de noche, se perderá la mezcla de {peso(mezclaDeNoche(s))}. Gástala antes de despachar.
+          </p>
+        ) : null}
         <SinTarea s={s} act={act} />
         <div className="mt-3 flex flex-wrap gap-2">
           <button type="button" className={btnPri} onClick={() => act((st) => confirmarDespacho(st))}>
@@ -1152,7 +1160,7 @@ export function Paneles({
           </p>
         ) : null}
         <ul className="space-y-1 font-hand text-lg">
-          <li>Caja {peso(cuenta.caja)}</li>
+          <li>Caja {pesoCaja(cuenta.caja)}</li>
           <li>− pedido {peso(cuenta.pedido)}</li>
           <li>
             − nómina de hoy {peso(cuenta.nomina)} (jornales {peso(cuenta.jornales)}, herramienta {peso(cuenta.herramienta)}, Dirección{" "}
@@ -1160,7 +1168,7 @@ export function Paneles({
           </li>
           {cuenta.deuda > 0.5 ? <li>− deuda de nómina de ayer {peso(cuenta.deuda)}</li> : null}
           {cuenta.usaAdelanto ? <li>+ adelanto {peso(cuenta.adelanto)}</li> : null}
-          <li>= libre {peso(cuenta.libre)}</li>
+          <li>= libre {pesoCaja(cuenta.libre)}</li>
         </ul>
         {cuenta.usaAdelanto ? (
           <p className="mt-2 font-hand">Usa el adelanto de Doña Carmen: {peso(cuenta.adelanto)}. En esta obra no habrá otro.</p>
@@ -1202,7 +1210,7 @@ export function Paneles({
     const pedido = !!of.hecho || !Object.values(compra).some((n) => (n ?? 0) > 0);
     return (
       <Marco titulo="Guardalmacén" ancho="max-w-md" onCerrar={cerrar}>
-        <p className="font-hand text-lg whitespace-pre-line">{of.texto}</p>
+        <p className="font-hand text-lg whitespace-pre-line">{of.texto.replace(/Caja libre [^\n]*?(?=\.( |\n|$))/g, () => textoCajaLibre(s))}</p>
         <div className="mt-3 flex flex-wrap gap-2">
           {pedido ? null : (
             <button
@@ -1597,7 +1605,8 @@ export function Paneles({
     return (
       <Marco titulo="La nómina no alcanza">
         <p className="font-hand">
-          Hoy la caja no cubre la nómina. Se paga lo que haya. Lo que falte queda de deuda para mañana y baja el ánimo. Dos días
+          Hoy la nómina es {peso(desgloseNomina(s).total + (s.deudaNomina ?? 0))} y la caja tiene {pesoCaja(s.caja)}: faltan{" "}
+          <b data-falta-nomina>{peso(Math.max(0, desgloseNomina(s).total + (s.deudaNomina ?? 0) - Math.max(0, s.caja)))}</b>. Se paga lo que haya. Lo que falte queda de deuda para mañana y baja el ánimo. Dos días
           seguidos, un obrero se va.
         </p>
         {(s.deudaNomina ?? 0) > 0.5 ? <p className="mt-2 font-hand">Deuda de ayer: {peso(s.deudaNomina)}.</p> : null}
@@ -1645,7 +1654,7 @@ export function Paneles({
     const direccion = s.direccionCobrada && !esDomingo(s.dia) ? DIRECCION_DIA : 0;
     return (
       <Marco titulo="Fin del día" ancho="max-w-lg">
-        <p className="font-display text-4xl">{peso(s.caja)}</p>
+        <p className="font-display text-4xl">{pesoCaja(s.caja)}</p>
         <p className="font-hand">Nómina {peso(pagada)}</p>
         <p className="font-hand">Herramienta {peso(herr)}</p>
         {direccion > 0 ? <p className="font-hand">Dirección {peso(direccion)}</p> : null}
@@ -1733,6 +1742,11 @@ export function Paneles({
         ) : null}
         <p className="mt-2 font-hand text-sm">{pronosticoDia(s, 0)}</p>
         <p className="font-hand text-sm">{pronosticoDia(s, 1)}</p>
+        {mezclaDeNoche(s) > 0 ? (
+          <p className="mb-2 border-2 border-rojo p-1 font-hand text-rojo" data-mezcla-noche>
+            Se perderá la mezcla de {peso(mezclaDeNoche(s))}: la mezcla hecha no aguanta la noche.
+          </p>
+        ) : null}
         <button type="button" className={`${btnPri} mt-4 w-full`} onClick={() => act((st) => siguienteDia(st))}>
           Amanecer
         </button>
@@ -1773,7 +1787,7 @@ export function Paneles({
             <ul className="mt-2 space-y-1 font-hand text-base">
               <li>Días {inf.dias}</li>
               <li>Costo total {peso(inf.costo)}</li>
-              <li>{inf.ganancia >= 0 ? `Ganancia ${peso(inf.ganancia)}` : `Pérdida ${peso(inf.ganancia)}`}</li>
+              <li>{inf.ganancia >= 0 ? `Ganancia ${peso(inf.ganancia)}` : `Pérdida ${peso(-inf.ganancia)}`}</li>
               <li>Tiempo muerto (jornal pagado sin trabajo) {peso(muerto?.real ?? 0)}</li>
               {inf.bono > 0 ? <li>Bono por entrega temprana {peso(inf.bono)}</li> : <li>Sin bono: se entregó el día {PLAZO_ENTREGA} o después</li>}
               <li>Desplomes {s.desplomes}</li>
@@ -1833,11 +1847,11 @@ export function Paneles({
           <Dato etiqueta="Días" valor={String(inf.dias)} />
           <Dato etiqueta="Costo" valor={peso(inf.costo)} />
           {perdida ? (
-            <Dato etiqueta="Pérdida" valor={peso(s.caja)} rojo />
+            <Dato etiqueta="Pérdida" valor={peso(Math.abs(s.caja))} rojo />
           ) : (
             <>
               <Dato etiqueta="Vs presupuesto" valor={`${pct >= 0 ? "+" : ""}${num(pct, 1)}%`} />
-              <Dato etiqueta="Ganancia" valor={peso(inf.ganancia)} />
+              <Dato etiqueta={inf.ganancia >= 0 ? "Ganancia" : "Pérdida"} valor={peso(Math.abs(inf.ganancia))} />
             </>
           )}
           <Dato etiqueta="A la primera" valor={`${inf.aprobadasPrimera} / 9`} />
@@ -1950,7 +1964,7 @@ export function Paneles({
               <p className="mt-3 font-hand text-sm text-tierra">El x2 solo acelera el reloj. No cambia ritmos ni números.</p>
             </div>
           ) : null}
-          <button type="button" className={btn} onClick={quiereNueva}>
+          <button type="button" className={`${btn} mt-6`} onClick={quiereNueva}>
             Empezar de cero
           </button>
         </div>
@@ -2007,7 +2021,7 @@ function Plata({
       <p className="mt-1 flex justify-between gap-2 font-hand text-xs">
         <span>Gastado {cifraCorta(lib.costo, angosta)}</span>
         <span>Falta gastar {cifraCorta(lib.porHacer, angosta)}</span>
-        <span className="text-tinta">Ganancia estimada {cifraCorta(lib.ganancia, angosta)}</span>
+        <span className="text-tinta">{lib.ganancia >= 0 ? "Ganancia" : "Pérdida"} estimada {cifraCorta(Math.abs(lib.ganancia), angosta)}</span>
       </p>
       <p className="mt-1 font-hand text-xs text-tierra">
         Cada fila: gastado de lo presupuestado. «Tiempo muerto» es jornal pagado sin trabajo (espera, lluvia, despacho temprano).

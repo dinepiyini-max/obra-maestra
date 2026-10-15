@@ -597,10 +597,11 @@ export const ESTRATEGIAS: Record<string, Cfg> = {
 
 export type Chequeo = (s: Estado, paso: string) => void;
 
-export function correr(seed: number, cfg0: Cfg, clima: Clima = "normal", precios: number | null = null, chequeo?: Chequeo) {
+export function correr(seed: number, cfg0: Cfg, clima: Clima = "normal", precios: number | null = null, chequeo?: Chequeo, inicio?: Estado, hastaEtapa = 99) {
   let cfg = cfg0;
   ponerPrecios(seed, precios);
   const r = rngDe(seed * 31 + cfg.nombre.length);
+  if (inicio) return seguirDesde(inicio, cfg, r, chequeo, hastaEtapa);
   const s = nueva(seed);
   ponerClima(s, clima);
   firmar(s);
@@ -614,9 +615,15 @@ export function correr(seed: number, cfg0: Cfg, clima: Clima = "normal", precios
   for (const g of s.gente) asignar(s, g.id, "obra");
   s.jugador = { x: 19, y: 14.5 };
   s.tut.fin = true;
+  return seguirDesde(s, cfg, r, chequeo, 99);
+}
+
+/** v21: juega desde un estado dado (p. ej. la partida real del revisor) hasta entregar o hasta pasar `hastaEtapa`. */
+export function seguirDesde(s: Estado, cfg: Cfg, r: () => number, chequeo?: Chequeo, hastaEtapa = 99) {
+  const seed = s.seed;
   let guard = 0, pedidoDia = -1, olvidoHoy = false, diaOlvido = -1, diaAviso = -1, diaSalida = -1, sinSalida = 0;
   const T = (p: string) => chequeo?.(s, p);
-  while (!s.entregada && guard < 80000) {
+  while (!s.entregada && guard < 80000 && s.etapa <= hastaEtapa) {
     guard++;
     if (s.panel === "nomina") confirmarNomina(s, true);
     if (s.panel === "sello") { continuarSello(s); T("sello"); }

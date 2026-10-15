@@ -579,6 +579,12 @@ export function esSabado(dia: number): boolean {
   return (dia - 1) % 7 === 5;
 }
 
+/** v21: caja o caja libre: nunca un monto negativo en pantalla. «P$0 · debes P$X». */
+export function pesoCaja(n: number): string {
+  const v = Math.round(n);
+  return v < 0 ? `P$0 · debes ${peso(-v)}` : peso(v);
+}
+
 export function peso(n: number, conSigno = false): string {
   const v = Math.round(n);
   const neg = v < 0;

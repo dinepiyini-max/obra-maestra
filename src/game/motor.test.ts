@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { BONO_DIA, PLAZO_ENTREGA, CONTRATO, DIRECCION_DIA, ETAPAS, FLETE, FLETE_URGENTE, HERRAMIENTA, MAPA, MATERIALES, NOTA_ESCUADRA, POR_HILADA, RECETA_H, RECETA_M, SITIOS, VEL_MAESTRO, BLOCKS_MURO, COMPRA, TAREAS, TUTORIAL, esSabado, horaDe, jornalDe, peso, type Puesto } from "./datos.ts";
+import { BONO_DIA, PLAZO_ENTREGA, CONTRATO, DIRECCION_DIA, ETAPAS, FLETE, FLETE_URGENTE, HERRAMIENTA, MAPA, MATERIALES, NOTA_ESCUADRA, POR_HILADA, RECETA_H, RECETA_M, SITIOS, VEL_MAESTRO, BLOCKS_MURO, COMPRA, TAREAS, TUTORIAL, esSabado, horaDe, jornalDe, peso, pesoCaja, type Puesto } from "./datos.ts";
 import {
   abrirDespacho,
   accion,
@@ -69,6 +69,7 @@ import {
   reloj,
   REGLAS_LIBRETA,
   avisoSello,
+  mezclaDeNoche,
   precioDe,
   accionesNomina,
   cobroDe,
@@ -3639,3 +3640,82 @@ describe("v20: siempre hay salida, cobros claros, nómina coherente", () => {
 function tieneMaterialFaltante(s: Estado): boolean {
   return Object.values(loQueFalta(s)).some((n) => (n ?? 0) > 0);
 }
+
+describe("v21: situaciones reales del revisor", () => {
+  const revisor = (etapa: number) => {
+    const s = nueva(3);
+    firmar(s);
+    for (const c of s.candidatos.slice(0, 4)) contratar(s, c.id);
+    s.panel = null;
+    s.tut.fin = true;
+    s.etapa = etapa;
+    for (let i = 0; i < etapa; i++) s.etapas[i]!.sello = "aprobado";
+    s.selloDia = s.dia;
+    s.minuto = 8 * 60;
+    s.adelanto = 20000;
+    s.adelantoDia = 1;
+    s.cobrado += 20000;
+    for (const k of Object.keys(s.inv) as (keyof typeof s.inv)[]) s.inv[k] = { q: 0, valor: 0 } as never;
+    s.mezclas = [];
+    s.plomo = null;
+    return s;
+  };
+  const varilla = (s: Estado) => (loQueFalta(s).v38 ?? 0) > 0;
+
+  it("muros con el almacén lleno de varilla 1/4: «Lo que falta» pide la 3/8 y el guardalmacén fía", () => {
+    const s = revisor(4);
+    s.inv.v14 = { q: 60, valor: 6000 } as never;
+    s.caja = -5297;
+    s.deudaNomina = 3000;
+    assert.ok(varilla(s), JSON.stringify(loQueFalta(s)));
+    assert.ok(cuentaFiado(s), "debe ofrecer fiado");
+    const antes = cuadreCaja(s);
+    assert.equal(fiar(s), null);
+    assert.ok(s.diario.some((d) => d.texto.startsWith("Devuelto al guardalmacén")));
+    assert.ok(Math.abs(cuadreCaja(s) - antes) < 0.5, `cuadre ${antes} -> ${cuadreCaja(s)}`);
+    for (const t of ETAPAS[4]!.trabajos) s.runs[4]!.find((r) => r.id === t.id)!.hecho = t.q;
+    for (const e of s.extras) if (e.etapa === 4) e.hecho = e.q;
+    s.plomo = null;
+    avanzarMinutos(s, 3);
+    assert.equal(s.panel, "sello");
+    continuarSello(s);
+    assert.equal(s.etapas[4]!.sello, "aprobado");
+  });
+
+  it("columnas con madera de otra clase: pide pino y fía", () => {
+    const s = revisor(5);
+    s.inv.plywood = { q: 40, valor: 8000 } as never;
+    s.caja = 0;
+    assert.ok((loQueFalta(s).pino ?? 0) > 0, JSON.stringify(loQueFalta(s)));
+    assert.ok(cuentaFiado(s));
+  });
+
+  it("con parte en camino y parte en el almacén, fía solo el resto", () => {
+    const s = revisor(4);
+    const total = loQueFalta(s);
+    const k = (Object.keys(total) as (keyof typeof total)[]).find((m) => m !== "cemento" && (total[m] ?? 0) > 2)!;
+    s.inv[k] = { q: (total[k] ?? 0) / 3, valor: 100 } as never;
+    s.pedidos.push({ id: "p1", items: { [k]: (total[k] ?? 0) / 3 }, dia: s.dia + 1, minuto: 450, flete: 0, urgente: false } as never);
+    s.caja = 0;
+    const resto = loQueFalta(s);
+    assert.ok((resto[k] ?? 0) > 0 && (resto[k] ?? 0) < (total[k] ?? 0));
+    const c = cuentaFiado(s);
+    assert.ok(c);
+    assert.ok((c!.items[k] ?? 0) <= (resto[k] ?? 0) + 1e-6);
+  });
+
+  it("caja libre nunca sale negativa en pantalla", () => {
+    const s = revisor(4);
+    s.caja = -18273;
+    assert.doesNotMatch(textoCajaLibre(s), /−P\$/);
+    assert.match(textoCajaLibre(s), /P\$0 · debes P\$/);
+    assert.equal(pesoCaja(-5297), "P$0 · debes P$5,297");
+  });
+
+  it("la mezcla hecha avisa cuánto se pierde de noche", () => {
+    const s = revisor(4);
+    s.mezclas = [{ tipo: "M", prog: 1, lista: true, vida: 300, costo: 471, restante: 1 }];
+    assert.equal(mezclaDeNoche(s), 471);
+  });
+});
+

@@ -5,6 +5,7 @@ import {
   TUTORIAL,
   diaSemana,
   peso,
+  pesoCaja,
   type Oficio,
 } from "@/game/datos";
 import {
@@ -359,7 +360,7 @@ export function Hud({
             {r.clima}
           </div>
           <div data-caja className={"font-hand text-sm leading-none text-[#f3e6c4] " + (late ? "caja-latido" : "")}>
-            {peso(s.caja)}
+            {pesoCaja(s.caja)}
           </div>
           {adelanto ? (
             <button type="button" onClick={onAdelanto} className="pointer-events-auto font-hand text-[11px] text-oro underline">
@@ -416,7 +417,7 @@ export function Hud({
           </div>
           <div className="hidden h-12 min-w-[320px] flex-1 min-[900px]:block" aria-hidden="true" />
           <div data-caja className={"pointer-events-auto relative shrink-0 bg-fondo/90 px-2.5 py-1.5 text-right " + (late ? "caja-latido" : "") + (chico ? " max-w-[52%]" : "")}>
-            <div className={"font-hand leading-none text-[#f3e6c4] " + (chico ? "text-base" : "text-xl")}>{peso(s.caja)}</div>
+            <div className={"font-hand leading-none text-[#f3e6c4] " + (chico ? "text-base" : "text-xl")}>{pesoCaja(s.caja)}</div>
             <div className="h-4 text-right leading-none">
               {adelanto ? (
                 <button type="button" onClick={onAdelanto} className="font-hand text-[11px] text-oro underline">
@@ -433,7 +434,7 @@ export function Hud({
                   />
                 ))
               : null}
-            <div className="mt-0.5 flex justify-end gap-1">
+            <div className="mt-0.5 flex justify-end gap-2">
               <button type="button" onClick={onLibreta} className={btn}>
                 Libreta
               </button>
