@@ -66,6 +66,7 @@ import {
   precioDe,
   adelantoUsado,
   faltaEnPedido,
+  nominaDiaDe,
   mezclaDeNoche,
   cobroDe,
   cuentaFiado,
@@ -1784,6 +1785,29 @@ export function Paneles({
               </text>
             </svg>
             <h2 className="font-display text-4xl leading-none">Entrega</h2>
+            {s.cierre ? (
+              <div className="mt-2 border-2 border-tinta p-2 font-hand text-base" data-cierre>
+                <p className="font-display text-xl">Cuenta de la caja al entregar</p>
+                <ul className="space-y-0.5">
+                  <li>Caja antes del último sello {pesoCaja(s.cierre.cajaAntes)}</li>
+                  <li>
+                    + cobro del techo {peso(s.cierre.bruto)}
+                    {s.cierre.adelanto > 0.5 ? ` − adelanto ${peso(s.cierre.adelanto)}` : ""}
+                    {s.cierre.fiado > 0.5 ? ` − fiado ${peso(s.cierre.fiado)}` : ""} = {peso(s.cierre.bruto - s.cierre.adelanto - s.cierre.fiado)}
+                  </li>
+                  {s.cierre.bono > 0.5 ? <li>+ bono por entrega temprana {peso(s.cierre.bono)}</li> : null}
+                  <li>
+                    − nómina pagada al entregar {peso(s.cierre.pagadoNomina)}
+                    {s.cierre.pagadoNomina > 0.5
+                      ? ` (jornales ${peso(s.cierre.jornales)} + herramienta ${peso(s.cierre.herramienta)} + Dirección ${peso(s.cierre.direccion)} + deuda de nómina ${peso(s.cierre.deudaPrevia)}${s.cierre.quedaDebiendo > 0.5 ? ` − lo que queda debiendo ${peso(s.cierre.quedaDebiendo)}` : ""})`
+                      : ""}
+                  </li>
+                  <li>− multas {peso(0)} (las pérdidas de mezcla ya van en el costo, no salen de la caja)</li>
+                  <li className="font-bold">= caja final {pesoCaja(s.cierre.cajaDespues)}</li>
+                  {s.cierre.quedaDebiendo > 0.5 ? <li className="text-rojo">Queda debiendo a la cuadrilla {peso(s.cierre.quedaDebiendo)}.</li> : null}
+                </ul>
+              </div>
+            ) : null}
             <ul className="mt-2 space-y-1 font-hand text-base">
               <li>Días {inf.dias}</li>
               <li>Costo total {peso(inf.costo)}</li>
@@ -2025,6 +2049,10 @@ function Plata({
       </p>
       <p className="mt-1 font-hand text-xs text-tierra">
         Cada fila: gastado de lo presupuestado. «Tiempo muerto» es jornal pagado sin trabajo (espera, lluvia, despacho temprano).
+        {" "}La estimación supone que lo que falta cuesta lo presupuestado: cada día de obra de más resta{" "}
+        {peso(nominaDiaDe([...s.gente, ...s.reserva].filter((g) => !g.libre)) + DIRECCION_DIA)} (nómina y Dirección).
+        {(s.deudaNomina ?? 0) > 0.5 ? ` Debes de nómina ${peso(s.deudaNomina ?? 0)}: ya está en lo gastado; no cambia la ganancia, se paga del próximo cobro o al entregar.` : ""}
+        {(s.fiado ?? 0) > 0.5 ? ` Fiado por pagar ${peso(s.fiado ?? 0)}: no cambia la ganancia, solo sale del próximo cobro.` : ""}
         «Acarreo» es mover material de la entrada a la obra.
       </p>
       <ul className="mt-2">

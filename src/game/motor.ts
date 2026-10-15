@@ -189,6 +189,21 @@ export interface Lluvia {
   cae?: boolean;
 }
 
+export interface Cierre {
+  cajaAntes: number;
+  bruto: number;
+  adelanto: number;
+  fiado: number;
+  bono: number;
+  jornales: number;
+  herramienta: number;
+  direccion: number;
+  deudaPrevia: number;
+  pagadoNomina: number;
+  quedaDebiendo: number;
+  cajaDespues: number;
+}
+
 export interface Sello {
   ok: boolean;
   motivo: string;
@@ -305,6 +320,8 @@ export interface Estado {
   fiado?: number;
   /** v19: bono cobrado al entregar antes del plazo. */
   bono?: number;
+  /** v22: cuenta de la caja al entregar. */
+  cierre?: Cierre;
   /** v19: pérdidas del día (mezcla vencida, mojado...) para el resumen de la noche. */
   perdidasHoy?: { texto: string; pesos: number }[];
   /** El finde está parado en el domingo, a la espera del toque. */
@@ -2526,7 +2543,7 @@ function revisar(s: Estado) {
   if (!etapaCompleta(s)) return;
   const def = ETAPAS[s.etapa]!;
   let ok = true;
-  let motivo = "Ta' derecho. Sigue la obra.";
+  let motivo = s.etapa >= ETAPAS.length - 1 ? "Ta' derecho. Obra terminada: la caseta quedó en pie y se entrega a Doña Carmen." : "Ta' derecho. Sigue la obra.";
   if (def.id === "muros" && s.desplomes > s.desplomesCobrados) {
     const n = s.desplomes - s.desplomesCobrados;
     ok = false;
@@ -2644,6 +2661,8 @@ export function continuarSello(s: Estado) {
     return;
   }
   let pago = 0;
+  const cajaAntes = s.caja;
+  const cAntes = cobroDe(s, i);
   if (def.tramo > 0) {
     const c = cobroDe(s, i);
     s.adelanto -= c.adelanto;
@@ -2686,13 +2705,55 @@ export function continuarSello(s: Estado) {
       s.bono = bono;
       diario(s, `Bono por entrega temprana (${PLAZO_ENTREGA - s.dia} días antes del día ${PLAZO_ENTREGA}): +${peso(bono)}.`);
     }
-    if (!s.direccionCobrada) {
-      s.caja -= DIRECCION_DIA;
-      s.costos.direccion.mo += DIRECCION_DIA;
-      s.direccionCobrada = true;
-      s.diasTrabajados += 1;
-      diario(s, `Dirección del día: −${peso(DIRECCION_DIA)}.`);
+    // v22: al entregar se paga la nómina del día y la deuda de nómina; la cuenta queda a la vista.
+    s.entregada = false;
+    const d = desgloseNomina(s);
+    const deudaPrevia = s.deudaNomina ?? 0;
+    const antesNom = s.caja;
+    let jornales = 0;
+    let herramienta = 0;
+    let direccion = 0;
+    if (!s.nominaPagada) {
+      jornales = d.jornales;
+      herramienta = d.herramienta;
+      direccion = d.direccion;
+      s.nominaRoja = s.dia;
+      s.rachaCorta = 0;
+      pagarNomina(s);
+      s.entregada = true;
+      if (s.panel === "nomina") s.panel = null;
+    } else {
+      s.entregada = true;
+      if (!s.direccionCobrada) {
+        s.caja -= DIRECCION_DIA;
+        s.costos.direccion.mo += DIRECCION_DIA;
+        s.direccionCobrada = true;
+        s.diasTrabajados += 1;
+        direccion = DIRECCION_DIA;
+        diario(s, `Dirección del día: −${peso(DIRECCION_DIA)}.`);
+      }
+      const deuda = s.deudaNomina ?? 0;
+      if (deuda > 0.5) {
+        const paga = Math.min(Math.max(0, s.caja), deuda);
+        s.caja -= paga;
+        s.deudaNomina = deuda - paga > 0.5 ? deuda - paga : 0;
+        if (paga > 0.5) diario(s, `Deuda de nómina pagada al entregar: −${peso(paga)}.`);
+      }
     }
+    s.cierre = {
+      cajaAntes,
+      bruto: cAntes.bruto,
+      adelanto: cAntes.adelanto,
+      fiado: cAntes.fiado,
+      bono,
+      jornales,
+      herramienta,
+      direccion,
+      deudaPrevia,
+      pagadoNomina: antesNom - s.caja,
+      quedaDebiendo: s.deudaNomina ?? 0,
+      cajaDespues: s.caja,
+    };
     notarMezclaTarde(s);
     s.panel = "informe";
     diario(s, "Obra entregada. Doña Carmen tiene su caseta.");
@@ -2805,8 +2866,16 @@ function pagarNomina(s: Estado) {
     diario(s, frase);
     aviso(s, frase);
     if (s.rachaCorta >= 2) {
-      s.rachaCorta = 0;
-      seVaObrero(s);
+      const espera = esperaAlCobro(s);
+      if (espera) {
+        // v22: «te pago al cobrar»: con la etapa casi lista y un cobro que cubre la deuda, nadie se va.
+        s.rachaCorta = 1;
+        diario(s, espera);
+        aviso(s, espera);
+      } else {
+        s.rachaCorta = 0;
+        seVaObrero(s);
+      }
     }
   } else {
     s.rachaCorta = 0;
@@ -2893,15 +2962,35 @@ export function accionesNomina(s: Estado): string[] {
   const ayuda = [...s.gente, ...s.reserva]
     .filter((g) => !g.libre && (g.oficio === "peon" || g.oficio === "ayudante"))
     .sort((a, b) => jornalDe(b.oficio, b.rinde) - jornalDe(a.oficio, a.rinde))[0];
-  if (ayuda) out.push(`da libre a ${ayuda.nombre} (−${peso(jornalDe(ayuda.oficio, ayuda.rinde))})`);
+  if (ayuda) out.push(`da libre a ${ayuda.nombre} (ahorras ${peso(jornalDe(ayuda.oficio, ayuda.rinde))})`);
   else out.push("da libre a alguien");
   out.push("pide solo lo que falta para hoy");
   return out;
 }
 
 /** Si ya hubo un día de nómina corta, quién se va mañana si se repite. */
+/** v22: la cuadrilla espera al cobro si la etapa que cobra va en 75% o más y lo neto de ese cobro paga la deuda de nómina. */
+export function esperaAlCobro(s: Estado): string {
+  if (!s.firmado || s.entregada) return "";
+  const i = proximoTramo(s);
+  if (i !== s.etapa) return "";
+  const def = ETAPAS[i]!;
+  let hecho = 0;
+  let total = 0;
+  for (const t of def.trabajos) {
+    hecho += Math.min(t.q, runDe(s, i, t.id).hecho) / t.q;
+    total += 1;
+  }
+  if (!total || hecho / total < 0.75) return "";
+  const neto = cobroDe(s, i).neto;
+  const deuda = (s.deudaNomina ?? 0) + desgloseNomina(s).total;
+  if (neto + Math.max(0, s.caja) < deuda - 0.5) return "";
+  return `Nadie se va: «te pago al cobrar». ${def.nombre} ya casi sella y su cobro (${peso(neto)}) cubre la deuda de nómina (${peso(s.deudaNomina ?? 0)}).`;
+}
+
 export function textoSeVaManana(s: Estado): string {
   if ((s.rachaCorta ?? 0) < 1) return "";
+  if (esperaAlCobro(s)) return ` Si vuelve a quedar corta, nadie se va: ${ETAPAS[s.etapa]?.nombre ?? "la etapa"} casi sella y su cobro paga la deuda («te pago al cobrar»).`;
   const g = quienSeVa(s);
   return g ? ` Si vuelve a quedar corta, mañana se va ${g.nombre}.` : "";
 }
@@ -4378,7 +4467,8 @@ export function contratar(s: Estado, id: string): string | null {
     aviso(s, `${p.nombre} empieza mañana.`);
   }
   diario(s, `Contrataste a ${p.nombre} ${p.apellido}, ${OFICIO_NOMBRE[p.oficio]}.`);
-  p.puesto = null;
+  // v22: si ya aprendiste a dar puestos, el nuevo entra a la tarea de la obra (sin quedar «Sin puesto»).
+  p.puesto = s.firmado && (s.tut.fin || s.tut.cuadrilla) ? "obra" : null;
   p.cansancio = 0;
   if (s.gente.length + s.reserva.length >= 3) s.tut.parada = true;
   chequearTutorial(s);
@@ -5525,7 +5615,7 @@ export function cuadrillaSugerida(s: Estado): Sugerencia {
   // Probado en 40 obras por perfil (sim_v18): tres con un albañil entrega más que cuatro o cinco sin colchón.
   const tam = caja >= 25000 ? 3 : 2;
   const quiereAlb = 1;
-  const libres = s.candidatos.filter((c) => !equipo.some((g) => g.id === c.id));
+  const libres = s.candidatos.filter((c) => !equipo.some((g) => g.id === c.id || (g.nombre === c.nombre && g.apellido === c.apellido)));
   const elegidos: Persona[] = [];
   const tieneAlb = equipo.filter((g) => g.oficio === "albanil").length;
   const albs = libres.filter((c) => c.oficio === "albanil").sort((a, b) => b.rinde - a.rinde);
@@ -5544,7 +5634,7 @@ export function cuadrillaSugerida(s: Estado): Sugerencia {
   let texto: string;
   if (!elegidos.length) texto = `Con tu caja (${pesoCaja(caja)}) no hace falta contratar más: la cuadrilla de ${todos.length} cuesta ${peso(nominaDia)} al día.`;
   else
-    texto = `Con tu caja (${pesoCaja(caja)}) te conviene una cuadrilla de ${todos.length}: ${nombres.join(", ")}. Nómina ${peso(nominaDia)} al día, la caja aguanta unos ${dias} días.`;
+    texto = `Con tu caja (${pesoCaja(caja)}) te conviene una cuadrilla de ${todos.length}: ${nombres.join(", ")}. Nómina ${peso(nominaDia)} al día, ${dias > 0 ? `la caja aguanta unos ${dias} días` : "sin caja: no aguanta ni un día"}.`;
   return { ids: elegidos.map((c) => c.id), nombres, nominaDia, dias, texto };
 }
 
@@ -5586,6 +5676,8 @@ export function textoDiasCaja(s: Estado): string {
 
 export const REGLAS_LIBRETA = [
   "Siempre hay salida: si la caja y el adelanto no pagan lo que falta para sellar la etapa, el guardalmacén lo fía (solo lo de esta etapa, y nunca más de lo que paga el próximo tramo). Al aprobar, Doña Carmen paga el tramo y el fiado sale de ahí: tramo − adelanto − fiado = lo que entra.",
+  "Nadie se va antes del cobro: si la etapa que cobra va en 75% o más y lo que entra al sellarla paga la deuda de nómina, la cuadrilla espera («te pago al cobrar»). Si no, a la segunda nómina corta se va uno.",
+  "Al entregar se paga la nómina del día y la deuda de nómina; la Entrega muestra la cuenta completa de la caja.",
   "La mezcla lista no se vence mientras esperas el plomo o el camión.",
   "Pedir lo que alcanza: si la caja paga el pedido, el guardalmacén lo suelta aunque la nómina quede corta, y dice cuánto faltará.",
   "Nómina corta: se paga lo que hay y el resto es deuda de mañana. Baja el ánimo. Dos días seguidos, un obrero se va. La obra se pierde solo si no queda nadie.",

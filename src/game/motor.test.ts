@@ -69,6 +69,7 @@ import {
   reloj,
   REGLAS_LIBRETA,
   avisoSello,
+  textoSeVaManana,
   mezclaDeNoche,
   precioDe,
   accionesNomina,
@@ -3719,3 +3720,89 @@ describe("v21: situaciones reales del revisor", () => {
   });
 });
 
+
+describe("v22: cierre cuadrado, nadie se va antes del cobro, peones con puesto", () => {
+  const techo = (frac: number) => {
+    const s = nueva(5);
+    firmar(s);
+    for (const c of s.candidatos.slice(0, 3)) contratar(s, c.id);
+    s.panel = null;
+    s.tut.fin = true;
+    s.etapa = 8;
+    for (let i = 0; i < 8; i++) s.etapas[i]!.sello = "aprobado";
+    s.selloDia = s.dia;
+    s.dia = 29;
+    s.minuto = 10 * 60;
+    s.mezclas = [];
+    s.plomo = null;
+    s.fragua = null;
+    s.curando = false;
+    for (const t of ETAPAS[8]!.trabajos) s.runs[8]!.find((r) => r.id === t.id)!.hecho = t.q * frac;
+    return s;
+  };
+
+  it("al entregar, la cuenta de la caja cierra exacta con deuda de nómina y bono", () => {
+    const s = techo(1);
+    s.dia = 28;
+    s.caja = 0;
+    s.deudaNomina = 13484;
+    s.adelanto = 5000;
+    const c0 = cuadreCaja(s);
+    avanzarMinutos(s, 3);
+    assert.equal(s.panel, "sello");
+    assert.doesNotMatch(s.sello!.motivo, /Sigue la obra/);
+    assert.match(s.sello!.motivo, /Obra terminada/);
+    continuarSello(s);
+    assert.ok(s.entregada);
+    const k = s.cierre!;
+    assert.ok(k);
+    const calc = k.cajaAntes + k.bruto - k.adelanto - k.fiado + k.bono - k.pagadoNomina;
+    assert.ok(Math.abs(calc - k.cajaDespues) < 0.5, `${calc} vs ${k.cajaDespues}`);
+    assert.ok(Math.abs(k.cajaDespues - s.caja) < 0.5);
+    assert.ok(k.bono > 0);
+    assert.ok(k.deudaPrevia >= 13484 - 0.5);
+    assert.ok(Math.abs(k.jornales + k.herramienta + k.direccion + k.deudaPrevia - k.quedaDebiendo - k.pagadoNomina) < 1, JSON.stringify(k));
+    assert.equal(k.quedaDebiendo, s.deudaNomina ?? 0);
+    assert.ok(Math.abs(cuadreCaja(s) - c0) < 0.5, `cuadre ${c0} -> ${cuadreCaja(s)}`);
+  });
+
+  it("con el techo casi listo y un cobro que paga la deuda, el albañil no se va («te pago al cobrar»)", () => {
+    const s = techo(0.8);
+    s.caja = 0;
+    s.rachaCorta = 1;
+    s.deudaNomina = 4000;
+    const n = s.gente.length;
+    assert.match(textoSeVaManana(s), /nadie se va/);
+    s.minuto = 14 * 60 + 59;
+    avanzarMinutos(s, 2);
+    if (s.panel === "nomina") confirmarNomina(s, false);
+    assert.equal(s.gente.length + s.reserva.length, n);
+    assert.ok(s.avisos.some((a) => /te pago al cobrar/.test(a.texto)));
+  });
+
+  it("si la etapa va lejos de sellar, a la segunda nómina corta sí se va uno (y se avisa antes)", () => {
+    const s = techo(0.1);
+    s.caja = 0;
+    s.rachaCorta = 1;
+    s.deudaNomina = 4000;
+    const n = s.gente.length;
+    assert.match(textoSeVaManana(s), /mañana se va/);
+    s.minuto = 14 * 60 + 59;
+    avanzarMinutos(s, 2);
+    if (s.panel === "nomina") confirmarNomina(s, false);
+    assert.equal(s.gente.length + s.reserva.length, n - 1);
+  });
+
+  it("el peón nuevo entra con puesto y la Libreta no ofrece a quien ya trabaja", () => {
+    const s = techo(0.5);
+    const c = s.candidatos.find((x) => !s.gente.some((g) => g.id === x.id))!;
+    contratar(s, c.id);
+    const g = [...s.gente, ...s.reserva].find((x) => x.id === c.id)!;
+    assert.equal(g.puesto, "obra");
+    const copia = { ...g, id: "otro-id" };
+    s.candidatos.push(copia);
+    assert.ok(!cuadrillaSugerida(s).ids.includes("otro-id"));
+    s.caja = -3000;
+    assert.doesNotMatch(cuadrillaSugerida(s).texto, /unos -?\d+ días|-\d+ días/);
+  });
+});
