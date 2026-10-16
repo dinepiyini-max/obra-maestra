@@ -1,5 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { cargar, borrar, guardar, cargarAjustes, guardarAjustes, type Ajustes } from "@/game/guardar";
+import { cargar, borrar, guardar as guardarCaja, pestanaVieja, tomarPartida, cargarAjustes, guardarAjustes, type Ajustes } from "@/game/guardar";
+
+// v23: si otra pestaña tiene una partida más nueva, esta deja de guardar y lo dice una vez.
+let avisoVieja = false;
+function guardar(s: Estado) {
+  const ok = guardarCaja(s);
+  if (!ok && pestanaVieja() && !avisoVieja) {
+    avisoVieja = true;
+    const id = (s.avisoSeq ?? 0) + 1;
+    s.avisoSeq = id;
+    s.avisos.push({ id, texto: "Otra pestaña guardó una partida más nueva. Esta ya no guarda: recarga para seguir aquella." });
+  }
+}
 import { VEL_MAESTRO, CONTRATO, ETAPAS, MAPA, MATERIALES, SITIOS, peso } from "@/game/datos";
 import { dibujar, mundoDesde, puntoEnPantalla, type Floater, type Vis } from "@/game/dibujo";
 import { reiniciarGuia } from "@/game/guia";
@@ -543,7 +555,7 @@ export function Juego() {
         setSnap(structuredClone(estado.current));
       }
       guardado += dt;
-      if (estado.current.panel === "perdida") borrar();
+      if (estado.current.panel === "perdida") borrar(estado.current);
       else if (guardado >= 20) {
         guardado = 0;
         guardar(estado.current);
@@ -621,6 +633,7 @@ export function Juego() {
   const nuevaObra = () => {
     reiniciarGuia();
     const s = nueva();
+    tomarPartida(s);
     if (roto.current) {
       s.avisos.push({ id: 1, texto: AVISO_ROTO });
       s.avisoSeq = 1;

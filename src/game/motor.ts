@@ -474,7 +474,8 @@ interface W {
   setIni: () => void;
 }
 
-const UMBRALES = [3, 6, 9, 12].map((h) => h * POR_HILADA);
+// v23: dos plomeos por muro (antes cuatro): menos paradas «Toca plomear» con la caja contada.
+export const UMBRALES = [3, 9].map((h) => h * POR_HILADA);
 
 function clamp(n: number, a: number, b: number): number {
   return Math.max(a, Math.min(b, n));
@@ -5615,6 +5616,15 @@ export interface FilaCosto {
   desv: number;
 }
 
+/** v23: el tiempo muerto que se ha ido pagando, proyectado sobre lo que falta de obra. Así «Falta gastar» sube con el tiempo muerto. */
+export function muertoPorVenir(s: Estado): number {
+  if (s.entregada) return 0;
+  const p = progresoObra(s);
+  const muerto = s.costos.muerto.mo + s.costos.muerto.mat;
+  if (p < 0.05 || p >= 1 || muerto <= 0) return 0;
+  return (muerto * (1 - p)) / p;
+}
+
 function quedaPresupuesto(s: Estado, p: Partida, real: number): number {
   const pre = PRESUPUESTO[p];
   if (pre <= 0 || s.entregada) return 0;
@@ -5750,7 +5760,7 @@ export function libreta(s: Estado) {
     return { partida: p, nombre: PARTIDA_NOMBRE[p], pre, mo, mat, real, desv: real - pre };
   });
   const costo = filas.reduce((a, f) => a + f.real, 0);
-  const porHacer = filas.reduce((a, f) => a + quedaPresupuesto(s, f.partida, f.real), 0);
+  const porHacer = filas.reduce((a, f) => a + quedaPresupuesto(s, f.partida, f.real), 0) + muertoPorVenir(s);
   return {
     filas,
     costo,

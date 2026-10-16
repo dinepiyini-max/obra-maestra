@@ -16,7 +16,7 @@ export const RADIO_LIDER = 4.5;
 /** v19: paso de una persona, en casillas por segundo real (x1). */
 export const VEL_MAESTRO = 2.5;
 export const VEL_CUADRILLA = 2.8;
-export const HILADA_TOPE = 6;
+export const HILADA_TOPE = 8;
 export const BLOCKS_MURO = 469;
 export const HILADAS = 15;
 export const POR_HILADA = BLOCKS_MURO / HILADAS;
@@ -186,7 +186,7 @@ export const TAREAS: Record<Tarea, TareaDef> = {
   mezclarH: { nombre: "Mezclar hormigón", rinde: 8, peso: "pesado", lider: null, partida: "hormigon", golpe: 0.1, grupo: "pala" },
   mezclarM: { nombre: "Mezclar mortero", rinde: 22, peso: "pesado", lider: null, partida: "block", golpe: 0.25, grupo: "pala" },
   vaciar: { nombre: "Vaciar", rinde: 8, peso: "pesado", lider: ["albanil"], partida: "hormigon", golpe: 0.1, grupo: "vaciar" },
-  block: { nombre: "Poner block", rinde: 150, peso: "medio", lider: ["albanil"], partida: "block", golpe: 1, grupo: "block" },
+  block: { nombre: "Poner block", rinde: 210, peso: "medio", lider: ["albanil"], partida: "block", golpe: 1, grupo: "block" },
   encofrar: { nombre: "Encofrar", rinde: 6.7, peso: "medio", lider: ["carpintero", "albanil"], partida: "encofrado", golpe: 0.08, grupo: "encofrar" },
   techo: { nombre: "Techar", rinde: 8, peso: "medio", lider: ["carpintero", "albanil"], partida: "techo", golpe: 0.1, grupo: "encofrar" },
   relleno: { nombre: "Rellenar", rinde: 3, peso: "pesado", lider: null, partida: "piso", golpe: 0.036, grupo: "pala" },
