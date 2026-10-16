@@ -314,8 +314,11 @@ describe("regresión v23", () => {
       setItem: (k: string, v: string) => void mem.set(k, String(v)),
       removeItem: (k: string) => void mem.delete(k),
     };
-    const A = await import("./guardar.ts?pestanaA");
-    const B = await import("./guardar.ts?pestanaB");
+    // Dos pestañas = dos copias del módulo (cada una con su propio dueño de partida).
+    type G = typeof import("./guardar.ts");
+    const ruta = (q: string) => new URL(`./guardar.ts?${q}`, import.meta.url).href;
+    const A = (await import(ruta("pestanaA"))) as G;
+    const B = (await import(ruta("pestanaB"))) as G;
     assert.equal(A.KEY, "obra-maestra-v2");
     const vieja = nueva(111);
     firmar(vieja);

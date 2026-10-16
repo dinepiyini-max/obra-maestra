@@ -97,11 +97,7 @@ function jugar(seed: number, cupo = 4) {
       pedidoDia = s.dia;
     } else if (s.minuto < 15 * 60 && (s.minuto % 15 === 0 || laborCambia(s))) gestionar(s, false, cupo);
     if (s.minuto < 7 * 60 + 8) silenciar(s);
-    // v23: el lento tarda 5 min × reacción en ver «Toca plomear» y caminar al muro.
-    if (s.plomo && plomoVisto < 0) plomoVisto = s.dia * 1440 + s.minuto;
-    if (!s.plomo) plomoVisto = -1;
-    const plomoTarde = R > 1 && s.plomo && s.dia * 1440 + s.minuto - plomoVisto < 5 * R;
-    if (!plomoTarde && (s.plomo || (s.curando && !s.regadoHoy && s.curadoDias.length < 7)) && s.minuto < 17 * 60) {
+    if ((s.plomo || (s.curando && !s.regadoHoy && s.curadoDias.length < 7)) && s.minuto < 17 * 60) {
       s.jugador = { x: 19, y: 14.5 };
       golpe(s, true);
     }
@@ -208,11 +204,7 @@ function jugarNovato(seed: number, cupo = 4) {
     if (s.entregada) break;
     if (s.minuto < 15 * 60 && (s.minuto % 15 === 0 || laborCambia(s))) gestionar(s, false, cupo);
     if (s.minuto < 7 * 60 + 8) silenciar(s);
-    // v23: el lento tarda 5 min × reacción en ver «Toca plomear» y caminar al muro.
-    if (s.plomo && plomoVisto < 0) plomoVisto = s.dia * 1440 + s.minuto;
-    if (!s.plomo) plomoVisto = -1;
-    const plomoTarde = R > 1 && s.plomo && s.dia * 1440 + s.minuto - plomoVisto < 5 * R;
-    if (!plomoTarde && (s.plomo || (s.curando && !s.regadoHoy && s.curadoDias.length < 7)) && s.minuto < 17 * 60) {
+    if ((s.plomo || (s.curando && !s.regadoHoy && s.curadoDias.length < 7)) && s.minuto < 17 * 60) {
       s.jugador = { x: 19, y: 14.5 };
       golpe(s, true);
     }
