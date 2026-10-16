@@ -3,6 +3,9 @@ export const ANTICIPO = 90_000;
 export const KIT_PRECIO = 600;
 export const CAJA_INICIAL = ANTICIPO - KIT_PRECIO;
 export const DIRECCION_DIA = 1750;
+/** v19: Doña Carmen paga P$1,500 por cada día que la obra se entrega antes del día 30. */
+export const PLAZO_ENTREGA = 30;
+export const BONO_DIA = 1500;
 export const FLETE = 1500;
 export const FLETE_URGENTE = 3000;
 export const HERRAMIENTA = 0.03;
@@ -10,9 +13,10 @@ export const CURADO_DIAS = 7;
 export const MAX_CUADRILLA = 8;
 export const RADIO = 2;
 export const RADIO_LIDER = 4.5;
-export const VEL_MAESTRO = 22;
+/** v19: paso de una persona, en casillas por segundo real (x1). */
+export const VEL_MAESTRO = 2.5;
 export const VEL_CUADRILLA = 2.8;
-export const HILADA_TOPE = 6;
+export const HILADA_TOPE = 8;
 export const BLOCKS_MURO = 469;
 export const HILADAS = 15;
 export const POR_HILADA = BLOCKS_MURO / HILADAS;
@@ -182,7 +186,7 @@ export const TAREAS: Record<Tarea, TareaDef> = {
   mezclarH: { nombre: "Mezclar hormigón", rinde: 8, peso: "pesado", lider: null, partida: "hormigon", golpe: 0.1, grupo: "pala" },
   mezclarM: { nombre: "Mezclar mortero", rinde: 22, peso: "pesado", lider: null, partida: "block", golpe: 0.25, grupo: "pala" },
   vaciar: { nombre: "Vaciar", rinde: 8, peso: "pesado", lider: ["albanil"], partida: "hormigon", golpe: 0.1, grupo: "vaciar" },
-  block: { nombre: "Poner block", rinde: 150, peso: "medio", lider: ["albanil"], partida: "block", golpe: 1, grupo: "block" },
+  block: { nombre: "Poner block", rinde: 210, peso: "medio", lider: ["albanil"], partida: "block", golpe: 1, grupo: "block" },
   encofrar: { nombre: "Encofrar", rinde: 6.7, peso: "medio", lider: ["carpintero", "albanil"], partida: "encofrado", golpe: 0.08, grupo: "encofrar" },
   techo: { nombre: "Techar", rinde: 8, peso: "medio", lider: ["carpintero", "albanil"], partida: "techo", golpe: 0.1, grupo: "encofrar" },
   relleno: { nombre: "Rellenar", rinde: 3, peso: "pesado", lider: null, partida: "piso", golpe: 0.036, grupo: "pala" },
@@ -370,7 +374,7 @@ export const ETAPAS: EtapaDef[] = [
     id: "muros",
     n: 5,
     nombre: "Muros de block",
-    regla: "Máximo 6 hiladas por día. Plomo en las hiladas 3, 6, 9 y 12.",
+    regla: "Máximo 8 hiladas por día. Plomo en las hiladas 3 y 9.",
     tramo: 0.1,
     trabajos: [
       {
@@ -573,6 +577,12 @@ export function esDomingo(dia: number): boolean {
 
 export function esSabado(dia: number): boolean {
   return (dia - 1) % 7 === 5;
+}
+
+/** v21: caja o caja libre: nunca un monto negativo en pantalla. «P$0 · debes P$X». */
+export function pesoCaja(n: number): string {
+  const v = Math.round(n);
+  return v < 0 ? `P$0 · debes ${peso(-v)}` : peso(v);
 }
 
 export function peso(n: number, conSigno = false): string {

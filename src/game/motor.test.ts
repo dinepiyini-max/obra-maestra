@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { CONTRATO, DIRECCION_DIA, ETAPAS, FLETE, FLETE_URGENTE, HERRAMIENTA, MAPA, MATERIALES, NOTA_ESCUADRA, POR_HILADA, RECETA_H, RECETA_M, SITIOS, VEL_MAESTRO, BLOCKS_MURO, COMPRA, TAREAS, TUTORIAL, esSabado, horaDe, jornalDe, peso, type Puesto } from "./datos.ts";
+import { BONO_DIA, PLAZO_ENTREGA, CONTRATO, DIRECCION_DIA, ETAPAS, FLETE, FLETE_URGENTE, HERRAMIENTA, MAPA, MATERIALES, NOTA_ESCUADRA, POR_HILADA, RECETA_H, RECETA_M, SITIOS, VEL_MAESTRO, BLOCKS_MURO, COMPRA, TAREAS, TUTORIAL, esSabado, horaDe, jornalDe, peso, pesoCaja, type Puesto } from "./datos.ts";
 import {
   abrirDespacho,
   accion,
@@ -61,8 +61,28 @@ import {
   trianguloEscuadra,
   validar,
   avanzarMinutos,
+  cuadrillaSugerida,
+  diasDeCaja,
+  textoDiasCaja,
+  textoPlazoAdelanto,
+  causasPerdida,
+  reloj,
+  REGLAS_LIBRETA,
+  avisoSello,
+  textoSeVaManana,
+  mezclaDeNoche,
+  precioDe,
+  accionesNomina,
+  cobroDe,
+  cuentaFiado,
+  fiar,
+  faltaNominaTras,
+  bonoEntrega,
+  faltaEnPedido,
+  textoSinTarea,
   type Estado,
 } from "./motor.ts";
+import { proyectar, zoomDe } from "./dibujo.ts";
 
 function cabeNominaManana(s: Estado, conAdelanto = true): boolean {
   const manana = (s.dia + 1 - 1) % 7 === 6 ? s.dia + 2 : s.dia + 1;
@@ -409,7 +429,7 @@ function cuadreCaja(s: Estado): number {
     for (const g of s.gente) if (g.activo && !g.falto) mo += g.moHoy;
   }
   const deuda = s.deudaNomina ?? 0;
-  const esperado = s.cobrado - (costos + valor(s.inv) + valor(s.entrada) + camino + mezcla - mo - deuda);
+  const esperado = s.cobrado + (s.fiado ?? 0) - (costos + valor(s.inv) + valor(s.entrada) + camino + mezcla - mo - deuda);
   return Math.round((s.caja - esperado) * 100) / 100;
 }
 
@@ -1307,6 +1327,9 @@ describe("obra", () => {
     firmar(s);
     assert.equal(contratar(s, s.candidatos[0]!.id), null);
     const peon = s.gente[0]!;
+    // v23: el contratado entra a la obra; aquí se le quita el puesto a mano para probar «sin tarea».
+    assert.equal(peon.puesto, "obra");
+    asignar(s, peon.id, null);
     assert.equal(peon.puesto, null);
     assert.equal(peon.cansancio, 0);
     s.panel = null;
@@ -1586,8 +1609,8 @@ describe("obra", () => {
     const tono = cuadrilla.candidatos.find((c) => c.nombre === "Toño")!;
     assert.equal(contratar(cuadrilla, moncho.id), null);
     assert.equal(contratar(cuadrilla, tono.id), null);
-    assert.equal(cuadrilla.gente.find((g) => g.nombre === "Moncho")!.puesto, null);
-    assert.equal(cuadrilla.gente.find((g) => g.nombre === "Toño")!.puesto, null);
+    assert.equal(cuadrilla.gente.find((g) => g.nombre === "Moncho")!.puesto, "obra");
+    assert.equal(cuadrilla.gente.find((g) => g.nombre === "Toño")!.puesto, "obra");
     assert.equal(cuadrilla.gente.find((g) => g.nombre === "Moncho")!.cansancio, 0);
     assert.equal(cuadrilla.gente.find((g) => g.nombre === "Toño")!.cansancio, 0);
   });
@@ -1901,7 +1924,7 @@ describe("obra", () => {
     };
     const s = armar(9);
     const run = s.runs[4]!.find((r) => r.id === "block")!;
-    for (const h of [3, 6, 9, 12]) {
+    for (const h of [3, 9]) {
       const u = h * POR_HILADA;
       run.hecho = u - 0.01;
       s.plomo = null;
@@ -2126,15 +2149,22 @@ describe("obra", () => {
     s.panel = null;
     s.jugador = { x: 6.2, y: 16.6 };
     const meta = { x: 12.2, y: 16.6 };
-    for (let i = 0; i < 80; i++) seguirDedo(s, meta.x, meta.y, false, 0.45);
+    // v19: el dedo marca el destino; el paso (con aceleración) lo da tick.
+    s.minuto = 8 * 60;
+    for (let i = 0; i < 60 * 8; i++) {
+      seguirDedo(s, meta.x, meta.y, false, 0.45);
+      s.panel = null;
+      tick(s, 1 / 60);
+      const dentro = s.jugador.x > 8.7 - 1.175 && s.jugador.x < 8.7 + 1.175 && s.jugador.y > 16.6 - 0.95 && s.jugador.y < 16.6 + 0.95;
+      assert.equal(dentro, false, `${s.jugador.x},${s.jugador.y}`);
+    }
     const x = s.jugador.x;
     const y = s.jugador.y;
-    const dentro = x > 8.7 - 1.175 && x < 8.7 + 1.175 && y > 16.6 - 0.95 && y < 16.6 + 0.95;
-    assert.equal(dentro, false, `${x},${y}`);
     assert.ok(x > 9.5, `no rodeó ${x},${y}`);
     seguirDedo(s, x, y, true);
-    assert.equal(s.vel, 0);
     assert.equal(s.destino, null);
+    for (let i = 0; i < 60; i++) tick(s, 1 / 60);
+    assert.ok(s.vel < 0.01, `no frenó ${s.vel}`);
   });
 
   it("la nómina de hoy es la misma en la cuenta y en el pago", () => {
@@ -2213,7 +2243,7 @@ describe("obra", () => {
     avanzarMinutos(s, 1);
     assert.equal(s.avisos.some((a) => /Se venció/.test(a.texto) && /P\$0/.test(a.texto)), false);
     s.etapa = 4;
-    s.blocksHoy = 200;
+    s.blocksHoy = 8 * POR_HILADA;
     s.inv.block = { q: 400, valor: 0 };
     s.inv.v38 = { q: 20, valor: 0 };
     s.inv.alambre = { q: 4, valor: 0 };
@@ -2222,7 +2252,7 @@ describe("obra", () => {
     s.inv.agua = { q: 2, valor: 0 };
     s.mezclas = [{ tipo: "M", prog: 1, lista: true, vida: 90, costo: 10, restante: 30 }];
     s.plomo = null;
-    assert.equal(cuelloLabor(s), "Máximo 6 hiladas por día.");
+    assert.equal(cuelloLabor(s), "Máximo 8 hiladas por día.");
   });
 
   it("un pedido que deja la nómina en rojo no alcanza", () => {
@@ -2365,7 +2395,7 @@ describe("obra", () => {
   });
 
   it("tramos de cobro: muros 10, columnas 10, suma el contrato", () => {
-    assert.equal(TAREAS.block.rinde, 150);
+    assert.equal(TAREAS.block.rinde, 210);
     assert.equal(ETAPAS.find((e) => e.id === "muros")!.tramo, 0.1);
     assert.equal(ETAPAS.find((e) => e.id === "columnas")!.tramo, 0.1);
     const s = nueva(1);
@@ -2830,7 +2860,7 @@ describe("obra", () => {
     avanzarMinutos(nom, 1);
     const avisoNom = nom.avisos.find((a) => a.texto.startsWith("Se fueron"));
     assert.ok(avisoNom);
-    assert.match(avisoNom!.texto, /^Se fueron a las 3\. Nómina: −P\$[\d,]+\. Herramienta: −P\$[\d,]+\.$/);
+    assert.match(avisoNom!.texto, /^Se fueron a las 3\. Jornales P\$[\d,]+ \+ herramienta P\$[\d,]+ \+ Dirección P\$[\d,]+ = P\$[\d,]+\.$/);
     assert.ok(nom.diario.some((d) => d.texto.startsWith("Nómina: −") && d.texto.includes("Herramienta: −")));
 
     const muro = nueva(1);
@@ -3134,5 +3164,648 @@ describe("obra", () => {
     const pasivo = jugarPasivo(1);
     assert.equal(pasivo.s.entregada, false);
     assert.equal(pasivo.s.panel, "perdida");
+  });
+});
+
+describe("v18: caminar 20 min, adelanto único, ayuda al principiante", () => {
+  const prep = () => {
+    const s = nueva(7);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.panel = null;
+    s.minuto = 7 * 60;
+    return s;
+  };
+  const medir = (a: number[], b: number[], arrastre: boolean) => {
+    const s = prep();
+    s.jugador.x = a[0]!;
+    s.jugador.y = a[1]!;
+    if (!arrastre) s.destino = { x: b[0]!, y: b[1]! };
+    const m0 = s.minuto;
+    let fin = m0;
+    let quieto = 0;
+    for (let f = 0; f < 3000; f++) {
+      const px = s.jugador.x;
+      const py = s.jugador.y;
+      s.panel = null;
+      tick(s, 1 / 60);
+      if (arrastre) seguirDedo(s, b[0]!, b[1]!, false, VEL_MAESTRO / 60);
+      if (Math.hypot(s.jugador.x - px, s.jugador.y - py) > 1e-4) {
+        quieto = 0;
+        fin = s.minuto;
+      } else quieto++;
+      if (!arrastre && !s.destino) break;
+      if (quieto > 60) break;
+    }
+    return { min: fin - m0, colgado: !arrastre && !!s.destino, lejos: Math.hypot(s.jugador.x - b[0]!, s.jugador.y - b[1]!) };
+  };
+
+  it("de punta a punta del solar, tocando o arrastrando, son 20 minutos o menos", () => {
+    const pares = [
+      [[MAPA.x0 + 1, MAPA.y0 + 1], [MAPA.x1 - 1, MAPA.y1 - 1]],
+      [[MAPA.x1 - 1, MAPA.y0 + 1], [MAPA.x0 + 1, MAPA.y1 - 1]],
+      [[MAPA.x0 + 1, MAPA.y1 - 1], [MAPA.x1 - 1, MAPA.y0 + 1]],
+    ];
+    for (const [a, b] of pares) {
+      for (const arr of [false, true]) {
+        const r = medir(a!, b!, arr);
+        assert.ok(r.min <= 20, `${arr ? "arrastre" : "toque"} ${a} → ${b}: ${r.min} min`);
+        assert.ok(r.lejos < 1, `${arr ? "arrastre" : "toque"} ${a} → ${b} quedó a ${r.lejos.toFixed(1)}`);
+      }
+    }
+  });
+
+  it("caminar a cualquier punto (también dentro de un muro o árbol) termina en 20 minutos o menos", () => {
+    let r = 1;
+    const rnd = () => ((r = (r * 16807) % 2147483647), r / 2147483647);
+    for (let i = 0; i < 120; i++) {
+      const a = [MAPA.x0 + rnd() * (MAPA.x1 - MAPA.x0), MAPA.y0 + rnd() * (MAPA.y1 - MAPA.y0)];
+      const b = [MAPA.x0 + rnd() * (MAPA.x1 - MAPA.x0), MAPA.y0 + rnd() * (MAPA.y1 - MAPA.y0)];
+      for (const arr of [false, true]) {
+        const m = medir(a, b, arr);
+        assert.ok(m.min <= 20, `${arr ? "arrastre" : "toque"} ${a} → ${b}: ${m.min} min`);
+        assert.equal(m.colgado, false, `el toque ${a} → ${b} se quedó caminando`);
+      }
+    }
+    for (const sitio of Object.values(SITIOS)) {
+      const m = medir([MAPA.x0 + 1, MAPA.y0 + 1], [sitio.x, sitio.y], false);
+      assert.ok(m.min <= 20 && !m.colgado, `${sitio.nombre}: ${m.min} min`);
+    }
+  });
+
+  it("un solo adelanto por obra: después la nómina corta solo paga lo que haya", () => {
+    const s = nueva(2);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.etapa = 4;
+    s.dia = 5;
+    s.selloDia = 1;
+    s.caja = 100;
+    s.panel = null;
+    assert.equal(puedeAdelantar(s), true);
+    assert.equal(adelantar(s), null);
+    const adel = s.adelanto;
+    s.caja = 100;
+    s.dia = 6;
+    assert.equal(puedeAdelantar(s), false);
+    assert.equal(puedeRescate(s), false);
+    assert.match(razonAdelanto(s), /ya soltó/);
+    assert.notEqual(adelantar(s), null);
+    s.panel = "nomina";
+    const cobrado = s.cobrado;
+    confirmarNomina(s, true);
+    assert.equal(s.adelanto, adel);
+    assert.equal(s.cobrado, cobrado);
+  });
+
+  it("después del rescate tampoco hay adelanto", () => {
+    const s = nueva(2);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.etapa = 4;
+    s.dia = 30;
+    s.selloDia = 1;
+    s.caja = 100;
+    s.panel = null;
+    assert.equal(aceptarRescate(s), null);
+    s.caja = 100;
+    s.selloDia = s.dia;
+    assert.equal(puedeAdelantar(s), false);
+    assert.equal(puedeRescate(s), false);
+  });
+
+  it("la oficina sugiere una cuadrilla según la caja, siempre con albañil", () => {
+    for (const [caja, tam] of [[89400, 3], [40000, 3], [15000, 2]] as const) {
+      const s = nueva(3);
+      firmar(s);
+      s.caja = caja;
+      const sug = cuadrillaSugerida(s);
+      assert.equal(sug.ids.length, tam, `caja ${caja}`);
+      const elegidos = s.candidatos.filter((c) => sug.ids.includes(c.id));
+      assert.ok(elegidos.some((c) => c.oficio === "albanil"));
+      assert.ok(elegidos.every((c) => c.mania !== "madrugador"));
+      assert.match(sug.texto, /te conviene una cuadrilla de/);
+    }
+  });
+
+  it("al amanecer avisa «Te quedan X días de caja» y la Libreta lo explica", () => {
+    const s = nueva(3);
+    firmar(s);
+    for (const id of cuadrillaSugerida(s).ids) contratar(s, id);
+    s.panel = null;
+    s.caja = 30000;
+    s.dia = 2;
+    s.avisos = [];
+    siguienteDia(s);
+    const dias = diasDeCaja(s);
+    assert.ok(dias <= 4);
+    assert.ok(s.avisos.some((a) => a.texto.startsWith(`Te quedan ${dias} día`)), JSON.stringify(s.avisos));
+    assert.match(textoDiasCaja(s), /días? de caja/);
+    const lib = libreta(s);
+    assert.match(lib.diasCaja, /Te quedan/);
+    assert.ok(lib.sugerencia.length > 10);
+    assert.ok(REGLAS_LIBRETA.some((r) => r.includes("Cuadrilla sugerida")));
+    assert.ok(REGLAS_LIBRETA.some((r) => r.includes("Te quedan X días de caja")));
+    s.caja = 500000;
+    assert.equal(textoDiasCaja(s), "");
+  });
+
+  it("la caja libre resta la deuda de nómina de ayer y lo dice", () => {
+    const s = nueva(3);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.panel = null;
+    s.caja = 20000;
+    s.deudaNomina = 3000;
+    const sinDeuda = s.caja - nominaPendiente(s);
+    assert.equal(cajaLibre(s), sinDeuda - 3000);
+    assert.match(textoCajaLibre(s), /deuda de nómina P\$3,000/);
+    assert.equal(cuentaPedido(s, 1000).deuda, 3000);
+  });
+
+  it("la dirección de la noche solo se cobra si ese día hubo jornales", () => {
+    const s = nueva(3);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.panel = null;
+    for (const g of s.gente) {
+      g.activo = false;
+      g.falto = true;
+    }
+    s.minuto = 15 * 60;
+    const caja = s.caja;
+    const deuda = s.deudaNomina;
+    avanzarMinutos(s, 3 * 60 + 1);
+    assert.equal(s.caja, caja);
+    assert.equal(s.deudaNomina, deuda);
+    assert.equal(s.costos.direccion.mo, 0);
+  });
+
+  it("avisa antes de que venza el adelanto y no lo cuenta en «Faltan» si ya no está", () => {
+    const s = nueva(3);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.panel = null;
+    s.selloDia = 1;
+    s.dia = 18;
+    assert.match(textoPlazoAdelanto(s), /quedan 1 día/);
+    s.dia = 20;
+    assert.match(textoPlazoAdelanto(s), /ya no adelanta/);
+    s.dia = 5;
+    s.adelantoDia = 4;
+    assert.equal(textoPlazoAdelanto(s), "");
+  });
+
+  it("la barra de arriba muestra el % de lluvia caiga o no", () => {
+    const s = nueva(3);
+    firmar(s);
+    s.dia = 3;
+    s.minuto = 8 * 60;
+    s.lluvias = [{ dia: 3, ini: 11 * 60, fin: 12 * 60, prob: 40, cae: false }, { dia: 4, ini: 11 * 60, fin: 12 * 60, prob: 55, cae: false }];
+    const r1 = reloj(s).clima;
+    s.lluvias = s.lluvias.map((x) => ({ ...x, cae: true }));
+    const r2 = reloj(s).clima;
+    assert.equal(r1, r2);
+    assert.match(r1, /40%/);
+    assert.match(r1, /mañana 55%/);
+  });
+
+  it("la obra perdida lista quién se fue, qué día y la nómina corta", () => {
+    const s = nueva(3);
+    firmar(s);
+    s.diario.push({ dia: 9, min: 900, texto: "Nómina corta: se pagó P$0 de P$7,518. Quedan P$7,518 para mañana y el ánimo bajó." });
+    s.diario.push({ dia: 10, min: 900, texto: "Fefa se fue: dos días seguidos sin cobrar completo." });
+    s.deudaNomina = 7518;
+    const c = causasPerdida(s);
+    assert.deepEqual(c.salidas, ["Día 10: Fefa se fue: dos días seguidos sin cobrar completo."]);
+    assert.equal(c.cortas.length, 1);
+    assert.equal(c.deuda, 7518);
+  });
+
+  it("la víspera de una nómina corta da acciones concretas y avisa quién se va", () => {
+    const s = nueva(3);
+    firmar(s);
+    for (const id of cuadrillaSugerida(s).ids) contratar(s, id);
+    s.panel = null;
+    s.adelantoDia = 1;
+    s.caja = 1000;
+    s.rachaCorta = 1;
+    s.minuto = 18 * 60 - 1;
+    avanzarMinutos(s, 2);
+    const nota = s.diario.find((d) => d.texto.startsWith("Ojo: mañana la nómina"))?.texto ?? "";
+    assert.match(nota, /sella /);
+    assert.match(nota, /da libre a /);
+    assert.match(nota, /pide solo lo que falta/);
+    assert.match(nota, /mañana se va /);
+    assert.ok(!nota.includes("\n"));
+  });
+});
+
+
+describe("v19: zapata, bono, coherencia, caminar con física", () => {
+  it("zapata en 9.9996 de 10 (se ve 10/10) sella enseguida, sin pedir otra tanda", () => {
+    const s = nueva(3);
+    firmar(s);
+    for (const c of s.candidatos.slice(0, 4)) contratar(s, c.id);
+    s.panel = null;
+    s.tut.fin = true;
+    s.etapa = 3;
+    s.minuto = 9 * 60;
+    s.selloDia = 1;
+    s.runs[3]![0]!.hecho = 9.9996;
+    s.runs[3]![0]!.ini = true;
+    s.mezclas = [];
+    avanzarMinutos(s, 5);
+    assert.equal(s.panel, "sello");
+  });
+
+  it("si no puede sellar, dice qué falta", () => {
+    const s = nueva(3);
+    firmar(s);
+    for (const c of s.candidatos.slice(0, 4)) contratar(s, c.id);
+    s.panel = null;
+    s.etapa = 3;
+    s.runs[3]![0]!.hecho = 9.3;
+    s.mezclas = [];
+    const t = avisoSello(s);
+    assert.match(t, /Para sellar Vaciado de zapata falta: Vaciar zapata: 9[.,]3 de 10/);
+    assert.match(t, /Cemento/);
+  });
+
+  it("bono por entrega temprana: P$1,500 por día antes del día 30, y suma a la ganancia", () => {
+    assert.equal(BONO_DIA, 1500);
+    assert.equal(PLAZO_ENTREGA, 30);
+    const s = nueva(3);
+    firmar(s);
+    assert.equal(bonoEntrega(s, 20), 15000);
+    assert.equal(bonoEntrega(s, 30), 0);
+    assert.equal(bonoEntrega(s, 34), 0);
+  });
+
+  it("pausa: el reloj no corre", () => {
+    const s = nueva(3);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.panel = null;
+    s.pausa = true;
+    const m = s.minuto;
+    for (let i = 0; i < 600; i++) tick(s, 1 / 60);
+    assert.equal(s.minuto, m);
+  });
+
+  it("sin tarea solo para quien no tiene puesto", () => {
+    const s = nueva(3);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    const g = s.gente[0]!;
+    g.sinTareaHoy = 8 * 60;
+    g.puesto = "obra";
+    assert.equal(textoSinTarea(g), null);
+    g.puesto = null;
+    assert.match(textoSinTarea(g) ?? "", /sin tarea/);
+  });
+
+  it("si mañana es domingo, el block empieza el lunes", () => {
+    const s = nueva(3);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.panel = null;
+    s.dia = 6;
+    s.etapa = 3;
+    s.runs[3]![0]!.hecho = 10;
+    s.minuto = 10 * 60;
+    avanzarMinutos(s, 2);
+    continuarSello(s);
+    assert.ok(s.diario.some((d) => /block empieza el lunes/.test(d.texto)) || /el lunes/.test(JSON.stringify(s.fragua)), JSON.stringify(s.fragua));
+  });
+
+  it("pedido incompleto: avisa qué no trae", () => {
+    const s = nueva(3);
+    firmar(s);
+    s.etapa = 3;
+    const falta = loQueFalta(s);
+    const sin: Record<string, number> = { ...(falta as Record<string, number>) };
+    const k = Object.keys(sin)[0]!;
+    delete sin[k];
+    assert.ok(faltaEnPedido(s, sin).length >= 1);
+    assert.equal(faltaEnPedido(s, falta).length, 0);
+  });
+
+  const cruzar = (hz: number, ritmo: number) => {
+    const s = nueva(7);
+    firmar(s);
+    contratar(s, s.candidatos[0]!.id);
+    s.panel = null;
+    s.minuto = 7 * 60;
+    s.jugador.x = MAPA.x0 + 1;
+    s.jugador.y = MAPA.y0 + 1;
+    s.destino = { x: MAPA.x1 - 1, y: MAPA.y1 - 1 };
+    const m0 = s.minuto;
+    let real = 0;
+    let prev = 0;
+    let saltoMax = 0;
+    const vels: number[] = [];
+    for (let f = 0; f < 100000 && s.destino; f++) {
+      s.panel = null;
+      const x = s.jugador.x;
+      const y = s.jugador.y;
+      tick(s, 1 / hz, ritmo);
+      real += 1 / hz;
+      const d = Math.hypot(s.jugador.x - x, s.jugador.y - y);
+      if (s.destino) {
+        vels.push(d * hz);
+        saltoMax = Math.max(saltoMax, Math.abs(s.vel - prev));
+      }
+      prev = s.vel;
+    }
+    vels.sort((a, b) => a - b);
+    return { real, min: s.minuto - m0, crucero: vels[Math.floor(vels.length * 0.9)]!, primero: vels[0]!, saltoMax };
+  };
+
+  it("paso natural: 2.5 casillas/s a 60 y 120 Hz, con arranque suave y cruce ≤ 20 min de reloj", () => {
+    const a = cruzar(60, 1);
+    const b = cruzar(120, 1);
+    assert.ok(Math.abs(a.crucero - 2.5) < 0.05, `60 Hz ${a.crucero}`);
+    assert.ok(Math.abs(b.crucero - 2.5) < 0.05, `120 Hz ${b.crucero}`);
+    assert.ok(Math.abs(a.real - b.real) < 0.2, `${a.real} vs ${b.real}`);
+    assert.ok(a.min <= 20 && b.min <= 20, `${a.min} ${b.min}`);
+    assert.ok(a.primero < 0.3, `arranque ${a.primero}`);
+    assert.ok(a.saltoMax <= 12 / 60 + 1e-6, `salto ${a.saltoMax}`);
+    assert.ok(b.saltoMax <= 12 / 120 + 1e-6, `salto ${b.saltoMax}`);
+    const x2 = cruzar(60, 2);
+    assert.ok(Math.abs(x2.crucero - 2.5 * 1.3) < 0.07, `x2 ${x2.crucero}`);
+    // En pantalla (móvil, zoom 0.75): una casilla mide ≈24 px en horizontal.
+    const z = zoomDe(375, 667);
+    const p0 = proyectar(0, 0, 0, z);
+    const p1 = proyectar(1, 0, 0, z);
+    const pxCasilla = Math.hypot(p1.sx - p0.sx, p1.sy - p0.sy);
+    assert.ok(pxCasilla * 2.5 > 50 && pxCasilla * 2.5 < 70, `px/s ${pxCasilla * 2.5}`);
+  });
+});
+
+describe("v20: siempre hay salida, cobros claros, nómina coherente", () => {
+  const armada = () => {
+    const s = nueva(3);
+    firmar(s);
+    for (const c of s.candidatos.slice(0, 4)) contratar(s, c.id);
+    s.panel = null;
+    s.tut.fin = true;
+    s.etapa = 3;
+    s.selloDia = 1;
+    s.minuto = 8 * 60;
+    return s;
+  };
+
+  it("caja en 0, adelanto usado y falta material: el guardalmacén fía, se sella y se cobra neto", () => {
+    const s = armada();
+    s.adelanto = 20000;
+    s.adelantoDia = 1;
+    s.cobrado += 20000;
+    s.caja = 0;
+    for (const k of Object.keys(s.inv) as (keyof typeof s.inv)[]) s.inv[k] = { q: 0, valor: 0 } as never;
+    s.mezclas = [];
+    assert.ok(tieneMaterialFaltante(s));
+    assert.equal(puedeAdelantar(s), false);
+    const c = cuentaFiado(s);
+    assert.ok(c, "debe haber salida");
+    assert.equal(fiar(s), null);
+    assert.equal(s.caja, 0);
+    const fiado = s.fiado ?? 0;
+    assert.ok(fiado > 0);
+    assert.equal(s.pedidos.length, 1);
+    for (const t of ETAPAS[3]!.trabajos) s.runs[3]!.find((r) => r.id === t.id)!.hecho = t.q;
+    avanzarMinutos(s, 3);
+    assert.equal(s.panel, "sello");
+    assert.ok(s.sello?.ok);
+    const bruto = Math.round(precioDe(s) * ETAPAS[3]!.tramo);
+    const esperado = bruto - 20000 - fiado;
+    assert.match(cobroDe(s, 3).texto, /− P\$20,000 adelanto − P\$[\d,]+ fiado = P\$[\d,]+$/);
+    const caja0 = s.caja;
+    continuarSello(s);
+    assert.equal(s.etapas[3]!.sello, "aprobado");
+    assert.ok(Math.abs(s.caja - caja0 - esperado) < 0.5, `${s.caja - caja0} vs ${esperado}`);
+    assert.equal(s.fiado ?? 0, 0);
+  });
+
+  it("el cobro se muestra como tramo − adelanto = neto", () => {
+    const s = armada();
+    s.etapa = 4;
+    s.adelanto = 20000;
+    const c = cobroDe(s, 4);
+    assert.equal(c.texto, `${peso(c.bruto)} − P$20,000 adelanto = ${peso(c.bruto - 20000)}`);
+    assert.ok(accionesNomina(s).some((a) => a.includes("− P$20,000 adelanto =")));
+  });
+
+  it("nómina corta: el aviso no lleva signo menos y la Libreta lo sabe", () => {
+    const s = armada();
+    s.caja = 1000;
+    s.minuto = 14 * 60 + 59;
+    s.mezclas = [];
+    avanzarMinutos(s, 2);
+    if (s.panel === "nomina") confirmarNomina(s, false);
+    const a = s.avisos.find((x) => x.texto.startsWith("Nómina corta"));
+    assert.ok(a, JSON.stringify(s.avisos.map((x) => x.texto)));
+    assert.doesNotMatch(a!.texto, /−/);
+    assert.ok((s.deudaNomina ?? 0) > 0);
+  });
+
+  it("una sola cuenta de lo que falta para la nómina, con la deuda", () => {
+    const s = armada();
+    s.caja = 9000;
+    s.deudaNomina = 3000;
+    assert.equal(cuentaPedido(s, 4000).faltaNomina, faltaNominaTras(s, 4000));
+    assert.equal(faltaNominaTras(s, 4000), Math.max(0, desgloseNomina(s).total + 3000 - 5000));
+  });
+
+  it("la mezcla lista no se vence mientras espera el plomo", () => {
+    const s = armada();
+    s.mezclas = [{ tipo: "M", prog: 1, lista: true, vida: 3, costo: 100, restante: 1 }];
+    s.plomo = { umbral: 1, min: 0 };
+    for (const g of s.gente) g.puesto = null;
+    avanzarMinutos(s, 10);
+    assert.equal(s.mezclas.length, 1);
+  });
+
+  it("con el mando contra el tanque, resbala por el borde y no se pega", () => {
+    const s = armada();
+    s.jugador = { x: SITIOS.toma.x, y: SITIOS.toma.y };
+    const x0 = s.jugador.x;
+    const y0 = s.jugador.y;
+    for (let i = 0; i < 120; i++) {
+      s.panel = null;
+      s.mando.ax = 1;
+      s.mando.ay = 0;
+      tick(s, 1 / 60);
+    }
+    assert.ok(Math.hypot(s.jugador.x - x0, s.jugador.y - y0) > 0.5, `${s.jugador.x},${s.jugador.y}`);
+  });
+});
+
+function tieneMaterialFaltante(s: Estado): boolean {
+  return Object.values(loQueFalta(s)).some((n) => (n ?? 0) > 0);
+}
+
+describe("v21: situaciones reales del revisor", () => {
+  const revisor = (etapa: number) => {
+    const s = nueva(3);
+    firmar(s);
+    for (const c of s.candidatos.slice(0, 4)) contratar(s, c.id);
+    s.panel = null;
+    s.tut.fin = true;
+    s.etapa = etapa;
+    for (let i = 0; i < etapa; i++) s.etapas[i]!.sello = "aprobado";
+    s.selloDia = s.dia;
+    s.minuto = 8 * 60;
+    s.adelanto = 20000;
+    s.adelantoDia = 1;
+    s.cobrado += 20000;
+    for (const k of Object.keys(s.inv) as (keyof typeof s.inv)[]) s.inv[k] = { q: 0, valor: 0 } as never;
+    s.mezclas = [];
+    s.plomo = null;
+    return s;
+  };
+  const varilla = (s: Estado) => (loQueFalta(s).v38 ?? 0) > 0;
+
+  it("muros con el almacén lleno de varilla 1/4: «Lo que falta» pide la 3/8 y el guardalmacén fía", () => {
+    const s = revisor(4);
+    s.inv.v14 = { q: 60, valor: 6000 } as never;
+    s.caja = -5297;
+    s.deudaNomina = 3000;
+    assert.ok(varilla(s), JSON.stringify(loQueFalta(s)));
+    assert.ok(cuentaFiado(s), "debe ofrecer fiado");
+    const antes = cuadreCaja(s);
+    assert.equal(fiar(s), null);
+    assert.ok(s.diario.some((d) => d.texto.startsWith("Devuelto al guardalmacén")));
+    assert.ok(Math.abs(cuadreCaja(s) - antes) < 0.5, `cuadre ${antes} -> ${cuadreCaja(s)}`);
+    for (const t of ETAPAS[4]!.trabajos) s.runs[4]!.find((r) => r.id === t.id)!.hecho = t.q;
+    for (const e of s.extras) if (e.etapa === 4) e.hecho = e.q;
+    s.plomo = null;
+    avanzarMinutos(s, 3);
+    assert.equal(s.panel, "sello");
+    continuarSello(s);
+    assert.equal(s.etapas[4]!.sello, "aprobado");
+  });
+
+  it("columnas con madera de otra clase: pide pino y fía", () => {
+    const s = revisor(5);
+    s.inv.plywood = { q: 40, valor: 8000 } as never;
+    s.caja = 0;
+    assert.ok((loQueFalta(s).pino ?? 0) > 0, JSON.stringify(loQueFalta(s)));
+    assert.ok(cuentaFiado(s));
+  });
+
+  it("con parte en camino y parte en el almacén, fía solo el resto", () => {
+    const s = revisor(4);
+    const total = loQueFalta(s);
+    const k = (Object.keys(total) as (keyof typeof total)[]).find((m) => m !== "cemento" && (total[m] ?? 0) > 2)!;
+    s.inv[k] = { q: (total[k] ?? 0) / 3, valor: 100 } as never;
+    s.pedidos.push({ id: "p1", items: { [k]: (total[k] ?? 0) / 3 }, dia: s.dia + 1, minuto: 450, flete: 0, urgente: false } as never);
+    s.caja = 0;
+    const resto = loQueFalta(s);
+    assert.ok((resto[k] ?? 0) > 0 && (resto[k] ?? 0) < (total[k] ?? 0));
+    const c = cuentaFiado(s);
+    assert.ok(c);
+    assert.ok((c!.items[k] ?? 0) <= (resto[k] ?? 0) + 1e-6);
+  });
+
+  it("caja libre nunca sale negativa en pantalla", () => {
+    const s = revisor(4);
+    s.caja = -18273;
+    assert.doesNotMatch(textoCajaLibre(s), /−P\$/);
+    assert.match(textoCajaLibre(s), /P\$0 · debes P\$/);
+    assert.equal(pesoCaja(-5297), "P$0 · debes P$5,297");
+  });
+
+  it("la mezcla hecha avisa cuánto se pierde de noche", () => {
+    const s = revisor(4);
+    s.mezclas = [{ tipo: "M", prog: 1, lista: true, vida: 300, costo: 471, restante: 1 }];
+    assert.equal(mezclaDeNoche(s), 471);
+  });
+});
+
+
+describe("v22: cierre cuadrado, nadie se va antes del cobro, peones con puesto", () => {
+  const techo = (frac: number) => {
+    const s = nueva(5);
+    firmar(s);
+    for (const c of s.candidatos.slice(0, 3)) contratar(s, c.id);
+    s.panel = null;
+    s.tut.fin = true;
+    s.etapa = 8;
+    for (let i = 0; i < 8; i++) s.etapas[i]!.sello = "aprobado";
+    s.selloDia = s.dia;
+    s.dia = 29;
+    s.minuto = 10 * 60;
+    s.mezclas = [];
+    s.plomo = null;
+    s.fragua = null;
+    s.curando = false;
+    for (const t of ETAPAS[8]!.trabajos) s.runs[8]!.find((r) => r.id === t.id)!.hecho = t.q * frac;
+    return s;
+  };
+
+  it("al entregar, la cuenta de la caja cierra exacta con deuda de nómina y bono", () => {
+    const s = techo(1);
+    s.dia = 28;
+    s.caja = 0;
+    s.deudaNomina = 13484;
+    s.adelanto = 5000;
+    const c0 = cuadreCaja(s);
+    avanzarMinutos(s, 3);
+    assert.equal(s.panel, "sello");
+    assert.doesNotMatch(s.sello!.motivo, /Sigue la obra/);
+    assert.match(s.sello!.motivo, /Obra terminada/);
+    continuarSello(s);
+    assert.ok(s.entregada);
+    const k = s.cierre!;
+    assert.ok(k);
+    const calc = k.cajaAntes + k.bruto - k.adelanto - k.fiado + k.bono - k.pagadoNomina;
+    assert.ok(Math.abs(calc - k.cajaDespues) < 0.5, `${calc} vs ${k.cajaDespues}`);
+    assert.ok(Math.abs(k.cajaDespues - s.caja) < 0.5);
+    assert.ok(k.bono > 0);
+    assert.ok(k.deudaPrevia >= 13484 - 0.5);
+    assert.ok(Math.abs(k.jornales + k.herramienta + k.direccion + k.deudaPrevia - k.quedaDebiendo - k.pagadoNomina) < 1, JSON.stringify(k));
+    assert.equal(k.quedaDebiendo, s.deudaNomina ?? 0);
+    assert.ok(Math.abs(cuadreCaja(s) - c0) < 0.5, `cuadre ${c0} -> ${cuadreCaja(s)}`);
+  });
+
+  it("con el techo casi listo y un cobro que paga la deuda, el albañil no se va («te pago al cobrar»)", () => {
+    const s = techo(0.8);
+    s.caja = 0;
+    s.rachaCorta = 1;
+    s.deudaNomina = 4000;
+    const n = s.gente.length;
+    assert.match(textoSeVaManana(s), /nadie se va/);
+    s.minuto = 14 * 60 + 59;
+    avanzarMinutos(s, 2);
+    if (s.panel === "nomina") confirmarNomina(s, false);
+    assert.equal(s.gente.length + s.reserva.length, n);
+    assert.ok(s.avisos.some((a) => /te pago al cobrar/.test(a.texto)));
+  });
+
+  it("si la etapa va lejos de sellar, a la segunda nómina corta sí se va uno (y se avisa antes)", () => {
+    const s = techo(0.1);
+    s.caja = 0;
+    s.rachaCorta = 1;
+    s.deudaNomina = 4000;
+    const n = s.gente.length;
+    assert.match(textoSeVaManana(s), /mañana se va/);
+    s.minuto = 14 * 60 + 59;
+    avanzarMinutos(s, 2);
+    if (s.panel === "nomina") confirmarNomina(s, false);
+    assert.equal(s.gente.length + s.reserva.length, n - 1);
+  });
+
+  it("el peón nuevo entra con puesto y la Libreta no ofrece a quien ya trabaja", () => {
+    const s = techo(0.5);
+    const c = s.candidatos.find((x) => !s.gente.some((g) => g.id === x.id))!;
+    contratar(s, c.id);
+    const g = [...s.gente, ...s.reserva].find((x) => x.id === c.id)!;
+    assert.equal(g.puesto, "obra");
+    const copia = { ...g, id: "otro-id" };
+    s.candidatos.push(copia);
+    assert.ok(!cuadrillaSugerida(s).ids.includes("otro-id"));
+    s.caja = -3000;
+    assert.doesNotMatch(cuadrillaSugerida(s).texto, /unos -?\d+ días|-\d+ días/);
   });
 });

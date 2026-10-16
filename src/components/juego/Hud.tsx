@@ -5,6 +5,7 @@ import {
   TUTORIAL,
   diaSemana,
   peso,
+  pesoCaja,
   type Oficio,
 } from "@/game/datos";
 import {
@@ -15,11 +16,15 @@ import {
   puedeAdelantar,
   razonAdelanto,
   reloj,
+  relojParado,
   textoFaltaNomina,
   textoMezcla,
   minutosMezcla,
   textoTopeAdelanto,
   type Estado,
+  avisoSello,
+  cuentaFiado,
+  desgloseNomina,
 } from "@/game/motor";
 import { alCambioGuia, cerrarGuia, guiaAnclar, guiaVisible } from "@/game/guia";
 import { VERSION_REPORTE, reportarObra } from "@/lib/reporte";
@@ -202,6 +207,7 @@ export function Hud({
   onTerminar,
   onQuitar,
   onAdelanto,
+  onFiar,
   vuelo,
 }: {
   s: Estado;
@@ -213,6 +219,7 @@ export function Hud({
   onTerminar: () => void;
   onQuitar: (id: number) => void;
   onAdelanto: () => void;
+  onFiar: () => void;
   vuelo?: "entra" | "sale" | null;
 }) {
   const [chico, setChico] = useState(false);
@@ -234,6 +241,7 @@ export function Hud({
     window.addEventListener("resize", mq);
     return () => window.removeEventListener("resize", mq);
   }, []);
+  const [nomAbierta, setNomAbierta] = useState(false);
   const quitar = useRef(onQuitar);
   quitar.current = onQuitar;
   const born = useRef(new Map<number, number>());
@@ -276,7 +284,7 @@ export function Hud({
     return (
       <div className="pointer-events-none absolute inset-0 z-10">
         <div className="flex items-start justify-end px-2 pt-1.5 min-[900px]:pt-[52px]">
-          <button type="button" onClick={onPausa} className={"pointer-events-auto border border-papel/40 bg-fondo/90 px-3 font-hand text-papel " + (chico ? "min-h-9 text-base" : "min-h-11 text-xl")}>
+          <button type="button" onClick={onPausa} className={"pointer-events-auto border border-papel/40 bg-fondo/90 px-3 font-hand text-papel " + (chico ? "min-h-11 min-w-11 text-base" : "min-h-11 text-xl")}>
             Pausa
           </button>
         </div>
@@ -302,12 +310,15 @@ export function Hud({
   const avisos = s.avisos.filter((a) => !a.texto.includes("dañado") && !avisoRepite(a.texto, cartel)).slice(-1);
   const btn =
     "pointer-events-auto border border-papel/40 bg-fondo/90 font-hand text-papel " +
-    (bajo ? "min-h-8 px-1.5 text-xs" : chico ? "min-h-9 px-1.5 text-xs" : movil ? "min-h-11 px-2 text-base" : "min-h-11 px-2 text-sm");
+    // v19: todo botón tocable mide al menos 44 px.
+    (bajo ? "min-h-11 min-w-11 px-1.5 text-xs" : chico ? "min-h-11 min-w-11 px-1.5 text-xs" : movil ? "min-h-11 min-w-11 px-2 text-base" : "min-h-11 min-w-11 px-2 text-sm");
   const mundo = !s.panel;
   const adelanto = puedeAdelantar(s) && !s.entregada;
   const faltaNomina = mundo ? textoFaltaNomina(s) : null;
   const quiereGuia = mundo && paso >= 0 && paso < TUTORIAL.length && !repiteCartel(TUTORIAL[paso] ?? "", cartel);
-  const guiaOn = quiereGuia && guiaVisible(paso, true);
+  // v18: los avisos de caja y adelanto pasan delante de la guía, para que el principiante los vea.
+  const urgente = avisos.length > 0 && /^(Te quedan|Ojo con el adelanto|Pasaron 18 días)/.test(avisos[0]!.texto);
+  const guiaOn = quiereGuia && !urgente && guiaVisible(paso, true);
   const avisoOn = mundo && !guiaOn && avisos.length > 0;
   const etapaNombre = ETAPAS[s.etapa]?.nombre ?? "Entrega";
 
@@ -345,9 +356,13 @@ export function Hud({
         <div className="flex items-center gap-2 bg-fondo/90 px-2 py-1 min-[900px]:mt-[52px]">
           <div className="font-hand text-sm leading-none whitespace-nowrap">
             {r.hora} {cortoDia(s.dia)} {s.dia}
+            {relojParado(s) && s.firmado && !s.entregada ? <span data-reloj-parado> · ⏸ reloj parado</span> : null}
+          </div>
+          <div className="truncate font-hand text-[11px] leading-none text-papel/80" data-clima>
+            {r.clima}
           </div>
           <div data-caja className={"font-hand text-sm leading-none text-[#f3e6c4] " + (late ? "caja-latido" : "")}>
-            {peso(s.caja)}
+            {pesoCaja(s.caja)}
           </div>
           {adelanto ? (
             <button type="button" onClick={onAdelanto} className="pointer-events-auto font-hand text-[11px] text-oro underline">
@@ -393,7 +408,11 @@ export function Hud({
               </svg>
               <div className={"font-hand leading-none text-papel " + (chico ? "text-base" : "text-xl")}>
                 {r.hora} {cortoDia(s.dia)} {s.dia}
+                {relojParado(s) && s.firmado && !s.entregada ? <span data-reloj-parado> · ⏸ reloj parado</span> : null}
               </div>
+            </div>
+            <div className={"truncate font-hand leading-tight text-papel/80 " + (chico ? "text-[11px]" : "text-xs")} data-clima>
+              {r.clima}
             </div>
             <div className="mt-1 h-0.5 w-full bg-tierra">
               <div className="h-full bg-oro" style={{ width: `${r.progreso * 100}%` }} />
@@ -401,7 +420,7 @@ export function Hud({
           </div>
           <div className="hidden h-12 min-w-[320px] flex-1 min-[900px]:block" aria-hidden="true" />
           <div data-caja className={"pointer-events-auto relative shrink-0 bg-fondo/90 px-2.5 py-1.5 text-right " + (late ? "caja-latido" : "") + (chico ? " max-w-[52%]" : "")}>
-            <div className={"font-hand leading-none text-[#f3e6c4] " + (chico ? "text-base" : "text-xl")}>{peso(s.caja)}</div>
+            <div className={"font-hand leading-none text-[#f3e6c4] " + (chico ? "text-base" : "text-xl")}>{pesoCaja(s.caja)}</div>
             <div className="h-4 text-right leading-none">
               {adelanto ? (
                 <button type="button" onClick={onAdelanto} className="font-hand text-[11px] text-oro underline">
@@ -418,7 +437,7 @@ export function Hud({
                   />
                 ))
               : null}
-            <div className="mt-0.5 flex justify-end gap-1">
+            <div className="mt-0.5 flex justify-end gap-2">
               <button type="button" onClick={onLibreta} className={btn}>
                 Libreta
               </button>
@@ -535,17 +554,53 @@ export function Hud({
         <p className="pointer-events-auto mx-auto mt-2 max-w-md bg-papel px-3 py-1 text-center font-hand text-tinta">{avisoReporte}</p>
       ) : null}
 
+      {mundo && avisoSello(s) ? (
+        <p className="pointer-events-none mx-auto mt-1 max-w-md bg-papel/95 px-3 py-1 text-center font-hand text-sm text-tinta" data-falta-sello>
+          {avisoSello(s)}
+        </p>
+      ) : null}
+
+      {mundo && cuentaFiado(s) ? (
+        <div className="pointer-events-auto mx-auto mt-1 w-full max-w-md border-2 border-rojo bg-papel/95 px-3 py-1 font-hand text-sm text-tinta" data-salida>
+          <p>Sin caja ni adelanto para lo que falta. Salida: el guardalmacén fía {peso(cuentaFiado(s)!.total)} y se cobra solo del próximo tramo.</p>
+          <button type="button" onClick={onFiar} className="mt-1 min-h-11 border-2 border-tinta bg-papel-2 px-3 text-tinta">
+            Pedir fiado lo de esta etapa
+          </button>
+        </div>
+      ) : null}
+
       {faltaNomina ? (
-        <div className="pointer-events-auto mx-auto mt-2 w-full max-w-md border border-tinta bg-papel px-3 py-2 text-center font-hand text-base text-tinta">
-          <p>{faltaNomina}</p>
-          <p className="mt-1 text-sm">{textoTopeAdelanto(s)}</p>
-          {puedeAdelantar(s) ? (
-            <button type="button" onClick={onAdelanto} className="mt-2 min-h-11 border-2 border-tinta bg-papel-2 px-3 text-tinta">
-              Pedir adelanto a Doña Carmen
-            </button>
-          ) : (
-            <p className="mt-1 text-sm">{razonAdelanto(s)}</p>
-          )}
+        // v19: una línea compacta que se abre al tocarla, no una tarjeta fija en el centro.
+        <div className="pointer-events-auto mx-auto mt-1 w-full max-w-md bg-papel/95 font-hand text-tinta" data-nomina-linea>
+          <button
+            type="button"
+            aria-expanded={nomAbierta}
+            onClick={() => setNomAbierta((v) => !v)}
+            className="flex min-h-11 w-full items-center gap-2 border border-tinta px-3 text-left text-sm"
+          >
+            <span aria-hidden="true">{nomAbierta ? "▾" : "▸"}</span>
+            <span className="min-w-0 flex-1 truncate">{faltaNomina}</span>
+          </button>
+          {nomAbierta ? (
+            <div className="border border-t-0 border-tinta px-3 py-2 text-sm">
+              {(() => {
+                const d = desgloseNomina(s);
+                return (
+                  <p>
+                    Nómina de las 3: jornales {peso(d.jornales)} + herramienta {peso(d.herramienta)} + Dirección {peso(d.direccion)} = {peso(d.total)}
+                  </p>
+                );
+              })()}
+              <p>{textoTopeAdelanto(s)}</p>
+              {puedeAdelantar(s) ? (
+                <button type="button" onClick={onAdelanto} className="mt-2 min-h-11 border-2 border-tinta bg-papel-2 px-3 text-tinta">
+                  Pedir adelanto a Doña Carmen
+                </button>
+              ) : (
+                <p className="mt-1">{razonAdelanto(s)}</p>
+              )}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -581,11 +636,16 @@ export function Hud({
           {...alToque(onTerminar)}
           className={
             "pointer-events-auto absolute z-20 border border-papel/40 bg-fondo font-hand text-papel " +
-            (movil ? "right-[8.6rem] bottom-4 min-h-11 px-3 text-base" : "right-2 bottom-2 min-h-11 px-3 text-xl")
+            (movil ? "right-[8.6rem] bottom-4 min-h-11 min-w-11 px-3 text-base" : "right-2 bottom-2 min-h-11 min-w-11 px-3 text-xl")
           }
         >
           Terminar{movil ? "" : " (T)"}
         </button>
+      ) : null}
+      {s.pausa ? (
+        <div className="absolute left-1/2 top-14 z-30 -translate-x-1/2 border-2 border-papel bg-fondo px-4 py-1 font-display text-2xl text-papel" role="status" data-pausado>
+          Pausado · el reloj no corre
+        </div>
       ) : null}
     </div>
   );

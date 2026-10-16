@@ -1,5 +1,9 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import {
+  ANTICIPO,
+  BONO_DIA,
+  KIT_PRECIO,
+  PLAZO_ENTREGA,
   COMPRA,
   CONTRATO,
   CAJA_INICIAL,
@@ -23,6 +27,7 @@ import {
   jornalDe,
   num,
   peso,
+  pesoCaja,
   type Cantidades,
   type Mat,
   type Oficio,
@@ -59,6 +64,19 @@ import {
   pedirTambien,
   partesMuerto,
   precioDe,
+  adelantoUsado,
+  faltaEnPedido,
+  nominaDiaDe,
+  mezclaDeNoche,
+  cobroDe,
+  cuentaFiado,
+  fiar,
+  faltaParaSellar,
+  bonoEntrega,
+  causasPerdida,
+  razonAdelanto,
+  cuadrillaSugerida,
+  diasDeCaja,
   puedeAdelantar,
   puedeRescate,
   fraseRescate,
@@ -70,6 +88,7 @@ import {
   seguirJornada,
   siguienteDia,
   textoCajaLibre,
+  desgloseNomina,
   textoDiasSinSello,
   textoLlegada,
   textoSinTarea,
@@ -77,6 +96,7 @@ import {
   type Estado,
   type OficinaTab,
   type Persona,
+  lineasCierre,
 } from "@/game/motor";
 import { Retrato, alToque } from "./Hud";
 import type { Ajustes } from "@/game/guardar";
@@ -506,7 +526,9 @@ function ListaFilas({ s }: { s: Estado }) {
           <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
             <span>Días {g.dias ?? 0}</span>
             <span className="whitespace-nowrap">Jornal {peso(jornalDe(g.oficio, g.rinde))}</span>
-            <span className="whitespace-nowrap">Se debe {peso(seDebe(s, g))}</span>
+            <span className="whitespace-nowrap">
+              {s.nominaPagada ? ((s.deudaNomina ?? 0) > 0.5 ? `Pagado en parte: la cuadrilla aún espera ${peso(s.deudaNomina ?? 0)}` : "Hoy: pagado") : g.activo && !g.falto ? `Por pagar a las 3: ${peso(seDebe(s, g))}` : "Hoy no cobra"}
+            </span>
           </div>
         </li>
       ))}
@@ -642,6 +664,8 @@ export function Paneles({
   const [pausaAjustes, setPausaAjustes] = useState(false);
   const [pausaHoja, setPausaHoja] = useState<null | "creditos">(null);
   const [freno, setFreno] = useState<null | { origen: "sita" | "tambien" | "tel"; urgente: boolean; total: number }>(null);
+  const [aceptaCorta, setAceptaCorta] = useState(false);
+  useEffect(() => setAceptaCorta(false), [freno]);
   const [angosta, setAngosta] = useState(false);
   const [telefono, setTelefono] = useState(false);
   const [hoja, setHoja] = useState<null | "como" | "obras" | "ajustes" | "creditos" | "confirmar">(null);
@@ -698,7 +722,7 @@ export function Paneles({
       <HojaMenu>
         <h2 className="font-display text-4xl leading-none">¿Empezar una obra nueva?</h2>
         <p className="mt-3 font-hand">
-          Pierdes: día {s.dia} y {sellos} de 9 etapas selladas; caja {peso(s.caja)} y lo que hay en el almacén; tu cuadrilla ({gente}{" "}
+          Pierdes: día {s.dia} y {sellos} de 9 etapas selladas; caja {pesoCaja(s.caja)} y lo que hay en el almacén; tu cuadrilla ({gente}{" "}
           personas) y la lista de días.
         </p>
         <p className="mt-2 font-hand">
@@ -858,6 +882,11 @@ export function Paneles({
           <p className="mt-2 font-hand text-xl leading-tight">Caseta de block 3x4</p>
           <p className="font-display text-4xl leading-none">{peso(pedido)}</p>
           <p className="font-hand text-lg leading-tight">Lo que no gastes es tuyo</p>
+          <p className="mt-1 font-hand text-sm leading-tight" data-kit>
+            Al firmar: anticipo {peso(ANTICIPO)} menos el kit de replanteo {peso(KIT_PRECIO)} (estacas, hilo, cal y escuadra para marcar la
+            caseta). Te quedan {peso(ANTICIPO - KIT_PRECIO)} en caja. Si entregas antes del día {PLAZO_ENTREGA}, Doña Carmen paga{" "}
+            {peso(BONO_DIA)} por cada día de adelanto.
+          </p>
           <AvisoRoto s={s} />
           {dicho ? (
             <p className="mt-3 font-hand text-tinta">
@@ -891,8 +920,38 @@ export function Paneles({
       <Marco titulo={`Contratar · ${cupo} de ${MAX_CUADRILLA}`} onCerrar={cerrar} hoja alto={ALTO_OFICINA}>
         <Pestanas tab="gente" onTab={ir} />
         <p className="mb-2 font-hand text-base leading-snug">
-          Para esta caseta alcanzan 4 o 5. Más gente gasta la caja antes del próximo cobro.
+          Más gente gasta la caja antes del próximo cobro. La sugerida mira cuánto aguanta tu caja.
         </p>
+        {(() => {
+          const sug = cuadrillaSugerida(s);
+          return (
+            <div className="mb-3 border-2 border-dashed border-tinta/60 p-2" data-sugerida>
+              <p className="font-hand text-base leading-snug">
+                <span className="font-bold">Sugerida para tu caja: </span>
+                {sug.texto}
+              </p>
+              {sug.ids.length ? (
+                <button
+                  type="button"
+                  className={`${btnPri} mt-2`}
+                  onClick={() =>
+                    act((st) => {
+                      for (const id of cuadrillaSugerida(st).ids) {
+                        const err = contratar(st, id);
+                        if (err) {
+                          decir(st, err);
+                          break;
+                        }
+                      }
+                    })
+                  }
+                >
+                  Contratar la sugerida
+                </button>
+              ) : null}
+            </div>
+          );
+        })()}
         <TablaContratar
           s={s}
           onTomar={(id) =>
@@ -974,6 +1033,16 @@ export function Paneles({
             <li key={t}>{t}</li>
           ))}
         </ul>
+        <div className="mb-3 border-2 border-dashed border-tinta/60 p-2 font-hand text-sm">
+          <p>
+            <span className="font-bold">Cuadrilla sugerida: </span>
+            {lib.sugerencia}
+          </p>
+          <p className="mt-1">
+            <span className="font-bold">Días de caja: </span>
+            {lib.diasCaja || `La caja paga ${diasDeCaja(s) >= 99 ? "todo" : `${diasDeCaja(s)} días`} de nómina con la cuadrilla de hoy. Si baja a 4 o menos, avisa al amanecer.`}
+          </p>
+        </div>
         <ListaFilas s={s} />
         <div className="mt-4">
           <Plata lib={lib} s={s} angosta={angosta} abierta={partidaAbierta} onAbre={setPartidaAbierta} />
@@ -1063,6 +1132,11 @@ export function Paneles({
         <p className="font-hand text-lg">
           Son las {horaDe(s.minuto)}. Si los despachas, el día se paga completo ({peso(n)}). ¿Despachar?
         </p>
+        {mezclaDeNoche(s) > 0 ? (
+          <p className="mt-2 border-2 border-rojo p-1 font-hand text-rojo" data-mezcla-noche>
+            Ojo: hay mezcla hecha. Si se queda de noche, se perderá la mezcla de {peso(mezclaDeNoche(s))}. Gástala antes de despachar.
+          </p>
+        ) : null}
         <SinTarea s={s} act={act} />
         <div className="mt-3 flex flex-wrap gap-2">
           <button type="button" className={btnPri} onClick={() => act((st) => confirmarDespacho(st))}>
@@ -1082,15 +1156,21 @@ export function Paneles({
     const puede = cuenta.alcanza || paga;
     return (
       <Marco titulo="Antes de pedir" ancho="max-w-md" onCerrar={() => setFreno(null)}>
+        {freno.origen === "sita" && faltaEnPedido(s, s.sita?.oferta?.items).length ? (
+          <p className="mb-2 border-2 border-rojo p-1 font-hand text-rojo" data-incompleto>
+            Ojo: este pedido no trae todo. Falta: {faltaEnPedido(s, s.sita?.oferta?.items).join(", ")}.
+          </p>
+        ) : null}
         <ul className="space-y-1 font-hand text-lg">
-          <li>Caja {peso(cuenta.caja)}</li>
+          <li>Caja {pesoCaja(cuenta.caja)}</li>
           <li>− pedido {peso(cuenta.pedido)}</li>
           <li>
             − nómina de hoy {peso(cuenta.nomina)} (jornales {peso(cuenta.jornales)}, herramienta {peso(cuenta.herramienta)}, Dirección{" "}
             {peso(cuenta.direccion)})
           </li>
+          {cuenta.deuda > 0.5 ? <li>− deuda de nómina de ayer {peso(cuenta.deuda)}</li> : null}
           {cuenta.usaAdelanto ? <li>+ adelanto {peso(cuenta.adelanto)}</li> : null}
-          <li>= libre {peso(cuenta.libre)}</li>
+          <li>= libre {pesoCaja(cuenta.libre)}</li>
         </ul>
         {cuenta.usaAdelanto ? (
           <p className="mt-2 font-hand">Usa el adelanto de Doña Carmen: {peso(cuenta.adelanto)}. En esta obra no habrá otro.</p>
@@ -1103,8 +1183,19 @@ export function Paneles({
         {!cuenta.alcanza && !paga ? (
           <p className="mt-2 font-hand">No alcanza la caja para este pedido. {textoCajaLibre(s)}.</p>
         ) : null}
+        {!cuenta.alcanza && paga ? (
+          <label className="mt-2 flex min-h-11 items-center gap-2 border-2 border-rojo p-1 font-hand text-rojo" data-confirma-corta>
+            <input type="checkbox" className="h-6 w-6" checked={aceptaCorta} onChange={(e) => setAceptaCorta(e.target.checked)} />
+            Entiendo: la nómina de las 3 quedará corta por {peso(cuenta.faltaNomina)}, baja el ánimo y dos días seguidos se va un obrero.
+          </label>
+        ) : null}
+        {cuentaFiado(s) ? (
+          <button type="button" className={`${btn} mt-2`} data-fiar {...alToque(() => { setFreno(null); act((st) => void fiar(st)); })}>
+            Mejor fiado: lo de esta etapa ({peso(cuentaFiado(s)!.total)}), sale del próximo cobro
+          </button>
+        ) : null}
         <div className="mt-3 flex flex-wrap gap-2">
-          <button type="button" className={btnPri} disabled={!puede} {...alToque(() => confirmarFreno())}>
+          <button type="button" className={btnPri} disabled={!puede || (!cuenta.alcanza && !aceptaCorta)} {...alToque(() => confirmarFreno())}>
             {cuenta.alcanza ? "Confirmar" : paga ? "Pedir lo que alcanza" : "No alcanza la caja"}
           </button>
           <button type="button" className={btn} onClick={() => setFreno(null)}>
@@ -1121,7 +1212,7 @@ export function Paneles({
     const pedido = !!of.hecho || !Object.values(compra).some((n) => (n ?? 0) > 0);
     return (
       <Marco titulo="Guardalmacén" ancho="max-w-md" onCerrar={cerrar}>
-        <p className="font-hand text-lg whitespace-pre-line">{of.texto}</p>
+        <p className="font-hand text-lg whitespace-pre-line">{of.texto.replace(/Caja libre [^\n]*?(?=\.( |\n|$))/g, () => textoCajaLibre(s))}</p>
         <div className="mt-3 flex flex-wrap gap-2">
           {pedido ? null : (
             <button
@@ -1138,7 +1229,22 @@ export function Paneles({
               {of.comeNomina || of.recorte ? "Pedir lo que alcanza" : "Pedir"}
             </button>
           )}
-          {of.siguiente && Object.values(of.siguiente).some((n) => (n ?? 0) > 0) ? (
+          {cuentaFiado(s) ? (
+            <p className="w-full border-2 border-rojo p-1 font-hand text-sm" data-salida-sita>
+              Siempre hay salida: te fío lo que falta para sellar esta etapa. Doña Carmen me lo paga del próximo cobro.
+            </p>
+          ) : null}
+          {cuentaFiado(s) ? (
+            <button type="button" className={btnPri} data-fiar onClick={() => act((st) => void fiar(st))}>
+              Fiado: lo de esta etapa ({peso(cuentaFiado(s)!.total)})
+            </button>
+          ) : null}
+          {of.siguiente &&
+          Object.values(of.siguiente).some((n) => (n ?? 0) > 0) &&
+          cuentaPedido(
+            s,
+            Object.entries(of.siguiente).reduce((a, [k, n]) => a + (n ?? 0) * MATERIALES[k as Mat].precio, 0) + fleteDe(s, of.urgente),
+          ).alcanza ? (
             <button
               type="button"
               className={btn}
@@ -1470,7 +1576,7 @@ export function Paneles({
       }
     }
     const linea = cobra
-      ? "Esta etapa cobra tramo"
+      ? `Cobra ${s.sello.cobroTexto ?? cobroDe(s, etapa).texto}`
       : proximo
         ? `Esta etapa no cobra; el próximo cobro es al aprobar ${proximo}`
         : "Esta etapa no cobra";
@@ -1501,21 +1607,29 @@ export function Paneles({
     return (
       <Marco titulo="La nómina no alcanza">
         <p className="font-hand">
-          Hoy la caja no cubre la nómina. Se paga lo que haya. Lo que falte queda de deuda para mañana y baja el ánimo. Dos días
+          Hoy la nómina es {peso(desgloseNomina(s).total + (s.deudaNomina ?? 0))} y la caja tiene {pesoCaja(s.caja)}: faltan{" "}
+          <b data-falta-nomina>{peso(Math.max(0, desgloseNomina(s).total + (s.deudaNomina ?? 0) - Math.max(0, s.caja)))}</b>. Se paga lo que haya. Lo que falte queda de deuda para mañana y baja el ánimo. Dos días
           seguidos, un obrero se va.
         </p>
         {(s.deudaNomina ?? 0) > 0.5 ? <p className="mt-2 font-hand">Deuda de ayer: {peso(s.deudaNomina)}.</p> : null}
         {puedeRescate(s) ? <p className="mt-2 font-hand">{fraseRescate(s)}</p> : null}
+        {!puedeAdelantar(s) && !puedeRescate(s) ? (
+          <p className="mt-2 font-hand">
+            Sin adelanto: {adelantoUsado(s) ? "Doña Carmen ya soltó el adelanto de esta obra. No hay otro." : razonAdelanto(s) || "Doña Carmen no adelanta hoy."}
+          </p>
+        ) : null}
         <div className="mt-4 flex flex-col gap-2">
           {puedeRescate(s) ? (
             <button type="button" className={btnPri} onClick={() => act((st) => aceptarRescate(st))}>
               Aceptar la mitad de la etapa
             </button>
           ) : null}
-          <button type="button" className={btnPri} onClick={() => act((st) => confirmarNomina(st, true))}>
-            Pedir adelanto y pagar
-          </button>
-          <button type="button" className={btn} onClick={() => act((st) => confirmarNomina(st, false))}>
+          {puedeAdelantar(s) ? (
+            <button type="button" className={btnPri} onClick={() => act((st) => confirmarNomina(st, true))}>
+              Pedir adelanto y pagar
+            </button>
+          ) : null}
+          <button type="button" className={puedeAdelantar(s) || puedeRescate(s) ? btn : btnPri} onClick={() => act((st) => confirmarNomina(st, false))}>
             Pagar lo que haya
           </button>
         </div>
@@ -1542,11 +1656,37 @@ export function Paneles({
     const direccion = s.direccionCobrada && !esDomingo(s.dia) ? DIRECCION_DIA : 0;
     return (
       <Marco titulo="Fin del día" ancho="max-w-lg">
-        <p className="font-display text-4xl">{peso(s.caja)}</p>
+        <p className="font-display text-4xl">{pesoCaja(s.caja)}</p>
         <p className="font-hand">Nómina {peso(pagada)}</p>
         <p className="font-hand">Herramienta {peso(herr)}</p>
         {direccion > 0 ? <p className="font-hand">Dirección {peso(direccion)}</p> : null}
-        <p className="font-hand">Total {peso(pagada + herr + direccion)}</p>
+        <p className="font-hand">
+          Total {peso(pagada + herr + direccion)} = jornales {peso(pagada)} + herramienta {peso(herr)} + Dirección {peso(direccion)}
+        </p>
+        <details className="font-hand text-sm">
+          <summary className="min-h-11 cursor-pointer py-2">Jornal de cada uno</summary>
+          <ul>
+            {s.gente
+              .filter((g) => g.activo && !g.falto)
+              .map((g) => (
+                <li key={g.id}>
+                  {g.nombre} ({OFICIO_NOMBRE[g.oficio]}): {peso(jornalDe(g.oficio, g.rinde))}
+                </li>
+              ))}
+          </ul>
+        </details>
+        {(s.perdidasHoy ?? []).length ? (
+          <div className="font-hand text-sm" data-perdidas>
+            <p>Pérdidas de hoy (ya van en su partida):</p>
+            <ul className="list-disc pl-5">
+              {(s.perdidasHoy ?? []).map((p, i) => (
+                <li key={i}>
+                  {p.texto}: {peso(p.pesos)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {(s.deudaNomina ?? 0) > 0.5 ? (
           <p className="font-hand">Deuda de nómina {peso(s.deudaNomina)}. Pasa a mañana y el ánimo ya bajó.</p>
         ) : null}
@@ -1567,7 +1707,8 @@ export function Paneles({
             <li key={g.id} className="flex items-center gap-2">
               <span>
                 {g.nombre}
-                {g.cansancio >= 85 ? " · mañana no viene y no cobra" : ""}
+                {` · cansancio ${Math.round(g.cansancio)}`}
+                {g.cansancio >= 85 ? " · frito: mañana no viene y no cobra" : g.cansancio >= 70 ? " · cansado (frito desde 85)" : ""}
                 {g.libre ? " · libre mañana" : ""}
                 {` · ánimo ${Math.round(g.animo ?? 100)}`}
               </span>
@@ -1604,6 +1745,11 @@ export function Paneles({
         ) : null}
         <p className="mt-2 font-hand text-sm">{pronosticoDia(s, 0)}</p>
         <p className="font-hand text-sm">{pronosticoDia(s, 1)}</p>
+        {mezclaDeNoche(s) > 0 ? (
+          <p className="mb-2 border-2 border-rojo p-1 font-hand text-rojo" data-mezcla-noche>
+            Se perderá la mezcla de {peso(mezclaDeNoche(s))}: la mezcla hecha no aguanta la noche.
+          </p>
+        ) : null}
         <button type="button" className={`${btnPri} mt-4 w-full`} onClick={() => act((st) => siguienteDia(st))}>
           Amanecer
         </button>
@@ -1641,11 +1787,27 @@ export function Paneles({
               </text>
             </svg>
             <h2 className="font-display text-4xl leading-none">Entrega</h2>
+            {s.cierre ? (
+              <div className="mt-2 border-2 border-tinta p-2 font-hand text-base" data-cierre>
+                <p className="font-display text-xl">Cuenta de la caja al entregar</p>
+                <ul className="space-y-0.5">
+                  {lineasCierre(s.cierre).map((l, i) => (
+                    <li key={i} className={`flex justify-between gap-2 ${l.total ? "border-t border-tinta pt-0.5 font-bold" : ""}`} data-linea-cierre>
+                      <span>{l.texto}</span>
+                      <span className="whitespace-nowrap">{i === 0 || l.total ? pesoCaja(l.monto) : peso(Math.abs(l.monto))}</span>
+                    </li>
+                  ))}
+                  <li className="text-sm">Multas: {peso(0)} (las pérdidas de mezcla ya van en el costo, no salen de la caja).</li>
+                  {s.cierre.quedaDebiendo > 0.5 ? <li className="text-rojo">Queda debiendo a la cuadrilla {peso(s.cierre.quedaDebiendo)}.</li> : null}
+                </ul>
+              </div>
+            ) : null}
             <ul className="mt-2 space-y-1 font-hand text-base">
               <li>Días {inf.dias}</li>
               <li>Costo total {peso(inf.costo)}</li>
-              <li>{inf.ganancia >= 0 ? `Ganancia ${peso(inf.ganancia)}` : `Pérdida ${peso(inf.ganancia)}`}</li>
-              <li>Tiempo muerto {peso(muerto?.real ?? 0)}</li>
+              <li>{inf.ganancia >= 0 ? `Ganancia ${peso(inf.ganancia)}` : `Pérdida ${peso(-inf.ganancia)}`}</li>
+              <li>Tiempo muerto (jornal pagado sin trabajo) {peso(muerto?.real ?? 0)}</li>
+              {inf.bono > 0 ? <li>Bono por entrega temprana {peso(inf.bono)}</li> : <li>Sin bono: se entregó el día {PLAZO_ENTREGA} o después</li>}
               <li>Desplomes {s.desplomes}</li>
               <li>Ingeniera: {notaIng}</li>
             </ul>
@@ -1669,15 +1831,45 @@ export function Paneles({
             ? "No quedó nadie trabajando. La obra se perdió."
             : "Doña Carmen ya tiene su caseta."}
         </p>
+        {perdida
+          ? (() => {
+              const c = causasPerdida(s);
+              return (
+                <div className="mt-2 border-2 border-rojo/60 p-2 font-hand text-sm" data-causas>
+                  <p className="font-bold">Por qué se perdió (del diario)</p>
+                  {c.salidas.length ? (
+                    <ul className="mt-1 list-disc pl-5">
+                      {c.salidas.map((x, i) => (
+                        <li key={i}>{x}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>Nadie se fue por la nómina.</p>
+                  )}
+                  {c.cortas.length ? (
+                    <>
+                      <p className="mt-1 font-bold">Nóminas cortas: {c.cortas.length}</p>
+                      <ul className="list-disc pl-5">
+                        {c.cortas.slice(-6).map((x, i) => (
+                          <li key={i}>{x}</li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : null}
+                  {c.deuda > 0.5 ? <p className="mt-1">Deuda de nómina al cerrar: {peso(c.deuda)}.</p> : null}
+                </div>
+              );
+            })()
+          : null}
         <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
           <Dato etiqueta="Días" valor={String(inf.dias)} />
           <Dato etiqueta="Costo" valor={peso(inf.costo)} />
           {perdida ? (
-            <Dato etiqueta="Pérdida" valor={peso(s.caja)} rojo />
+            <Dato etiqueta="Pérdida" valor={peso(Math.abs(s.caja))} rojo />
           ) : (
             <>
               <Dato etiqueta="Vs presupuesto" valor={`${pct >= 0 ? "+" : ""}${num(pct, 1)}%`} />
-              <Dato etiqueta="Ganancia" valor={peso(inf.ganancia)} />
+              <Dato etiqueta={inf.ganancia >= 0 ? "Ganancia" : "Pérdida"} valor={peso(Math.abs(inf.ganancia))} />
             </>
           )}
           <Dato etiqueta="A la primera" valor={`${inf.aprobadasPrimera} / 9`} />
@@ -1790,7 +1982,7 @@ export function Paneles({
               <p className="mt-3 font-hand text-sm text-tierra">El x2 solo acelera el reloj. No cambia ritmos ni números.</p>
             </div>
           ) : null}
-          <button type="button" className={btn} onClick={quiereNueva}>
+          <button type="button" className={`${btn} mt-6`} onClick={quiereNueva}>
             Empezar de cero
           </button>
         </div>
@@ -1845,9 +2037,17 @@ function Plata({
         </div>
       </div>
       <p className="mt-1 flex justify-between gap-2 font-hand text-xs">
-        <span>{cifraCorta(lib.costo, angosta)}</span>
-        <span>{cifraCorta(lib.porHacer, angosta)}</span>
-        <span className="text-tinta">{cifraCorta(lib.ganancia, angosta)}</span>
+        <span>Gastado {cifraCorta(lib.costo, angosta)}</span>
+        <span>Falta gastar {cifraCorta(lib.porHacer, angosta)}</span>
+        <span className="text-tinta">{lib.ganancia >= 0 ? "Ganancia" : "Pérdida"} estimada {cifraCorta(Math.abs(lib.ganancia), angosta)}</span>
+      </p>
+      <p className="mt-1 font-hand text-xs text-tierra">
+        Cada fila: gastado de lo presupuestado. «Tiempo muerto» es jornal pagado sin trabajo (espera, lluvia, despacho temprano).
+        {" "}La estimación supone que lo que falta cuesta lo presupuestado: cada día de obra de más resta{" "}
+        {peso(nominaDiaDe([...s.gente, ...s.reserva].filter((g) => !g.libre)) + DIRECCION_DIA)} (nómina y Dirección).
+        {(s.deudaNomina ?? 0) > 0.5 ? ` Debes de nómina ${peso(s.deudaNomina ?? 0)}: ya está en lo gastado; no cambia la ganancia, se paga del próximo cobro o al entregar.` : ""}
+        {(s.fiado ?? 0) > 0.5 ? ` Fiado por pagar ${peso(s.fiado ?? 0)}: no cambia la ganancia, solo sale del próximo cobro.` : ""}
+        «Acarreo» es mover material de la entrada a la obra.
       </p>
       <ul className="mt-2">
         {lib.filas.map((f) => {
@@ -1860,7 +2060,7 @@ function Plata({
           const abierto = abierta === f.partida;
           return (
             <li key={f.partida} className="border-b border-tinta/15 py-1">
-              <button type="button" className="flex w-full min-w-0 items-center gap-2 text-left font-hand text-sm" onClick={() => onAbre(abierto ? null : f.partida)}>
+              <button type="button" className="flex min-h-11 w-full min-w-0 items-center gap-2 text-left font-hand text-sm" onClick={() => onAbre(abierto ? null : f.partida)}>
                 <span className={"w-16 shrink-0 sm:w-24 " + (angosta ? "whitespace-normal text-sm" : "truncate")}>{f.nombre}</span>
                 <span className="relative h-3 min-w-0 flex-1">
                   <span className="absolute top-0 h-3 border border-tinta" style={{ width: `${Math.max(hueco, tinta)}%` }} />
