@@ -164,7 +164,10 @@ function sonidoObra(s: Estado): "pala" | "carretilla" | "trompo" | "cuchara" | "
   return null;
 }
 
-function Palanca({ on, compacto }: { on: (ax: number, ay: number) => void; compacto?: boolean }) {
+/** v23: el dedo que maneja la palanca. Un segundo dedo, perder el foco o tocar otro botón no la sueltan. */
+export const palancaDedo: { id: number | null } = { id: null };
+
+function Palanca({ on, compacto, oculto }: { on: (ax: number, ay: number) => void; compacto?: boolean; oculto?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const [knob, setKnob] = useState({ x: 0, y: 0 });
   const mover = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -184,6 +187,8 @@ function Palanca({ on, compacto }: { on: (ax: number, ay: number) => void; compa
     on(x / lim, -y / lim);
   };
   const soltar = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (palancaDedo.id !== e.pointerId) return;
+    palancaDedo.id = null;
     if (ref.current?.hasPointerCapture(e.pointerId)) ref.current.releasePointerCapture(e.pointerId);
     setKnob({ x: 0, y: 0 });
     on(0, 0);
@@ -192,14 +197,17 @@ function Palanca({ on, compacto }: { on: (ax: number, ay: number) => void; compa
     <div
       ref={ref}
       className={"absolute bottom-3 left-3 z-20 touch-manipulation rounded-full border-2 border-papel/80 bg-fondo/50 " + (compacto ? "h-16 w-16" : "h-28 w-28")}
-      style={{ touchAction: "none" }}
+      style={{ touchAction: "none", visibility: oculto ? "hidden" : undefined, pointerEvents: oculto ? "none" : undefined }}
+      data-palanca
       onContextMenu={(e) => e.preventDefault()}
       onPointerDown={(e) => {
+        if (palancaDedo.id != null && palancaDedo.id !== e.pointerId) return;
+        palancaDedo.id = e.pointerId;
         e.currentTarget.setPointerCapture(e.pointerId);
         mover(e);
       }}
       onPointerMove={(e) => {
-        if (e.currentTarget.hasPointerCapture(e.pointerId)) mover(e);
+        if (e.pointerId === palancaDedo.id) mover(e);
       }}
       onPointerUp={soltar}
       onPointerCancel={soltar}
@@ -602,7 +610,8 @@ export function Juego() {
     };
     const blur = () => {
       keys.current.clear();
-      joy.current = { ax: 0, ay: 0 };
+      // v23: con el dedo en la palanca (p. ej. llega una notificación) no se suelta; se suelta al levantar el dedo.
+      if (palancaDedo.id == null) joy.current = { ax: 0, ay: 0 };
     };
     const oculto = () => {
       if (document.hidden) guardar(estado.current);
@@ -692,7 +701,7 @@ export function Juego() {
             seguirDedo(estado.current, estado.current.jugador.x, estado.current.jugador.y, true);
           }
           const s = estado.current;
-          if (corto && !s.panel && !s.pausa && !s.entregada) {
+          if (corto && !s.panel && !s.pausa && !s.entregada && palancaDedo.id == null) {
             const m = mundoDe(e);
             s.destino = { x: m.x, y: m.y };
             s.mando.ax = 0;
@@ -758,8 +767,9 @@ export function Juego() {
         vuelo={vuelo}
       />
 
-      {movil && !snap.panel && ajustes.control !== "arrastre" ? (
+      {movil && ajustes.control !== "arrastre" ? (
         <Palanca
+          oculto={!!snap.panel}
           compacto={bajo}
           on={(ax, ay) => {
             joy.current = { ax, ay };
