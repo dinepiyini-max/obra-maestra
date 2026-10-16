@@ -658,6 +658,13 @@ export function seguirDesde(s: Estado, cfg: Cfg, r: () => number, chequeo?: Cheq
     } else if (s.minuto < 15 * 60 && (s.minuto % (15 * R) === 0 || (R === 1 && laborCambia(s)))) gestionarCfg(s, cfg, r, false);
     if (s.minuto < 7 * 60 + 8) silenciar(s);
     if (cfg.torpe && puedeFiar(s) && s.minuto % 30 === 0) { fiar(s); T("fiar"); }
+    // v23: cualquier jugador que ve «Siempre hay salida» (falta material, no viene nada y la caja no lo paga) toma el fiado.
+    // Antes solo el torpe lo hacía y algunas obras quedaban trabadas hasta el día 60 con P$0 de caja.
+    else if (!cfg.torpe && s.minuto % (30 * R) === 0 && s.minuto >= 8 * 60 && s.minuto < 14 * 60 && !s.pedidos.length && puedeFiar(s)) {
+      const falta = loQueFalta(s);
+      const costo = Object.entries(falta).reduce((a, [k, n]) => a + (n ?? 0) * MATERIALES[k as Mat].precio, 0) + FLETE;
+      if (Object.keys(falta).length && s.caja < costo && !puedeAdelantar(s, costo)) { fiar(s); T("fiar"); }
+    }
     if (s.minuto === 10 * 60 && diaSalida !== s.dia) {
       diaSalida = s.dia;
       // Sin salida: falta material, no viene nada, la caja no lo paga y no hay adelanto ni fiado.
