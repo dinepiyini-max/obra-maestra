@@ -100,19 +100,22 @@ import {
   cuentaFiadoPedido,
   fiarPedido,
 } from "@/game/motor";
-import { Retrato, alToque } from "./Hud";
+import { Icono, Retrato, alToque, sonidoUi } from "./Hud";
 import type { Ajustes } from "@/game/guardar";
 
 const btn =
-  "min-h-11 min-w-11 border-2 border-tinta bg-papel-2 px-3 py-2 font-hand text-tinta hover:bg-papel disabled:opacity-40";
-const btnPri = "min-h-11 min-w-11 border-2 border-tinta bg-tinta px-4 py-2 font-hand text-papel hover:bg-tierra";
+  "min-h-11 min-w-11 rounded-md border-2 border-block-sombra bg-cemento px-3 py-2 font-ui text-base font-bold text-tinta hover:bg-varilla-brillo disabled:opacity-40";
+const btnPri =
+  "min-h-11 min-w-11 rounded-md border-2 border-tinta bg-colmado-amarillo px-4 py-2 font-ui text-base font-bold text-tinta shadow-[3px_3px_0_#1B1F23] hover:bg-varilla-brillo disabled:opacity-40";
+const btnPeligro =
+  "min-h-11 min-w-11 rounded-md border-2 border-tinta bg-colmado-rojo px-4 py-2 font-ui text-base font-bold text-white shadow-[3px_3px_0_#1B1F23] disabled:opacity-40";
 const ALTO_OFICINA = "h-[min(88dvh,40rem)] max-h-[min(88dvh,40rem)]";
 
 function Candado() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0" aria-hidden="true">
-      <rect x="5" y="10" width="14" height="10" fill="none" stroke="#5f564b" strokeWidth="2" />
-      <path d="M8 10 V7 a4 4 0 0 1 8 0 V10" fill="none" stroke="#5f564b" strokeWidth="2" />
+      <rect x="5" y="10" width="14" height="10" fill="none" stroke="#1B1F23" strokeWidth="2" />
+      <path d="M8 10 V7 a4 4 0 0 1 8 0 V10" fill="none" stroke="#1B1F23" strokeWidth="2" />
     </svg>
   );
 }
@@ -121,7 +124,7 @@ function HojaMenu({ children, onVolver }: { children: ReactNode; onVolver?: () =
   const fondo = useRef(false);
   return (
     <div
-      className="fixed inset-0 z-30 flex items-center justify-center bg-fondo/80 p-4"
+      className="fixed inset-0 z-30 flex items-center justify-center bg-noche/80 p-4"
       style={{ paddingTop: "max(1rem, env(safe-area-inset-top))", paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
       onPointerDown={(e) => {
         fondo.current = e.target === e.currentTarget;
@@ -131,7 +134,7 @@ function HojaMenu({ children, onVolver }: { children: ReactNode; onVolver?: () =
         fondo.current = false;
       }}
     >
-      <section className="papel-grano w-full max-w-sm border-2 border-tinta px-4 py-4 text-left text-tinta shadow-[6px_8px_0_#1d1712]">
+      <section className="plancha max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-md border-2 border-block-sombra px-4 py-4 text-left text-tinta shadow-[3px_3px_0_#1B1F23]">
         {children}
         {onVolver ? (
           <button type="button" className={`${btn} mt-4 w-full`} onClick={onVolver}>
@@ -145,6 +148,7 @@ function HojaMenu({ children, onVolver }: { children: ReactNode; onVolver?: () =
 
 function decir(s: Estado, texto: string | null) {
   if (!texto) return;
+  sonidoUi.ping("error");
   s.avisoSeq += 1;
   s.avisos.push({ id: s.avisoSeq, texto });
   if (s.avisos.length > 6) s.avisos.splice(0, s.avisos.length - 6);
@@ -153,7 +157,7 @@ function decir(s: Estado, texto: string | null) {
 function AvisoRoto({ s }: { s: Estado }) {
   const a = s.avisos.find((x) => x.texto.includes("dañado"));
   if (!a) return null;
-  return <p className="mt-3 border-2 border-rojo px-2 py-1 font-hand text-sm text-rojo">{a.texto}</p>;
+  return <p className="mt-3 border-2 border-colmado-rojo px-2 py-1 font-hand text-sm text-colmado-rojo">{a.texto}</p>;
 }
 
 function gotasDe(c: number): number {
@@ -167,7 +171,7 @@ function Gotas({ n }: { n: number }) {
   return (
     <span className="inline-flex gap-1" aria-label={`${n} de 3`}>
       {[0, 1, 2].map((i) => (
-        <span key={i} className={"inline-block h-3 w-3 rounded-full border border-tinta " + (i < n ? "bg-agua" : "bg-papel")} />
+        <span key={i} className={"inline-block h-3 w-3 rounded-full border border-tinta " + (i < n ? "bg-cielo-claro" : "bg-cemento-claro")} />
       ))}
     </span>
   );
@@ -176,7 +180,7 @@ function Gotas({ n }: { n: number }) {
 function Creditos({ onVolver }: { onVolver: () => void }) {
   return (
     <HojaMenu onVolver={onVolver}>
-      <h2 className="font-display text-4xl leading-none sm:text-5xl">Obra Maestra</h2>
+      <h2 className="font-display text-2xl leading-tight break-words sm:text-4xl">Obra Maestra</h2>
       <p className="mt-3 font-hand text-lg leading-snug text-pretty sm:text-xl">
         Obra Maestra. Creado y dirigido por Rico, con la ayuda de Grok. Asesoría de ingeniería: Diego Ángeles, ingeniero y maestro constructor; gracias por su ojo de obra. Agradecimientos a Elon Musk.
       </p>
@@ -186,8 +190,8 @@ function Creditos({ onVolver }: { onVolver: () => void }) {
 
 function tonoDesvio(real: number, desv: number): string {
   if (real < 1) return "";
-  if (desv > 1) return "text-rojo";
-  if (desv < -1) return "text-sello";
+  if (desv > 1) return "text-colmado-rojo";
+  if (desv < -1) return "text-colmado-verde";
   return "";
 }
 
@@ -209,7 +213,7 @@ function Marco({
   const fondo = useRef(false);
   return (
     <div
-      className="velo-obra fixed inset-0 z-30 flex items-end justify-center bg-fondo/80 p-2 sm:items-center sm:p-6"
+      className="velo-obra fixed inset-0 z-30 flex items-end justify-center bg-noche/80 p-2 sm:items-center sm:p-6"
       style={{ paddingTop: "max(0.5rem, env(safe-area-inset-top))", paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
       onPointerDown={(e) => {
         fondo.current = e.target === e.currentTarget;
@@ -220,24 +224,26 @@ function Marco({
       }}
     >
       <section
-        className={`marco-obra relative w-full ${ancho} overflow-x-hidden overflow-y-auto overscroll-contain border-2 border-tinta p-3 text-tinta shadow-[6px_8px_0_#1d1712] sm:p-5 ${alto || "max-h-[92dvh]"} ${hoja ? "hoja-libreta pl-8" : "papel-grano"}`}
+        className={`marco-obra relative flex w-full ${ancho} flex-col overflow-hidden rounded-md border-2 border-block-sombra bg-cemento-claro text-tinta shadow-[3px_3px_0_#1B1F23] ${alto || "max-h-[92dvh]"}`}
       >
-        {hoja ? (
-          <span className="pointer-events-none absolute top-6 bottom-6 left-2 flex w-3 flex-col justify-between" aria-hidden="true">
-            <i className="h-3 w-3 rounded-full border-2 border-tinta bg-fondo" />
-            <i className="h-3 w-3 rounded-full border-2 border-tinta bg-fondo" />
-            <i className="h-3 w-3 rounded-full border-2 border-tinta bg-fondo" />
-          </span>
-        ) : null}
-        <header className="mb-2 flex items-start justify-between gap-3">
-          <h2 className="min-w-0 flex-1 font-display text-xl leading-tight break-words sm:text-4xl">{titulo}</h2>
+        <header className="flex items-center justify-between gap-3 bg-block px-3 py-2">
+          <h2 className="min-w-0 flex-1 font-display text-2xl leading-tight break-words text-tinta sm:text-3xl">{titulo}</h2>
           {onCerrar ? (
             <button type="button" className={btn} {...alToque(onCerrar)}>
               Cerrar
             </button>
           ) : null}
         </header>
+        <div className={`relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-3 sm:p-5 ${hoja ? "hoja-libreta pl-8" : ""}`}>
+        {hoja ? (
+          <span className="pointer-events-none absolute top-6 bottom-6 left-2 flex w-3 flex-col justify-between" aria-hidden="true">
+            <i className="h-3 w-3 rounded-full border-2 border-tinta bg-noche" />
+            <i className="h-3 w-3 rounded-full border-2 border-tinta bg-noche" />
+            <i className="h-3 w-3 rounded-full border-2 border-tinta bg-noche" />
+          </span>
+        ) : null}
         {children}
+        </div>
       </section>
     </div>
   );
@@ -290,7 +296,7 @@ function TablaContratar({ s, onTomar }: { s: Estado; onTomar: (id: string) => vo
     }
   } else grupos.push({ titulo: "", filas: gente });
   const th = (col: ColContrata, label: string, numero = false) => (
-    <th className={"bg-papel px-2 text-left font-hand font-normal whitespace-nowrap " + (numero ? "text-right" : "")}>
+    <th className={"bg-cemento-claro px-2 text-left font-hand font-normal whitespace-nowrap " + (numero ? "text-right" : "")}>
       <button type="button" className="min-h-8 underline" onClick={() => tocar(col)}>
         {label}
         {orden?.col === col ? (orden.dir < 0 ? " ↓" : " ↑") : ""}
@@ -299,22 +305,45 @@ function TablaContratar({ s, onTomar }: { s: Estado; onTomar: (id: string) => vo
   );
   return (
     <div>
-      <p className="mb-1 font-hand text-sm min-[900px]:hidden">Desliza para ver más</p>
-      <div className="mb-2 flex gap-2">
-        <button type="button" className={(porOficio ? btnPri : btn) + " min-h-9 py-1 text-sm"} onClick={() => setPorOficio(true)}>
+      <ul className="flex flex-col gap-2 min-[900px]:hidden">
+        {gente.map((f) => {
+          const ya = tomados.has(f.p.id);
+          return (
+            <li key={f.p.id} className="border-2 border-block-sombra bg-cemento-claro p-2">
+              <p className="font-ui text-base font-bold leading-tight">{f.nombre}</p>
+              <p className="font-hand text-base text-mar">
+                {MANIA_INFO[f.p.mania].nombre} · {f.oficio}
+              </p>
+              <p className="font-ui text-base">
+                Jornal {peso(f.jornal)} · rinde {num(f.rinde, 2)} · {f.desde}
+              </p>
+              <button
+                type="button"
+                className={(ya ? btn : btnPri) + " mt-2 w-full"}
+                onClick={() => onTomar(f.p.id)}
+                disabled={ya || cupo >= MAX_CUADRILLA}
+              >
+                {ya ? "Contratado" : "Contratar"}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="mb-2 hidden gap-2 min-[900px]:flex">
+        <button type="button" className={porOficio ? btnPri : btn} onClick={() => setPorOficio(true)}>
           Por oficio
         </button>
-        <button type="button" className={(!porOficio ? btnPri : btn) + " min-h-9 py-1 text-sm"} onClick={() => setPorOficio(false)}>
+        <button type="button" className={!porOficio ? btnPri : btn} onClick={() => setPorOficio(false)}>
           Todos
         </button>
       </div>
-      <div className="relative">
+      <div className="relative hidden min-[900px]:block">
         <div className="pointer-events-none absolute top-0 right-0 bottom-0 z-30 w-3 bg-gradient-to-l from-papel to-transparent min-[900px]:hidden" />
         <div className="overflow-x-auto">
           <table className="w-max min-w-full border-collapse text-sm">
             <thead>
               <tr className="h-8 border-b border-tinta/40">
-                <th className="sticky left-0 z-20 bg-papel px-2 text-left font-hand font-normal shadow-[6px_0_8px_-6px_rgba(29,23,18,0.35)]">
+                <th className="sticky left-0 z-20 bg-cemento-claro px-2 text-left font-hand font-normal shadow-[6px_0_8px_-6px_rgba(27,31,35,0.35)]">
                   <button type="button" className="min-h-8 underline" onClick={() => tocar("nombre")}>
                     Nombre{orden?.col === "nombre" ? (orden.dir < 0 ? " ↓" : " ↑") : ""}
                   </button>
@@ -326,7 +355,7 @@ function TablaContratar({ s, onTomar }: { s: Estado; onTomar: (id: string) => vo
                 {th("faltas", "Faltas")}
                 {th("desde", "Desde")}
                 {MOSTRAR_RINDE_EN ? th("oficio", "Rinde en") : null}
-                <th className="sticky right-0 z-20 bg-papel px-2 shadow-[-8px_0_8px_-6px_rgba(29,23,18,0.45)]" />
+                <th className="sticky right-0 z-20 bg-cemento-claro px-2 shadow-[-8px_0_8px_-6px_rgba(27,31,35,0.45)]" />
               </tr>
             </thead>
             <tbody>
@@ -334,7 +363,7 @@ function TablaContratar({ s, onTomar }: { s: Estado; onTomar: (id: string) => vo
                 <Fragment key={g.titulo || "todos"}>
                   {g.titulo ? (
                     <tr className="h-8">
-                      <td colSpan={8} className="sticky left-0 bg-papel-2 px-2 font-display text-xl">
+                      <td colSpan={8} className="sticky left-0 bg-cemento px-2 font-display text-xl">
                         {g.titulo}
                       </td>
                     </tr>
@@ -343,9 +372,9 @@ function TablaContratar({ s, onTomar }: { s: Estado; onTomar: (id: string) => vo
                     const ya = tomados.has(f.p.id);
                     return (
                       <tr key={f.p.id} className="h-9 border-b border-tinta/15">
-                        <td className="sticky left-0 z-10 bg-papel px-2 align-middle shadow-[6px_0_8px_-6px_rgba(29,23,18,0.28)]">
+                        <td className="sticky left-0 z-10 bg-cemento-claro px-2 align-middle shadow-[6px_0_8px_-6px_rgba(27,31,35,0.28)]">
                           <div className="leading-none">{f.nombre}</div>
-                          <div className="font-hand text-[12px] leading-none text-tierra">{MANIA_INFO[f.p.mania].nombre}</div>
+                          <div className="font-hand text-[12px] leading-none text-mar">{MANIA_INFO[f.p.mania].nombre}</div>
                         </td>
                         <td className="px-2 whitespace-nowrap">{f.oficio}</td>
                         <td className="px-2 text-right whitespace-nowrap">{peso(f.jornal)}</td>
@@ -354,7 +383,7 @@ function TablaContratar({ s, onTomar }: { s: Estado; onTomar: (id: string) => vo
                         <td className="px-2 whitespace-nowrap">{f.faltas}</td>
                         <td className="px-2 whitespace-nowrap">{f.desde}</td>
                         {MOSTRAR_RINDE_EN ? <td className="px-2" /> : null}
-                        <td className="sticky right-0 z-10 bg-papel px-2 shadow-[-8px_0_8px_-6px_rgba(29,23,18,0.35)]">
+                        <td className="sticky right-0 z-10 bg-cemento-claro px-2 shadow-[-8px_0_8px_-6px_rgba(27,31,35,0.35)]">
                           <button
                             type="button"
                             className={ya ? btn + " min-h-11" : btnPri + " min-h-11"}
@@ -412,7 +441,7 @@ function Grupos({ s, onTomar }: { s: Estado; onTomar: (id: string) => void }) {
         "Peones",
         de((p) => p.oficio === "peon"),
       )}
-      <p className="font-hand text-sm text-tierra">Los cuatro de hoy siguen en su oficio. El ayudante cobra el jornal más bajo.</p>
+      <p className="font-hand text-sm text-mar">Los cuatro de hoy siguen en su oficio. El ayudante cobra el jornal más bajo.</p>
     </div>
   );
 }
@@ -426,7 +455,7 @@ function puestosDe(of: Oficio): { id: Puesto | null; nombre: string }[] {
 function Carta({ p, onTomar }: { p: Persona; onTomar: () => void }) {
   const m = MANIA_INFO[p.mania];
   return (
-    <article className="flex gap-2 border-2 border-tinta bg-papel/70 p-2">
+    <article className="flex gap-2 border-2 border-tinta bg-cemento-claro/70 p-2">
       <Retrato oficio={p.oficio} letra={p.nombre.slice(0, 1)} />
       <div className="min-w-0 flex-1">
         <div className="font-display text-2xl leading-none">
@@ -438,8 +467,8 @@ function Carta({ p, onTomar }: { p: Persona; onTomar: () => void }) {
         <div className="font-hand text-sm">
           Rinde {num(rindeLista(p), 2)} · aguante {p.aguante} · ojo {p.ojo}
         </div>
-        <p className="font-hand text-sm text-sello">{m.bueno}</p>
-        <p className="font-hand text-sm text-tierra">{m.malo}</p>
+        <p className="font-hand text-sm text-colmado-verde">{m.bueno}</p>
+        <p className="font-hand text-sm text-mar">{m.malo}</p>
         <div className="mt-1 flex items-center justify-between gap-2">
           <span className="font-display text-2xl">{peso(jornalDe(p.oficio, p.rinde))}</span>
           <button type="button" className={btnPri} onClick={onTomar}>
@@ -458,7 +487,7 @@ function Cascos({ usados }: { usados: number }) {
         <span
           key={i}
           className={
-            "inline-block h-11 w-11 rounded-t-full border-2 border-tinta " + (i < usados ? "bg-oro" : "bg-papel-2")
+            "inline-block h-11 w-11 rounded-t-full border-2 border-tinta " + (i < usados ? "bg-colmado-amarillo" : "bg-cemento")
           }
         />
       ))}
@@ -671,7 +700,6 @@ export function Paneles({
   const [angosta, setAngosta] = useState(false);
   const [telefono, setTelefono] = useState(false);
   const [hoja, setHoja] = useState<null | "como" | "obras" | "ajustes" | "creditos" | "confirmar">(null);
-  const fondoMenu = useRef(false);
   useEffect(() => {
     setFreno(null);
     setDraft({});
@@ -722,7 +750,7 @@ export function Paneles({
     const gente = s.gente.length + s.reserva.length;
     return (
       <HojaMenu>
-        <h2 className="font-display text-4xl leading-none">¿Empezar una obra nueva?</h2>
+        <h2 className="font-display text-2xl leading-tight break-words sm:text-4xl">¿Empezar una obra nueva?</h2>
         <p className="mt-3 font-hand">
           Pierdes: día {s.dia} y {sellos} de 9 etapas selladas; caja {pesoCaja(s.caja)} y lo que hay en el almacén; tu cuadrilla ({gente}{" "}
           personas) y la lista de días.
@@ -735,7 +763,7 @@ export function Paneles({
         <div className="mt-4 flex flex-col gap-2">
           <button
             type="button"
-            className={btnPri}
+            className={btnPeligro}
             onClick={() => {
               setHoja(null);
               onNueva();
@@ -755,14 +783,16 @@ export function Paneles({
     if (hoja === "como") {
       return (
         <HojaMenu onVolver={() => setHoja(null)}>
-          <h2 className="font-display text-4xl leading-none">Cómo se juega</h2>
+          <h2 className="font-display text-2xl leading-tight break-words sm:text-4xl">Cómo se juega</h2>
           <ul className="mt-3 flex flex-col gap-2 font-hand">
-            <li>Tú diriges, la cuadrilla trabaja.</li>
-            <li>En la oficina contratas; el listero apunta los días.</li>
-            <li>Pídele al guardalmacén. El camión lo deja en la entrada.</li>
-            <li>Manda gente a acarrear al almacén: lo que se queda afuera se moja.</li>
-            <li>Alguien busca agua para el trompo.</li>
-            <li>El cartel de arriba siempre dice qué frena la obra.</li>
+            <li className="flex items-center gap-2"><Icono nombre="casco" /> Tú diriges, la cuadrilla trabaja.</li>
+            <li className="flex items-center gap-2"><Icono nombre="funda" /> En la oficina contratas; el listero apunta los días.</li>
+            <li className="flex items-center gap-2"><Icono nombre="varilla" /> Pídele al guardalmacén. El camión lo deja en la entrada.</li>
+            <li className="flex items-center gap-2"><Icono nombre="carretilla" /> Manda gente a acarrear al almacén: lo que se queda afuera se moja.</li>
+            <li className="flex items-center gap-2"><Icono nombre="trompo" /> Alguien busca agua para el trompo.</li>
+            <li className="flex items-center gap-2"><Icono nombre="cubeta" /> El cartel de arriba siempre dice qué frena la obra.</li>
+            <li className="flex items-center gap-2"><Icono nombre="block" /> El block de 6" lleva mortero en la junta.</li>
+            <li className="flex items-center gap-2"><Icono nombre="zinc" /> El techo es zinc, cuando toque.</li>
           </ul>
           <button type="button" className={`${btnPri} mt-4 w-full`} onClick={quiereNueva}>
             Jugar con guía
@@ -773,15 +803,15 @@ export function Paneles({
     if (hoja === "obras") {
       return (
         <HojaMenu onVolver={() => setHoja(null)}>
-          <h2 className="font-display text-4xl leading-none">Obras</h2>
+          <h2 className="font-display text-2xl leading-tight break-words sm:text-4xl">Obras</h2>
           <ul className="mt-3 flex flex-col gap-2">
             {OBRAS_MENU.map((o) =>
               o.abierta ? (
-                <li key={o.id} className="min-h-11 border-2 border-tinta bg-papel-2 px-3 py-2 text-left font-hand">
+                <li key={o.id} className="min-h-11 border-2 border-tinta bg-cemento px-3 py-2 text-left font-hand">
                   {o.nombre}
                 </li>
               ) : (
-                <li key={o.id} className="flex min-h-11 items-center gap-2 border-2 border-tinta/30 px-3 py-2 font-hand text-[#5f564b]">
+                <li key={o.id} className="flex min-h-11 items-center gap-2 border-2 border-tinta/30 px-3 py-2 font-hand text-block-sombra">
                   <Candado />
                   {o.nombre}
                 </li>
@@ -793,10 +823,10 @@ export function Paneles({
     }
     if (hoja === "ajustes") {
       const tog = (on: boolean) =>
-        on ? "min-h-11 border-2 border-tinta bg-tinta px-4 font-hand text-papel" : "min-h-11 border-2 border-tinta bg-papel-2 px-4 font-hand text-tinta";
+        on ? "min-h-11 rounded-md border-2 border-tinta bg-colmado-amarillo px-4 font-ui text-base font-bold text-tinta shadow-[3px_3px_0_#1B1F23]" : "min-h-11 rounded-md border-2 border-block-sombra bg-cemento px-4 font-ui text-base font-bold text-tinta";
       return (
         <HojaMenu onVolver={() => setHoja(null)}>
-          <h2 className="font-display text-4xl leading-none">Ajustes</h2>
+          <h2 className="font-display text-2xl leading-tight break-words sm:text-4xl">Ajustes</h2>
           <p className="mt-3 font-hand">Sonido</p>
           <div className="mt-1 flex gap-2">
             <button type="button" className={tog(ajustes.sonido)} onClick={() => onAjustes({ ...ajustes, sonido: true })}>
@@ -815,35 +845,22 @@ export function Paneles({
               x2
             </button>
           </div>
-          <p className="mt-3 font-hand text-sm text-tierra">El x2 solo acelera el reloj. No cambia ritmos ni números.</p>
+          <p className="mt-3 font-hand text-sm text-mar">El x2 solo acelera el reloj. No cambia ritmos ni números.</p>
         </HojaMenu>
       );
     }
     if (hoja === "creditos") return <Creditos onVolver={() => setHoja(null)} />;
     return (
       <div
-        className="fixed inset-0 z-30 flex items-center justify-center bg-fondo/80 p-4"
-        onPointerDown={(e) => {
-          fondoMenu.current = e.target === e.currentTarget;
-        }}
-        onPointerUp={(e) => {
-          if (fondoMenu.current && e.target === e.currentTarget) cerrar();
-          fondoMenu.current = false;
-        }}
+        className="fixed inset-0 z-30 overflow-y-auto bg-cielo px-3"
+        style={{ paddingTop: "max(0.5rem, env(safe-area-inset-top))", paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
       >
-        <section className="papel-grano w-full max-w-sm border-2 border-tinta px-4 py-4 text-center text-tinta shadow-[6px_8px_0_#1d1712]">
-          <svg viewBox="0 0 240 150" className="mx-auto h-36 w-full" aria-hidden="true">
-            <path className="trazo-casa" d="M36 112 L22 78 L120 28 L214 82 L196 116 Z" />
-            <path className="trazo-casa" d="M18 80 L118 22 L222 86" />
-            <path className="trazo-casa" d="M118 22 L120 28" />
-            <path className="trazo-casa" d="M96 116 L96 82 L132 82 L132 116" />
-            <path className="trazo-casa" d="M156 74 L176 78 L174 96 L154 92 Z" />
-            <path className="trazo-casa" d="M28 104 L208 108" />
-            <path className="trazo-casa" d="M124 96 L124 112" />
-          </svg>
-          <h2 className="-mt-4 font-display text-5xl leading-none text-tinta sm:text-6xl">Obra Maestra</h2>
+        <div className="flex min-h-full items-center justify-center py-2">
+        <section className="w-full max-w-[280px] text-center min-[900px]:max-w-[420px]">
+          <img src="/logo.svg" alt="" className="mx-auto h-auto w-full max-h-[34vh] [@media(max-height:520px)]:max-h-12 [@media(max-height:520px)]:w-auto" />
+          <h2 className="sr-only">Obra Maestra</h2>
           <AvisoRoto s={s} />
-          <div className="menu-luego mt-4 flex flex-col gap-2">
+          <div className="mt-3 flex flex-col gap-2 [@media(max-height:520px)]:mt-1 [@media(max-height:520px)]:gap-1">
             {seguir ? (
               <button type="button" className={btnPri} onClick={onContinuar}>
                 Continuar
@@ -864,9 +881,10 @@ export function Paneles({
             <button type="button" className={btn} onClick={() => setHoja("creditos")}>
               Créditos
             </button>
-            <p className="mt-1 font-hand text-sm text-[#5f564b]">Próximamente: jugar como ingeniero.</p>
+            <p className="mt-1 font-hand text-base text-tinta">Próximamente: jugar como ingeniero.</p>
           </div>
         </section>
+        </div>
       </div>
     );
   }
@@ -877,12 +895,12 @@ export function Paneles({
     return (
       <div className="pointer-events-none fixed inset-0 z-30">
         <section
-          className="pointer-events-auto papel-grano absolute max-h-[70%] overflow-y-auto border-2 border-tinta px-4 py-3 text-tinta shadow-[6px_8px_0_#1d1712] inset-x-3 bottom-3 min-[900px]:inset-x-auto min-[900px]:right-4 min-[900px]:bottom-4 min-[900px]:w-[22rem]"
+          className="pointer-events-auto plancha absolute max-h-[70%] overflow-y-auto border-2 border-tinta px-4 py-3 text-tinta shadow-[3px_3px_0_#1B1F23] inset-x-3 bottom-3 min-[900px]:inset-x-auto min-[900px]:right-4 min-[900px]:bottom-4 min-[900px]:w-[22rem]"
           style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
         >
           <p className="font-hand text-lg leading-tight">Oficina · Doña Carmen, la dueña</p>
           <p className="mt-2 font-hand text-xl leading-tight">Caseta de block 3x4</p>
-          <p className="font-display text-4xl leading-none">{peso(pedido)}</p>
+          <p className="font-display text-2xl leading-tight break-words sm:text-4xl">{peso(pedido)}</p>
           <p className="font-hand text-lg leading-tight">Lo que no gastes es tuyo</p>
           <p className="mt-1 font-hand text-sm leading-tight" data-kit>
             Al firmar: anticipo {peso(ANTICIPO)} menos el kit de replanteo {peso(KIT_PRECIO)} (estacas, hilo, cal y escuadra para marcar la
@@ -919,8 +937,9 @@ export function Paneles({
   if (s.panel === "oficina" && s.oficinaTab === "gente") {
     const cupo = s.gente.length + s.reserva.length;
     return (
-      <Marco titulo={`Contratar · ${cupo} de ${MAX_CUADRILLA}`} onCerrar={cerrar} hoja alto={ALTO_OFICINA}>
+      <Marco titulo="Contratar" onCerrar={cerrar} hoja alto={ALTO_OFICINA}>
         <Pestanas tab="gente" onTab={ir} />
+        <p className="mb-2 font-ui text-base font-bold">Cuadrilla: {cupo} de {MAX_CUADRILLA}</p>
         <p className="mb-2 font-hand text-base leading-snug">
           Más gente gasta la caja antes del próximo cobro. La sugerida mira cuánto aguanta tu caja.
         </p>
@@ -980,7 +999,7 @@ export function Paneles({
                   {hecha ? "Lista · " : ahora ? "Ahora · " : ""}
                   {e.n}. {e.nombre}
                 </div>
-                <p className="font-hand text-sm text-tierra">{e.regla}</p>
+                <p className="font-hand text-sm text-mar">{e.regla}</p>
               </li>
             );
           })}
@@ -996,7 +1015,15 @@ export function Paneles({
         <p className="font-hand">Doña Carmen paga el contrato. El material se pide al guardalmacén, con precio y entrega.</p>
         <p className="mt-2 font-hand">El guardalmacén lleva el almacén. Su nota se arma con lo que falta.</p>
         <div className="mt-3 flex flex-wrap gap-2">
-          <button type="button" className={btnPri} onClick={() => act((st) => hablarSita(st))}>
+          <button
+            type="button"
+            className={btnPri}
+            onClick={() => {
+              act((st) => {
+                hablarSita(st);
+              });
+            }}
+          >
             Hablar con el guardalmacén
           </button>
           {puedeAdelantar(s) ? (
@@ -1055,7 +1082,7 @@ export function Paneles({
               <span>
                 {t.nombre} · {t.nota}
               </span>
-              <span className={t.cobrado ? "text-sello" : "text-tierra"}>
+              <span className={t.cobrado ? "text-colmado-verde" : "text-mar"}>
                 {peso(t.monto)} {t.cobrado ? "cobrado" : "pendiente"}
               </span>
             </li>
@@ -1086,7 +1113,7 @@ export function Paneles({
                     {g.fuera ? " · ya se fue" : ""}
                   </div>
                   <div className="min-h-5 font-hand text-sm">{lineaFicha(s, g) ?? "\u00a0"}</div>
-                  <div className="font-hand text-sm text-tierra">
+                  <div className="font-hand text-sm text-mar">
                     Cansancio {Math.round(g.cansancio)} · ánimo {Math.round(g.animo ?? 100)} · jornal {peso(jornalDe(g.oficio, g.rinde))} · {MANIA_INFO[g.mania].nombre}
                   </div>
                 </div>
@@ -1135,7 +1162,7 @@ export function Paneles({
           Son las {horaDe(s.minuto)}. Si los despachas, el día se paga completo ({peso(n)}). ¿Despachar?
         </p>
         {mezclaDeNoche(s) > 0 ? (
-          <p className="mt-2 border-2 border-rojo p-1 font-hand text-rojo" data-mezcla-noche>
+          <p className="mt-2 border-2 border-colmado-rojo p-1 font-hand text-colmado-rojo" data-mezcla-noche>
             Ojo: hay mezcla hecha. Si se queda de noche, se perderá la mezcla de {peso(mezclaDeNoche(s))}. Gástala antes de despachar.
           </p>
         ) : null}
@@ -1159,7 +1186,7 @@ export function Paneles({
     return (
       <Marco titulo="Antes de pedir" ancho="max-w-md" onCerrar={() => setFreno(null)}>
         {freno.origen === "sita" && faltaEnPedido(s, s.sita?.oferta?.items).length ? (
-          <p className="mb-2 border-2 border-rojo p-1 font-hand text-rojo" data-incompleto>
+          <p className="mb-2 border-2 border-colmado-rojo p-1 font-hand text-colmado-rojo" data-incompleto>
             Ojo: este pedido no trae todo. Falta: {faltaEnPedido(s, s.sita?.oferta?.items).join(", ")}.
           </p>
         ) : null}
@@ -1186,7 +1213,7 @@ export function Paneles({
           <p className="mt-2 font-hand">No alcanza la caja para este pedido. {textoCajaLibre(s)}.</p>
         ) : null}
         {!cuenta.alcanza && paga ? (
-          <label className="mt-2 flex min-h-11 items-center gap-2 border-2 border-rojo p-1 font-hand text-rojo" data-confirma-corta>
+          <label className="mt-2 flex min-h-11 items-center gap-2 border-2 border-colmado-rojo p-1 font-hand text-colmado-rojo" data-confirma-corta>
             <input type="checkbox" className="h-6 w-6" checked={aceptaCorta} onChange={(e) => setAceptaCorta(e.target.checked)} />
             Entiendo: la nómina de las 3 quedará corta por {peso(cuenta.faltaNomina)}, baja el ánimo y dos días seguidos se va un obrero.
           </label>
@@ -1246,7 +1273,7 @@ export function Paneles({
             </button>
           )}
           {cuentaFiado(s) ? (
-            <p className="w-full border-2 border-rojo p-1 font-hand text-sm" data-salida-sita>
+            <p className="w-full border-2 border-colmado-rojo p-1 font-hand text-sm" data-salida-sita>
               Siempre hay salida: te fío lo que falta para sellar esta etapa. Doña Carmen me lo paga del próximo cobro.
             </p>
           ) : null}
@@ -1276,12 +1303,28 @@ export function Paneles({
             </button>
           ) : null}
           {pedido ? null : (
-            <button type="button" className={btn} onClick={() => act((st) => rechazarSita(st))}>
+            <button
+              type="button"
+              className={btn}
+              onClick={() => {
+                act((st) => {
+                  rechazarSita(st);
+                });
+              }}
+            >
               Ahora no
             </button>
           )}
           {pedido ? null : (
-            <button type="button" className={btn} onClick={() => act((st) => editarSita(st))}>
+            <button
+              type="button"
+              className={btn}
+              onClick={() => {
+                act((st) => {
+                  editarSita(st);
+                });
+              }}
+            >
               Editar
             </button>
           )}
@@ -1346,7 +1389,7 @@ export function Paneles({
                   <tr key={k} className="border-b border-tinta/20">
                     <td className="max-w-[8.5rem] py-1 pr-1">
                       {def.nombre}
-                      <span className="text-tierra"> · {def.unidad}</span>
+                      <span className="text-mar"> · {def.unidad}</span>
                     </td>
                     <td className="whitespace-nowrap pr-1">{peso(def.precio)}</td>
                     <td>
@@ -1354,7 +1397,7 @@ export function Paneles({
                         <input
                           aria-label={`Cantidad de ${def.nombre}`}
                           inputMode="decimal"
-                          className="w-20 border border-tinta bg-papel px-1 py-1 text-right font-hand text-tinta"
+                          className="w-20 border border-tinta bg-cemento-claro px-1 py-1 text-right font-hand text-tinta"
                           value={textoCant(k)}
                           onChange={(e) => fijar(k, e.target.value)}
                         />
@@ -1373,7 +1416,7 @@ export function Paneles({
           Material {peso(mats)}
           {mats <= 0 ? "" : fleteNormal < FLETE ? ` · va en el camión ${peso(mats + fleteNormal)}` : ` · con flete ${peso(mats + fleteNormal)}`}
         </p>
-        {nota ? <p className={"font-hand " + (notaRoja ? "text-rojo" : "text-tinta")}>{nota}</p> : null}
+        {nota ? <p className={"font-hand " + (notaRoja ? "text-colmado-rojo" : "text-tinta")}>{nota}</p> : null}
         <div className="mt-2 flex flex-wrap gap-2">
           <button
             type="button"
@@ -1448,8 +1491,11 @@ export function Paneles({
       if (malo) return;
     }
     if (f.origen === "tambien") act((st) => decir(st, pedirTambien(st)));
-    else if (f.origen === "sita") act((st) => decir(st, aceptarSita(st)));
-    else mandar(f.urgente, true);
+    else if (f.origen === "sita") {
+      act((st) => {
+        decir(st, aceptarSita(st));
+      });
+    } else mandar(f.urgente, true);
   }
 
   function mandar(urgente: boolean, forzado = false) {
@@ -1547,7 +1593,7 @@ export function Paneles({
                 <span>
                   {t.nombre} · {t.nota}
                 </span>
-                <span className={t.cobrado ? "text-sello" : "text-tierra"}>
+                <span className={t.cobrado ? "text-colmado-verde" : "text-mar"}>
                   {peso(t.monto)} {t.cobrado ? "cobrado" : "pendiente"}
                 </span>
               </li>
@@ -1568,7 +1614,7 @@ export function Paneles({
                     {hecha ? "Lista · " : ahora ? "Ahora · " : ""}
                     {e.n}. {e.nombre}
                   </div>
-                  <p className="font-hand text-sm text-tierra">{e.regla}</p>
+                  <p className="font-hand text-sm text-mar">{e.regla}</p>
                 </li>
               );
             })}
@@ -1602,12 +1648,12 @@ export function Paneles({
           <div className="absolute -translate-x-1/2 -translate-y-[58%]">
             <div
               className={
-                "sello-caer papel-grano max-w-md border-8 px-6 py-5 text-center shadow-[8px_10px_0_#1d1712] " +
-                (ok ? "border-sello text-sello" : "border-rojo text-rojo")
+                "sello-caer plancha w-[min(92vw,28rem)] border-8 px-4 py-4 text-center shadow-[3px_3px_0_#1B1F23] " +
+                (ok ? "border-colmado-verde text-colmado-verde" : "border-colmado-rojo text-colmado-rojo")
               }
             >
               <div className="font-hand text-sm tracking-widest text-tinta">JUNTA DE VECINOS</div>
-              <div className="font-display text-6xl leading-none sm:text-7xl">{ok ? "APROBADO" : "OBSERVADO"}</div>
+              <div className="w-full max-w-[92vw] font-display text-3xl leading-none break-words sm:text-6xl">{ok ? "APROBADO" : "OBSERVADO"}</div>
               <p className="mt-2 font-hand text-xl text-tinta">{s.sello.nombre}</p>
               <p className="font-hand text-tinta">{s.sello.motivo}</p>
               <p className="mt-3 font-hand text-lg text-tinta">{linea}</p>
@@ -1762,7 +1808,7 @@ export function Paneles({
         <p className="mt-2 font-hand text-sm">{pronosticoDia(s, 0)}</p>
         <p className="font-hand text-sm">{pronosticoDia(s, 1)}</p>
         {mezclaDeNoche(s) > 0 ? (
-          <p className="mb-2 border-2 border-rojo p-1 font-hand text-rojo" data-mezcla-noche>
+          <p className="mb-2 border-2 border-colmado-rojo p-1 font-hand text-colmado-rojo" data-mezcla-noche>
             Se perderá la mezcla de {peso(mezclaDeNoche(s))}: la mezcla hecha no aguanta la noche.
           </p>
         ) : null}
@@ -1782,27 +1828,30 @@ export function Paneles({
       (s.desplomes > 0 ? "La ingeniera observó un desplome." : "Ta' derecho. La caseta quedó en pie.");
     if (!perdida) {
       return (
-        <div className="fixed inset-0 z-30 flex items-end justify-center bg-[#c47a2a]/25 p-2 sm:items-center sm:p-6">
-          <section className="marco-obra papel-grano max-h-[94dvh] w-full max-w-lg overflow-y-auto border-2 border-tinta p-4 text-tinta shadow-[6px_8px_0_#1d1712]">
+        <div className="fixed inset-0 z-30 flex items-end justify-center bg-noche/80 p-2 sm:items-center sm:p-6">
+          <section className="marco-obra plancha max-h-[94dvh] w-full max-w-lg overflow-y-auto border-2 border-tinta p-4 text-tinta shadow-[3px_3px_0_#1B1F23]">
             <svg viewBox="0 0 360 200" className="mx-auto w-full" aria-hidden="true">
-              <rect width="360" height="200" fill="#e7c48a" />
-              <path d="M40 150 L28 108 L150 48 L250 108 L236 150 Z" fill="#d9c9a6" stroke="#1d1712" strokeWidth="2" />
-              <path d="M24 110 L148 42 L256 112" fill="none" stroke="#8d5a3c" strokeWidth="6" />
-              <path d="M24 110 L148 42 L256 112" fill="none" stroke="#1d1712" strokeWidth="1.4" />
-              <path d="M118 150 L118 112 L156 112 L156 150 Z" fill="#3d342a" stroke="#1d1712" strokeWidth="1.6" />
-              <path d="M176 96 L198 100 L196 122 L174 118 Z" fill="#8fb3ad" stroke="#1d1712" strokeWidth="1.4" />
-              <path d="M36 140 L244 144" stroke="#b8432f" strokeWidth="3" />
-              <circle cx="292" cy="132" r="16" fill="#e6c2a4" stroke="#1d1712" strokeWidth="1.4" />
-              <path d="M276 168 C274 146 280 138 292 136 C308 138 314 148 312 168 Z" fill="#3d342a" stroke="#1d1712" strokeWidth="1.4" />
-              <path d="M278 128 C278 116 286 110 292 110 C304 112 308 120 306 128 Z" fill="#1d1712" />
-              <rect x="318" y="148" width="16" height="6" rx="1" fill="#d4a73c" stroke="#1d1712" strokeWidth="1" />
-              <circle cx="332" cy="151" r="2" fill="#1d1712" />
-              <path d="M250 78 H338 V108 H250 Z" fill="#e8dcc2" stroke="#1d1712" strokeWidth="1.4" />
-              <text x="294" y="98" textAnchor="middle" fontFamily="Patrick Hand, cursive" fontSize="16" fill="#1d1712">
-                Quedó bonita, maestro
+              <rect width="360" height="200" fill="#9FD6F2" />
+              <path d="M40 150 L28 108 L150 48 L250 108 L236 150 Z" fill="#E9E5DC" stroke="#1B1F23" strokeWidth="2" />
+              <path d="M24 110 L148 42 L256 112" fill="none" stroke="#A7B0B6" strokeWidth="6" />
+              <path d="M24 110 L148 42 L256 112" fill="none" stroke="#1B1F23" strokeWidth="1.4" />
+              <path d="M118 150 L118 112 L156 112 L156 150 Z" fill="#1B1F23" stroke="#1B1F23" strokeWidth="1.6" />
+              <path d="M176 96 L198 100 L196 122 L174 118 Z" fill="#2E9BD6" stroke="#1B1F23" strokeWidth="1.4" />
+              <path d="M36 140 L244 144" stroke="#D7322B" strokeWidth="3" />
+              <circle cx="292" cy="132" r="16" fill="#E9E5DC" stroke="#1B1F23" strokeWidth="1.4" />
+              <path d="M276 168 C274 146 280 138 292 136 C308 138 314 148 312 168 Z" fill="#E8569B" stroke="#1B1F23" strokeWidth="1.4" />
+              <path d="M278 128 C278 116 286 110 292 110 C304 112 308 120 306 128 Z" fill="#1B1F23" />
+              <rect x="318" y="148" width="16" height="6" rx="1" fill="#F6C928" stroke="#1B1F23" strokeWidth="1" />
+              <circle cx="332" cy="151" r="2" fill="#1B1F23" />
+              <rect x="196" y="46" width="156" height="42" rx="2" fill="#F6C928" stroke="#1B1F23" strokeWidth="1.4" />
+              <text x="274" y="64" textAnchor="middle" fontFamily="Patrick Hand, cursive" fontSize="14" fill="#1B1F23">
+                Quedó bonita,
+              </text>
+              <text x="274" y="80" textAnchor="middle" fontFamily="Patrick Hand, cursive" fontSize="14" fill="#1B1F23">
+                maestro
               </text>
             </svg>
-            <h2 className="font-display text-4xl leading-none">Entrega</h2>
+            <h2 className="font-display text-2xl leading-tight break-words sm:text-4xl">Entrega</h2>
             {s.cierre ? (
               <div className="mt-2 border-2 border-tinta p-2 font-hand text-base" data-cierre>
                 <p className="font-display text-xl">Cuenta de la caja al entregar</p>
@@ -1814,7 +1863,7 @@ export function Paneles({
                     </li>
                   ))}
                   <li className="text-sm">Multas: {peso(0)} (las pérdidas de mezcla ya van en el costo, no salen de la caja).</li>
-                  {s.cierre.quedaDebiendo > 0.5 ? <li className="text-rojo">Queda debiendo a la cuadrilla {peso(s.cierre.quedaDebiendo)}.</li> : null}
+                  {s.cierre.quedaDebiendo > 0.5 ? <li className="text-colmado-rojo">Queda debiendo a la cuadrilla {peso(s.cierre.quedaDebiendo)}.</li> : null}
                 </ul>
               </div>
             ) : null}
@@ -1851,7 +1900,7 @@ export function Paneles({
           ? (() => {
               const c = causasPerdida(s);
               return (
-                <div className="mt-2 border-2 border-rojo/60 p-2 font-hand text-sm" data-causas>
+                <div className="mt-2 border-2 border-colmado-rojo/60 p-2 font-hand text-sm" data-causas>
                   <p className="font-bold">Por qué se perdió (del diario)</p>
                   {c.salidas.length ? (
                     <ul className="mt-1 list-disc pl-5">
@@ -1928,14 +1977,14 @@ export function Paneles({
                     <td className="py-1">{f.nombre}</td>
                     <td>{peso(f.pre)}</td>
                     <td>{sin ? "P$0" : peso(f.real)}</td>
-                    <td className={sin ? "text-tierra" : tonoDesvio(f.real, f.desv)}>{sin ? "sin empezar" : peso(f.desv, true)}</td>
+                    <td className={sin ? "text-mar" : tonoDesvio(f.real, f.desv)}>{sin ? "sin empezar" : peso(f.desv, true)}</td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
-        <p className="mt-4 font-hand text-tierra">Próxima obra: Losa de concreto (bloqueada)</p>
+        <p className="mt-4 font-hand text-mar">Próxima obra: Losa de concreto (bloqueada)</p>
         <button type="button" className={`${btn} mt-3`} onClick={quiereNueva}>
           {perdida ? "Obra nueva" : "Otra caseta"}
         </button>
@@ -1947,7 +1996,7 @@ export function Paneles({
 
   if (s.panel === "pausa") {
     const tog = (on: boolean) =>
-      on ? "min-h-11 border-2 border-tinta bg-tinta px-4 font-hand text-papel" : "min-h-11 border-2 border-tinta bg-papel-2 px-4 font-hand text-tinta";
+      on ? "min-h-11 rounded-md border-2 border-tinta bg-colmado-amarillo px-4 font-ui text-base font-bold text-tinta shadow-[3px_3px_0_#1B1F23]" : "min-h-11 rounded-md border-2 border-block-sombra bg-cemento px-4 font-ui text-base font-bold text-tinta";
     return (
       <Marco titulo="Pausa" ancho="max-w-sm" onCerrar={cerrar}>
         <p className="font-hand">El reloj de la obra está parado.</p>
@@ -1976,7 +2025,7 @@ export function Paneles({
             Créditos
           </button>
           {pausaAjustes ? (
-            <div className="border-2 border-tinta bg-papel-2 p-3">
+            <div className="border-2 border-tinta bg-cemento p-3">
               <p className="font-hand">Sonido</p>
               <div className="mt-1 flex gap-2">
                 <button type="button" className={tog(ajustes.sonido)} onClick={() => onAjustes({ ...ajustes, sonido: true })}>
@@ -1995,7 +2044,7 @@ export function Paneles({
                   x2
                 </button>
               </div>
-              <p className="mt-3 font-hand text-sm text-tierra">El x2 solo acelera el reloj. No cambia ritmos ni números.</p>
+              <p className="mt-3 font-hand text-sm text-mar">El x2 solo acelera el reloj. No cambia ritmos ni números.</p>
             </div>
           ) : null}
           <button type="button" className={`${btn} mt-6`} onClick={quiereNueva}>
@@ -2048,8 +2097,8 @@ function Plata({
       <div className="h-4 w-full overflow-hidden border-2 border-tinta">
         <div className="flex h-full">
           <span className="h-full bg-tinta" style={{ width: `${wGas}%` }} />
-          <span className="h-full bg-rojo/30" style={{ width: `${wPor}%`, backgroundImage: "repeating-linear-gradient(135deg,#b8432f 0 2px,transparent 2px 5px)" }} />
-          <span className="h-full bg-oro" style={{ width: `${wOro}%` }} />
+          <span className="h-full bg-colmado-rojo/30" style={{ width: `${wPor}%`, backgroundImage: "repeating-linear-gradient(135deg,#D7322B 0 2px,transparent 2px 5px)" }} />
+          <span className="h-full bg-colmado-amarillo" style={{ width: `${wOro}%` }} />
         </div>
       </div>
       <p className="mt-1 flex justify-between gap-2 font-hand text-xs">
@@ -2057,7 +2106,7 @@ function Plata({
         <span>Falta gastar {cifraCorta(lib.porHacer, angosta)}</span>
         <span className="text-tinta">{lib.ganancia >= 0 ? "Ganancia" : "Pérdida"} estimada {cifraCorta(Math.abs(lib.ganancia), angosta)}</span>
       </p>
-      <p className="mt-1 font-hand text-xs text-tierra">
+      <p className="mt-1 font-hand text-xs text-mar">
         Cada fila: gastado de lo presupuestado. «Tiempo muerto» es jornal pagado sin trabajo (espera, lluvia, despacho temprano).
         {" "}La estimación supone que lo que falta cuesta lo presupuestado: cada día de obra de más resta{" "}
         {peso(nominaDiaDe([...s.gente, ...s.reserva].filter((g) => !g.libre)) + DIRECCION_DIA)} (nómina y Dirección).
@@ -2081,18 +2130,18 @@ function Plata({
                 <span className="relative h-3 min-w-0 flex-1">
                   <span className="absolute top-0 h-3 border border-tinta" style={{ width: `${Math.max(hueco, tinta)}%` }} />
                   {muerto ? (
-                    <span className="absolute top-0 h-3 bg-rojo/40" style={{ width: `${(f.real / tope) * 100}%`, backgroundImage: "repeating-linear-gradient(135deg,#b8432f 0 2px,transparent 2px 4px)" }} />
+                    <span className="absolute top-0 h-3 bg-colmado-rojo/40" style={{ width: `${(f.real / tope) * 100}%`, backgroundImage: "repeating-linear-gradient(135deg,#D7322B 0 2px,transparent 2px 4px)" }} />
                   ) : (
                     <span className="absolute top-0 h-3 bg-tinta" style={{ width: `${tinta}%` }} />
                   )}
                   {paso > 0 ? (
-                    <span className="absolute top-0 h-3 bg-rojo/50" style={{ left: `${hueco}%`, width: `${paso}%`, backgroundImage: "repeating-linear-gradient(135deg,#b8432f 0 2px,transparent 2px 4px)" }} />
+                    <span className="absolute top-0 h-3 bg-colmado-rojo/50" style={{ left: `${hueco}%`, width: `${paso}%`, backgroundImage: "repeating-linear-gradient(135deg,#D7322B 0 2px,transparent 2px 4px)" }} />
                   ) : null}
                 </span>
                 <span className="max-w-[46%] shrink-0 text-right text-sm whitespace-normal">{txt}</span>
               </button>
               {abierto && !muerto ? (
-                <p className="font-hand text-xs text-tierra">
+                <p className="font-hand text-xs text-mar">
                   Mano {cifraCorta(f.mo, angosta)} · material {cifraCorta(f.mat, angosta)}
                 </p>
               ) : null}
@@ -2108,7 +2157,7 @@ function Plata({
                         <div>
                           {p.nombre} · {num(p.min / 60, 1)} h · {cifraCorta(p.pesos, angosta)}
                         </div>
-                        <ul className="ml-3 text-tierra">
+                        <ul className="ml-3 text-mar">
                           {p.dias.map((d) => (
                             <li key={d.dia}>
                               Día {d.dia} · {num(d.min / 60, 1)} h · {cifraCorta(d.pesos, angosta)}
@@ -2131,8 +2180,8 @@ function Plata({
 
 function Dato({ etiqueta, valor, rojo }: { etiqueta: string; valor: string; rojo?: boolean }) {
   return (
-    <div className={"border-2 border-tinta px-2 py-1 " + (rojo ? "text-rojo" : "")}>
-      <div className="font-hand text-xs text-tierra">{etiqueta}</div>
+    <div className={"border-2 border-tinta px-2 py-1 " + (rojo ? "text-colmado-rojo" : "")}>
+      <div className="font-hand text-xs text-mar">{etiqueta}</div>
       <div className="font-display text-3xl leading-none">{valor}</div>
     </div>
   );

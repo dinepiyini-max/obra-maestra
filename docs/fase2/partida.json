@@ -1,0 +1,10 @@
+{
+  "semilla": 1,
+  "perfil": "experto",
+  "clima": "normal",
+  "entregada": true,
+  "dia": 19,
+  "caja": 75782,
+  "panel": "informe",
+  "guard": 21097
+}

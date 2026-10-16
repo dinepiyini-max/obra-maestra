@@ -1,21 +1,60 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "Bungee";
+  src: url("/fonts/Bungee-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Barlow Semi Condensed";
+  src: url("/fonts/BarlowSemiCondensed-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Barlow Semi Condensed";
+  src: url("/fonts/BarlowSemiCondensed-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Patrick Hand";
+  src: url("/fonts/PatrickHand-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
-  --color-tinta: #1d1712;
-  --color-fondo: #14100c;
-  --color-tierra: #3d342a;
-  --color-tierra-2: #41382d;
-  --color-tierra-3: #383026;
-  --color-papel: #e8dcc2;
-  --color-papel-2: #d9c9a6;
-  --color-oro: #d4a73c;
-  --color-oro-brillo: #f2d27a;
-  --color-rojo: #963222;
-  --color-agua: #8fb3ad;
-  --color-sello: #2f6b45;
-  --color-ambar: #c47a2a;
-  --font-display: "Jolly Lodger", cursive;
+  --color-block: #8a8d8f;
+  --color-block-sombra: #5e6163;
+  --color-cemento: #c9c4ba;
+  --color-cemento-claro: #e9e5dc;
+  --color-varilla: #7a3e22;
+  --color-varilla-brillo: #b5652f;
+  --color-cielo: #2e9bd6;
+  --color-cielo-claro: #9fd6f2;
+  --color-mar: #0f5c8c;
+  --color-colmado-amarillo: #f6c928;
+  --color-colmado-rojo: #d7322b;
+  --color-colmado-verde: #1fa463;
+  --color-colmado-rosa: #e8569b;
+  --color-tinta: #1b1f23;
+  --color-noche: #12171c;
+  --color-tierra: #8b5e3c;
+  --color-zinc: #a7b0b6;
+  --color-fondo: #12171c;
+  --color-papel: #e9e5dc;
+  --font-display: "Bungee", sans-serif;
   --font-hand: "Patrick Hand", cursive;
+  --font-ui: "Barlow Semi Condensed", sans-serif;
 }
 
 @layer base {
@@ -23,15 +62,16 @@
   body,
   #root {
     height: 100dvh;
-    background: var(--color-fondo);
-    color: var(--color-papel);
+    background: var(--color-noche);
+    color: var(--color-cemento-claro);
   }
 
   body {
     margin: 0;
     overflow: hidden;
-    font-family: var(--font-hand);
-    font-size: 18px;
+    font-family: var(--font-ui);
+    font-weight: 500;
+    font-size: 16px;
     line-height: 1.35;
   }
 
@@ -42,57 +82,6 @@
 
   button:disabled {
     cursor: not-allowed;
-  }
-}
-
-.trazo-casa {
-  fill: none;
-  stroke: #1d1712;
-  stroke-width: 2.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-dasharray: 900;
-  stroke-dashoffset: 900;
-  animation: trazo-casa 2s ease forwards;
-}
-
-.menu-luego {
-  opacity: 0;
-  animation: menu-luego 0.35s ease 2s forwards;
-}
-
-@keyframes trazo-casa {
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-@keyframes menu-luego {
-  to {
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .trazo-casa {
-    stroke-dashoffset: 0;
-    animation: none;
-  }
-  .menu-luego {
-    opacity: 1;
-    animation: none;
-  }
-}
-
-@media (orientation: landscape) and (max-height: 520px) {
-  .velo-obra {
-    align-items: stretch;
-    justify-content: flex-start;
-  }
-  .marco-obra {
-    width: min(46vw, 26rem);
-    max-height: 100dvh;
-    margin: 0;
   }
 }
 
@@ -116,54 +105,10 @@
     transform: scale(1);
   }
   40% {
-    transform: scale(1.3);
+    transform: scale(1.08);
   }
   100% {
     transform: scale(1);
-  }
-}
-
-@keyframes moneda-entra {
-  0% {
-    transform: translate(0, 28vh) scale(1);
-    opacity: 1;
-  }
-  100% {
-    transform: translate(18vw, -8vh) scale(0.5);
-    opacity: 0;
-  }
-}
-
-@keyframes moneda-sale {
-  0% {
-    transform: translate(0, 0) scale(1);
-    opacity: 1;
-  }
-  100% {
-    transform: translate(-28vw, 18vh) scale(0.5);
-    opacity: 0;
-  }
-}
-
-@keyframes caja-oro {
-  0%,
-  100% {
-    background: transparent;
-    color: var(--color-oro-brillo);
-  }
-  40% {
-    background: var(--color-oro);
-    color: var(--color-tinta);
-  }
-}
-
-@keyframes flecha-bob {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-6px);
   }
 }
 
@@ -175,37 +120,16 @@
   animation: caja-latido 350ms ease;
 }
 
-.moneda-entra {
-  animation: moneda-entra 700ms ease-in forwards;
-}
-
-.moneda-sale {
-  animation: moneda-sale 700ms ease-in forwards;
-}
-
-@keyframes moneda-vuelo {
-  0% {
-    transform: translate(-50%, -50%) scale(1);
-    opacity: 1;
-  }
-  75% {
-    opacity: 1;
-  }
-  100% {
-    transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(0.3);
-    opacity: 0;
-  }
-}
-
-.moneda-vuelo {
-  animation: moneda-vuelo 820ms cubic-bezier(0.18, 0.7, 0.24, 1) forwards;
+.plancha {
+  background-color: #e9e5dc;
+  border-radius: 6px;
 }
 
 .hoja-libreta {
-  background-color: #e8dcc2;
+  background-color: #e9e5dc;
   background-image:
-    linear-gradient(#b8432f, #b8432f),
-    repeating-linear-gradient(to bottom, transparent 0 27px, rgba(143, 179, 173, 0.55) 27px 28px);
+    linear-gradient(#d7322b, #d7322b),
+    repeating-linear-gradient(to bottom, transparent 0 27px, #9fd6f2 27px 28px);
   background-size:
     2px 100%,
     100% 28px;
@@ -214,16 +138,36 @@
     0 12px;
   background-repeat: no-repeat, repeat;
   font-family: "Patrick Hand", cursive;
+  font-size: 16px;
 }
 
-.caja-oro {
-  animation: caja-oro 0.9s ease;
+.juego-root [data-caja] {
+  font-variant-numeric: tabular-nums;
 }
 
-.papel-grano {
-  background-color: #e8dcc2;
-  background-image: radial-gradient(rgba(29, 23, 18, 0.05) 0.7px, transparent 0.7px);
-  background-size: 8px 8px;
+@media (max-width: 759px) {
+  .juego-root .text-xs,
+  .juego-root .text-\[11px\],
+  .juego-root .text-\[12px\] {
+    font-size: 14px;
+    line-height: 1.2;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .velo-obra {
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+  .marco-obra {
+    width: min(46vw, 26rem);
+    max-height: 100dvh;
+    margin: 0;
+  }
+  .marco-obra > header h2 {
+    font-size: 18px;
+    line-height: 1.15;
+  }
 }
 
 html,
@@ -248,11 +192,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .sello-caer,
-  .caja-oro,
-  .caja-latido,
-  .moneda-entra,
-  .moneda-sale,
-  .moneda-vuelo {
+  .caja-latido {
     animation: none;
   }
 }
