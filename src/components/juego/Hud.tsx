@@ -241,7 +241,6 @@ export function Hud({
     window.addEventListener("resize", mq);
     return () => window.removeEventListener("resize", mq);
   }, []);
-  const [nomAbierta, setNomAbierta] = useState(false);
   const quitar = useRef(onQuitar);
   quitar.current = onQuitar;
   const born = useRef(new Map<number, number>());
@@ -570,19 +569,11 @@ export function Hud({
       ) : null}
 
       {faltaNomina ? (
-        // v19: una línea compacta que se abre al tocarla, no una tarjeta fija en el centro.
-        <div className="pointer-events-auto mx-auto mt-1 w-full max-w-md bg-papel/95 font-hand text-tinta" data-nomina-linea>
-          <button
-            type="button"
-            aria-expanded={nomAbierta}
-            onClick={() => setNomAbierta((v) => !v)}
-            className="flex min-h-11 w-full items-center gap-2 border border-tinta px-3 text-left text-sm"
-          >
-            <span aria-hidden="true">{nomAbierta ? "▾" : "▸"}</span>
-            <span className="min-w-0 flex-1 truncate">{faltaNomina}</span>
-          </button>
-          {nomAbierta ? (
-            <div className="border border-t-0 border-tinta px-3 py-2 text-sm">
+        // v24: el aviso de la nómina de las 3 siempre se ve completo (antes quedaba plegado en una línea ▸).
+        <div className="pointer-events-auto mx-auto mt-1 w-full max-w-md border-2 border-rojo bg-papel/95 font-hand text-tinta" data-nomina-linea data-nomina-visible>
+          <p className="px-3 pt-1 text-sm font-bold" role="alert">{faltaNomina}</p>
+          {faltaNomina ? (
+            <div className="px-3 pb-2 text-sm">
               {(() => {
                 const d = desgloseNomina(s);
                 return (
