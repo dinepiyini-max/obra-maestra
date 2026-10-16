@@ -26,6 +26,9 @@ export function cuadreCaja(s: Estado): number {
 export const PERFILES: Record<string, Cfg> = {
   principiante: { ...BOTS.principiante!, nombre: "principiante", sugerida: true },
   humano: { nombre: "humano", cupo: 4, orden: "lista", horaPedido: 9 * 60, siguiente: false, olvido: 0.2, errorPuesto: 0.15, golpeCada: 15, fallaPlomo: 0.2, urgente: false, soloSita: false, cortarTemprano: false, sugerida: true },
+  // v23: humano lento: los mismos errores que humano, pero reacciona a un tercio de la velocidad
+  // (revisa la obra cada 45 min, golpea cada 45, pide 30 min más tarde y tarda 15 min en plomear).
+  humano_lento: { nombre: "humano_lento", cupo: 4, orden: "lista", horaPedido: 9 * 60, siguiente: false, olvido: 0.2, errorPuesto: 0.15, golpeCada: 45, fallaPlomo: 0.2, urgente: false, soloSita: false, cortarTemprano: false, sugerida: true, reaccion: 3 },
   // intermedio: el bot de v16/v17, pero contratando la cuadrilla sugerida (comete menos errores que humano).
   intermedio: { ...BOTS.intermedio!, sugerida: true },
   // El bot de v17 tal cual (4 primeros de la lista, sin mirar la sugerida), para comparar.

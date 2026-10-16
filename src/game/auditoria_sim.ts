@@ -97,7 +97,11 @@ function jugar(seed: number, cupo = 4) {
       pedidoDia = s.dia;
     } else if (s.minuto < 15 * 60 && (s.minuto % 15 === 0 || laborCambia(s))) gestionar(s, false, cupo);
     if (s.minuto < 7 * 60 + 8) silenciar(s);
-    if ((s.plomo || (s.curando && !s.regadoHoy && s.curadoDias.length < 7)) && s.minuto < 17 * 60) {
+    // v23: el lento tarda 5 min × reacción en ver «Toca plomear» y caminar al muro.
+    if (s.plomo && plomoVisto < 0) plomoVisto = s.dia * 1440 + s.minuto;
+    if (!s.plomo) plomoVisto = -1;
+    const plomoTarde = R > 1 && s.plomo && s.dia * 1440 + s.minuto - plomoVisto < 5 * R;
+    if (!plomoTarde && (s.plomo || (s.curando && !s.regadoHoy && s.curadoDias.length < 7)) && s.minuto < 17 * 60) {
       s.jugador = { x: 19, y: 14.5 };
       golpe(s, true);
     }
@@ -204,7 +208,11 @@ function jugarNovato(seed: number, cupo = 4) {
     if (s.entregada) break;
     if (s.minuto < 15 * 60 && (s.minuto % 15 === 0 || laborCambia(s))) gestionar(s, false, cupo);
     if (s.minuto < 7 * 60 + 8) silenciar(s);
-    if ((s.plomo || (s.curando && !s.regadoHoy && s.curadoDias.length < 7)) && s.minuto < 17 * 60) {
+    // v23: el lento tarda 5 min × reacción en ver «Toca plomear» y caminar al muro.
+    if (s.plomo && plomoVisto < 0) plomoVisto = s.dia * 1440 + s.minuto;
+    if (!s.plomo) plomoVisto = -1;
+    const plomoTarde = R > 1 && s.plomo && s.dia * 1440 + s.minuto - plomoVisto < 5 * R;
+    if (!plomoTarde && (s.plomo || (s.curando && !s.regadoHoy && s.curadoDias.length < 7)) && s.minuto < 17 * 60) {
       s.jugador = { x: 19, y: 14.5 };
       golpe(s, true);
     }
@@ -580,6 +588,8 @@ export interface Cfg {
   sugerida?: boolean;
   /** v20: juega como el revisor a mano: no reserva nómina, usa «Pedir lo que alcanza» y toma la salida (fiado) cuando aparece. */
   torpe?: boolean;
+  /** v23: tiempo de reacción relativo (1 = humano normal; 3 = un tercio de la velocidad). Revisa la obra, pide y plomea más tarde. */
+  reaccion?: number;
 }
 export const BOTS: Record<string, Cfg> = {
   principiante: { nombre: "principiante", cupo: 3, orden: "azar", horaPedido: 11 * 60, siguiente: false, olvido: 0.3, errorPuesto: 0.25, golpeCada: 20, fallaPlomo: 0.35, urgente: true, soloSita: false, cortarTemprano: false },
@@ -621,6 +631,8 @@ export function correr(seed: number, cfg0: Cfg, clima: Clima = "normal", precios
 /** v21: juega desde un estado dado (p. ej. la partida real del revisor) hasta entregar o hasta pasar `hastaEtapa`. */
 export function seguirDesde(s: Estado, cfg: Cfg, r: () => number, chequeo?: Chequeo, hastaEtapa = 99) {
   const seed = s.seed;
+  const R = Math.max(1, cfg.reaccion ?? 1);
+  let plomoVisto = -1;
   let guard = 0, pedidoDia = -1, olvidoHoy = false, diaOlvido = -1, diaAviso = -1, diaSalida = -1, sinSalida = 0;
   const T = (p: string) => chequeo?.(s, p);
   while (!s.entregada && guard < 80000 && s.etapa <= hastaEtapa) {
@@ -641,9 +653,9 @@ export function seguirDesde(s: Estado, cfg: Cfg, r: () => number, chequeo?: Cheq
         if (p && s.gente.filter((g) => !g.libre).length > 2) marcarLibre(s, p.id, true);
       }
     }
-    if (!cfg.soloSita && !olvidoHoy && s.minuto >= cfg.horaPedido && s.minuto < cfg.horaPedido + 15 && pedidoDia !== s.dia) {
+    if (!cfg.soloSita && !olvidoHoy && s.minuto >= cfg.horaPedido + 15 * (R - 1) && s.minuto < cfg.horaPedido + 15 * R && pedidoDia !== s.dia) {
       gestionarCfg(s, cfg, r, true); pedidoDia = s.dia; T("pedido");
-    } else if (s.minuto < 15 * 60 && (s.minuto % 15 === 0 || laborCambia(s))) gestionarCfg(s, cfg, r, false);
+    } else if (s.minuto < 15 * 60 && (s.minuto % (15 * R) === 0 || (R === 1 && laborCambia(s)))) gestionarCfg(s, cfg, r, false);
     if (s.minuto < 7 * 60 + 8) silenciar(s);
     if (cfg.torpe && puedeFiar(s) && s.minuto % 30 === 0) { fiar(s); T("fiar"); }
     if (s.minuto === 10 * 60 && diaSalida !== s.dia) {
@@ -653,7 +665,11 @@ export function seguirDesde(s: Estado, cfg: Cfg, r: () => number, chequeo?: Cheq
       const costo = Object.entries(falta).reduce((a, [k, n]) => a + (n ?? 0) * MATERIALES[k as Mat].precio, 0) + FLETE;
       if (Object.keys(falta).length && !s.pedidos.length && s.caja < costo && !puedeAdelantar(s, costo) && !puedeFiar(s) && !s.entregada) sinSalida++;
     }
-    if ((s.plomo || (s.curando && !s.regadoHoy && s.curadoDias.length < 7)) && s.minuto < 17 * 60 && !(s.plomo && r() < cfg.fallaPlomo / 30)) { s.jugador = { x: 19, y: 14.5 }; golpe(s, true); }
+    // v23: el lento tarda 5 min × reacción en ver «Toca plomear» y caminar al muro.
+    if (s.plomo && plomoVisto < 0) plomoVisto = s.dia * 1440 + s.minuto;
+    if (!s.plomo) plomoVisto = -1;
+    const plomoTarde = R > 1 && s.plomo && s.dia * 1440 + s.minuto - plomoVisto < 5 * R;
+    if (!plomoTarde && (s.plomo || (s.curando && !s.regadoHoy && s.curadoDias.length < 7)) && s.minuto < 17 * 60 && !(s.plomo && r() < cfg.fallaPlomo / 30)) { s.jugador = { x: 19, y: 14.5 }; golpe(s, true); }
     if (s.minuto % cfg.golpeCada === 0 && s.minuto < 15 * 60) { s.jugador = { x: 19, y: 14.5 }; golpe(s, false); }
     tick(s, 0.2);
     T("tick");
