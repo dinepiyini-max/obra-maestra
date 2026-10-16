@@ -267,7 +267,7 @@ describe("regresión v23", () => {
     }
     s.panel = null;
     s.pausa = false;
-    assert.equal(RELOJ_MIN_CAMINANDO, 2.5);
+    assert.equal(RELOJ_MIN_CAMINANDO, 3);
     // Caminando sin parar de un lado al otro (el caso lento): 7:00 a 18:00 en menos de 300 s.
     const d = nueva(3);
     firmar(d);

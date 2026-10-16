@@ -1327,6 +1327,9 @@ describe("obra", () => {
     firmar(s);
     assert.equal(contratar(s, s.candidatos[0]!.id), null);
     const peon = s.gente[0]!;
+    // v23: el contratado entra a la obra; aquí se le quita el puesto a mano para probar «sin tarea».
+    assert.equal(peon.puesto, "obra");
+    asignar(s, peon.id, null);
     assert.equal(peon.puesto, null);
     assert.equal(peon.cansancio, 0);
     s.panel = null;
@@ -1606,8 +1609,8 @@ describe("obra", () => {
     const tono = cuadrilla.candidatos.find((c) => c.nombre === "Toño")!;
     assert.equal(contratar(cuadrilla, moncho.id), null);
     assert.equal(contratar(cuadrilla, tono.id), null);
-    assert.equal(cuadrilla.gente.find((g) => g.nombre === "Moncho")!.puesto, null);
-    assert.equal(cuadrilla.gente.find((g) => g.nombre === "Toño")!.puesto, null);
+    assert.equal(cuadrilla.gente.find((g) => g.nombre === "Moncho")!.puesto, "obra");
+    assert.equal(cuadrilla.gente.find((g) => g.nombre === "Toño")!.puesto, "obra");
     assert.equal(cuadrilla.gente.find((g) => g.nombre === "Moncho")!.cansancio, 0);
     assert.equal(cuadrilla.gente.find((g) => g.nombre === "Toño")!.cansancio, 0);
   });
@@ -1921,7 +1924,7 @@ describe("obra", () => {
     };
     const s = armar(9);
     const run = s.runs[4]!.find((r) => r.id === "block")!;
-    for (const h of [3, 6, 9, 12]) {
+    for (const h of [3, 9]) {
       const u = h * POR_HILADA;
       run.hecho = u - 0.01;
       s.plomo = null;
@@ -2240,7 +2243,7 @@ describe("obra", () => {
     avanzarMinutos(s, 1);
     assert.equal(s.avisos.some((a) => /Se venció/.test(a.texto) && /P\$0/.test(a.texto)), false);
     s.etapa = 4;
-    s.blocksHoy = 200;
+    s.blocksHoy = 8 * POR_HILADA;
     s.inv.block = { q: 400, valor: 0 };
     s.inv.v38 = { q: 20, valor: 0 };
     s.inv.alambre = { q: 4, valor: 0 };
@@ -2249,7 +2252,7 @@ describe("obra", () => {
     s.inv.agua = { q: 2, valor: 0 };
     s.mezclas = [{ tipo: "M", prog: 1, lista: true, vida: 90, costo: 10, restante: 30 }];
     s.plomo = null;
-    assert.equal(cuelloLabor(s), "Máximo 6 hiladas por día.");
+    assert.equal(cuelloLabor(s), "Máximo 8 hiladas por día.");
   });
 
   it("un pedido que deja la nómina en rojo no alcanza", () => {
@@ -2392,7 +2395,7 @@ describe("obra", () => {
   });
 
   it("tramos de cobro: muros 10, columnas 10, suma el contrato", () => {
-    assert.equal(TAREAS.block.rinde, 150);
+    assert.equal(TAREAS.block.rinde, 210);
     assert.equal(ETAPAS.find((e) => e.id === "muros")!.tramo, 0.1);
     assert.equal(ETAPAS.find((e) => e.id === "columnas")!.tramo, 0.1);
     const s = nueva(1);

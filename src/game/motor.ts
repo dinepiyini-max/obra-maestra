@@ -41,6 +41,7 @@ import {
   SOLAR,
   TAREAS,
   TOPE_BLOCK_DIA,
+  HILADA_TOPE,
   TUTORIAL,
   VEL_CUADRILLA,
   VEL_MAESTRO,
@@ -356,6 +357,8 @@ export interface Estado {
   bono?: number;
   /** v22: cuenta de la caja al entregar. */
   cierre?: Cierre;
+  /** v23: segundos reales jugados hoy (para el piso del reloj). */
+  realHoy?: number;
   /** v19: pérdidas del día (mezcla vencida, mojado...) para el resumen de la noche. */
   perdidasHoy?: { texto: string; pesos: number }[];
   /** El finde está parado en el domingo, a la espera del toque. */
@@ -1682,6 +1685,8 @@ function consumoPorMin(s: Estado, tipo: "H" | "M"): number {
 /** En Muros el albañil está libre para vaciar solo si su próxima tarea es el hormigón, no el block. */
 function albanilLibreParaVaciar(s: Estado): boolean {
   if (s.etapa !== 4) return true;
+  // v23: el plomo saca el block de la lista solo un momento; no se bate hormigón por eso (se vencía al volver al block).
+  if (s.plomo) return false;
   for (const w of listos(s)) {
     if (w.mezcla !== "H" || w.k !== "vaciar") continue;
     if (alguienHara(s, w)) return true;
@@ -3168,9 +3173,12 @@ export function tick(s: Estado, dtReal: number, ritmo = 1) {
   if (s.gente.length + s.reserva.length === 0) return;
   // v19: mientras el maestro camina, el reloj corre por lo caminado (cruzar el solar < 20 min);
   // quieto, corre como siempre (5 min por segundo a x1).
-  // v23: caminando, el reloj nunca baja de 2,5 min por segundo: un día (7:00 a 18:00) dura como mucho ~4,4 min reales a x1.
+  // v23: caminando, el reloj corre por lo caminado (cruzar el solar ≤ 20 min), pero después de 90 s reales en el día
+  // nunca baja de 3 min por segundo: un día (7:00 a 18:00) dura como mucho ~4,8 min reales a x1 aunque camines todo el rato.
   // Antes corría solo por lo caminado (0,65 min/s) y un día caminando duraba más de 15 minutos.
-  s.frac += camino > 1e-4 ? Math.max(camino * MIN_POR_CASILLA, dt * RELOJ_MIN_CAMINANDO * ritmo) : sim ? dt * 5 : dt * 5 * ritmo;
+  if (!sim) s.realHoy = (s.realHoy ?? 0) + dt;
+  const piso = (s.realHoy ?? 0) > RELOJ_GRACIA_SEG ? dt * RELOJ_MIN_CAMINANDO * ritmo : 0;
+  s.frac += camino > 1e-4 ? Math.max(camino * MIN_POR_CASILLA, piso) : sim ? dt * 5 : dt * 5 * ritmo;
   let n = 0;
   while (s.frac >= 1 && n < 8) {
     if (s.panel || s.entregada) break;
@@ -3484,7 +3492,9 @@ export const MAESTRO_FRENO = 12; // casillas/s² al frenar
 /** Minutos de reloj por casilla caminada: cruzar el solar (≈70 casillas) cuesta menos de 20 minutos. */
 export const MIN_POR_CASILLA = 0.26;
 /** v23: minutos de juego por segundo real, como mínimo, mientras el maestro camina. */
-export const RELOJ_MIN_CAMINANDO = 2.5;
+export const RELOJ_MIN_CAMINANDO = 3;
+/** v23: segundos reales del día antes de que entre el piso del reloj caminando. */
+export const RELOJ_GRACIA_SEG = 90;
 
 /** v23: el reloj está parado con cualquier panel abierto (Ferretería, Pausa, Libreta…) o en pausa. */
 export function relojParado(s: Estado): boolean {
@@ -4844,6 +4854,7 @@ export function siguienteDia(s: Estado) {
   s.dia = dia;
   s.minuto = 7 * 60;
   s.frac = 0;
+  s.realHoy = 0;
   s.sinGolpe = 0;
   s.stats.golpesAutoHoy = 0;
   s.nominaPagada = false;
@@ -5512,7 +5523,7 @@ export function cuelloLabor(s: Estado): string {
       }
     }
   }
-  if (topeHiladas) return "Máximo 6 hiladas por día.";
+  if (topeHiladas) return `Máximo ${HILADA_TOPE} hiladas por día.`;
   if (siguiente) return `${def.nombre}: ${siguiente.nombre} · ${num(siguiente.hecho, 1)} / ${num(siguiente.q, 1)}`;
   return `${def.nombre}: ${num(progresoEtapa(s) * 100, 0)}%`;
 }

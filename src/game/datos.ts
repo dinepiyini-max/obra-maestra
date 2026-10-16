@@ -374,7 +374,7 @@ export const ETAPAS: EtapaDef[] = [
     id: "muros",
     n: 5,
     nombre: "Muros de block",
-    regla: "Máximo 6 hiladas por día. Plomo en las hiladas 3, 6, 9 y 12.",
+    regla: "Máximo 8 hiladas por día. Plomo en las hiladas 3 y 9.",
     tramo: 0.1,
     trabajos: [
       {
