@@ -97,6 +97,8 @@ import {
   type OficinaTab,
   type Persona,
   lineasCierre,
+  cuentaFiadoPedido,
+  fiarPedido,
 } from "@/game/motor";
 import { Retrato, alToque } from "./Hud";
 import type { Ajustes } from "@/game/guardar";
@@ -663,7 +665,7 @@ export function Paneles({
   const [partidaAbierta, setPartidaAbierta] = useState<string | null>(null);
   const [pausaAjustes, setPausaAjustes] = useState(false);
   const [pausaHoja, setPausaHoja] = useState<null | "creditos">(null);
-  const [freno, setFreno] = useState<null | { origen: "sita" | "tambien" | "tel"; urgente: boolean; total: number }>(null);
+  const [freno, setFreno] = useState<null | { origen: "sita" | "tambien" | "tel"; urgente: boolean; total: number; items?: Cantidades }>(null);
   const [aceptaCorta, setAceptaCorta] = useState(false);
   useEffect(() => setAceptaCorta(false), [freno]);
   const [angosta, setAngosta] = useState(false);
@@ -1194,6 +1196,20 @@ export function Paneles({
             Mejor fiado: lo de esta etapa ({peso(cuentaFiado(s)!.total)}), sale del próximo cobro
           </button>
         ) : null}
+        {!puede && freno.items && cuentaFiadoPedido(s, freno.items, freno.urgente) ? (
+          <button
+            type="button"
+            className={`${btnPri} mt-2`}
+            data-fiar-pedido
+            {...alToque(() => {
+              const f = freno;
+              setFreno(null);
+              act((st) => decir(st, fiarPedido(st, f.items!, f.urgente)));
+            })}
+          >
+            Que lo fíe el guardalmacén: este pedido ({peso(cuentaFiadoPedido(s, freno.items, freno.urgente)!.total)}), sale del próximo cobro
+          </button>
+        ) : null}
         <div className="mt-3 flex flex-wrap gap-2">
           <button type="button" className={btnPri} disabled={!puede || (!cuenta.alcanza && !aceptaCorta)} {...alToque(() => confirmarFreno())}>
             {cuenta.alcanza ? "Confirmar" : paga ? "Pedir lo que alcanza" : "No alcanza la caja"}
@@ -1223,7 +1239,7 @@ export function Paneles({
                 if (!nota) return;
                 const lote = nota.recorte ? (nota.cabe ?? {}) : nota.items;
                 const mats = Object.entries(lote).reduce((a, [k, n]) => a + (n ?? 0) * MATERIALES[k as Mat].precio, 0);
-                setFreno({ origen: "sita", urgente: nota.urgente, total: mats + fleteDe(s, nota.urgente) });
+                setFreno({ origen: "sita", urgente: nota.urgente, total: mats + fleteDe(s, nota.urgente), items: lote });
               })}
             >
               {of.comeNomina || of.recorte ? "Pedir lo que alcanza" : "Pedir"}
@@ -1445,7 +1461,7 @@ export function Paneles({
         ponerNota("Nada que pedir.", true);
         return;
       }
-      setFreno({ origen: "tel", urgente, total });
+      setFreno({ origen: "tel", urgente, total, items: { ...cart } });
       return;
     }
     let err: string | null = null;

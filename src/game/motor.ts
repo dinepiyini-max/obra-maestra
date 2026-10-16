@@ -2653,11 +2653,36 @@ export function puedeFiar(s: Estado): boolean {
 export function fiar(s: Estado): string | null {
   const c = cuentaFiado(s);
   if (!c) return "El guardalmacén solo fía lo que falta para sellar la etapa, cuando la caja y el adelanto no alcanzan.";
+  return fiarItems(s, c.items, false, c.total);
+}
+
+/** v24: el pedido suelto de la Ferretería también se puede fiar, con las mismas reglas: la caja (y el adelanto) no lo
+ * pagan y todo lo fiado cabe en lo que queda por cobrar. Antes solo se fiaba lo que faltaba para sellar la etapa. */
+export function cuentaFiadoPedido(s: Estado, items: Cantidades, urgente = false): { items: Cantidades; total: number } | null {
+  if (!s.firmado || s.entregada || s.sello) return null;
+  if (proximoTramo(s) < 0) return null;
+  const limpio: Cantidades = {};
+  for (const [k, n] of Object.entries(items) as [Mat, number][]) if ((n ?? 0) > 1e-6 && MATERIALES[k]?.compra) limpio[k] = n;
+  if (!tieneItems(limpio)) return null;
+  const total = costoMats(limpio) + fleteDe(s, urgente);
+  if (s.caja >= total - 0.5) return null;
+  if (puedeAdelantar(s, total) && cajaLibre(s) + montoAdelanto(s) >= total - 0.5) return null;
+  if (total > limiteFiado(s) + 0.5) return null;
+  return { items: limpio, total };
+}
+
+export function fiarPedido(s: Estado, items: Cantidades, urgente = false): string | null {
+  const c = cuentaFiadoPedido(s, items, urgente);
+  if (!c) return "El guardalmacén no fía este pedido: la caja lo paga o ya no cabe en lo que queda por cobrar.";
+  return fiarItems(s, c.items, urgente, c.total);
+}
+
+function fiarItems(s: Estado, items: Cantidades, urgente: boolean, total: number): string | null {
   const caja = s.caja;
   // Caja de paso para que el pedido salga aunque la caja esté en cero o negativa; luego vuelve a su valor.
-  const paso = c.total + 1e6;
+  const paso = total + 1e6;
   s.caja = paso;
-  const err = pedir(s, c.items, false, true);
+  const err = pedir(s, items, urgente, true);
   const pagado = paso - s.caja;
   s.caja = caja;
   if (err) return err;
