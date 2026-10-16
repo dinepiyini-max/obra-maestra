@@ -1518,8 +1518,10 @@ function ritmo(s: Estado, g: Persona, tarea: Tarea): number {
   return (td.rinde / 480) * e * g.rinde * factorCansancio(g.cansancio) * factorMania(s, g, tarea);
 }
 
-function fatiga(s: Estado, g: Persona, tipo: "pesado" | "medio" | "liviano" | "caminar" | "sombra" | "lluvia") {
-  const tabla = { pesado: 9, medio: 5, liviano: 3, caminar: 2, sombra: -12, lluvia: -6 };
+export function fatiga(s: Estado, g: Persona, tipo: "pesado" | "medio" | "liviano" | "caminar" | "sombra" | "lluvia") {
+  // v23: curva más suave. Antes un día pesado (9/h) freía en una sola jornada a quien tiene poco aguante (Fefa).
+  // Ahora el peor caso (aguante 1, patas) llega a 65 en 8 h pesadas: «frito» (85) pide dos días duros sin sombra.
+  const tabla = { pesado: 5, medio: 3, liviano: 2, caminar: 1.5, sombra: -12, lluvia: -6 };
   let d = tabla[tipo] / 60;
   if (d > 0) {
     d *= 1.4 - 0.1 * g.aguante;
@@ -1567,7 +1569,8 @@ function claveMuerto(s: Estado, g: Persona | null, hint?: "lluvia" | "camino" | 
   if (g.puesto === "sombra") return "otro";
   if (s.plomo) return "plomo";
   const w = elegir(s, g);
-  if (!w) return "tarea";
+  // v23: con puesto, no tener nada que hacer de su oficio no es «Sin tarea asignada» (Bolo marcaba 6,4 h en Obra).
+  if (!w) return "nohay";
   if (w.mezcla) {
     const map = receta(w.mezcla);
     const stock = stockMezcla(s, w.mezcla);
@@ -1612,6 +1615,7 @@ const NOMBRE_MUERTO: Record<string, string> = {
   lluvia: "Lluvia",
   plomo: "Esperando plomo",
   tarea: "Sin tarea asignada",
+  nohay: "En su puesto, sin trabajo de su oficio",
   otro: "Otro",
 };
 
@@ -1625,7 +1629,7 @@ export interface ParteMuerto {
 
 export function partesMuerto(s: Estado): ParteMuerto[] {
   const det = s.stats.muertoDetalle ?? {};
-  const orden = ["batea", "agua", "mortero", "lluvia", "plomo", "tarea", "otro"];
+  const orden = ["batea", "agua", "mortero", "lluvia", "plomo", "tarea", "nohay", "otro"];
   const mats = Object.keys(det)
     .filter((k) => k.startsWith("mat:"))
     .sort();
@@ -3163,7 +3167,9 @@ export function tick(s: Estado, dtReal: number, ritmo = 1) {
   if (s.gente.length + s.reserva.length === 0) return;
   // v19: mientras el maestro camina, el reloj corre por lo caminado (cruzar el solar < 20 min);
   // quieto, corre como siempre (5 min por segundo a x1).
-  s.frac += camino > 1e-4 ? camino * MIN_POR_CASILLA : sim ? dt * 5 : dt * 5 * ritmo;
+  // v23: caminando, el reloj nunca baja de 2,5 min por segundo: un día (7:00 a 18:00) dura como mucho ~4,4 min reales a x1.
+  // Antes corría solo por lo caminado (0,65 min/s) y un día caminando duraba más de 15 minutos.
+  s.frac += camino > 1e-4 ? Math.max(camino * MIN_POR_CASILLA, dt * RELOJ_MIN_CAMINANDO * ritmo) : sim ? dt * 5 : dt * 5 * ritmo;
   let n = 0;
   while (s.frac >= 1 && n < 8) {
     if (s.panel || s.entregada) break;
@@ -3476,6 +3482,13 @@ export const MAESTRO_ACEL = 9; // casillas/s² al arrancar
 export const MAESTRO_FRENO = 12; // casillas/s² al frenar
 /** Minutos de reloj por casilla caminada: cruzar el solar (≈70 casillas) cuesta menos de 20 minutos. */
 export const MIN_POR_CASILLA = 0.26;
+/** v23: minutos de juego por segundo real, como mínimo, mientras el maestro camina. */
+export const RELOJ_MIN_CAMINANDO = 2.5;
+
+/** v23: el reloj está parado con cualquier panel abierto (Ferretería, Pausa, Libreta…) o en pausa. */
+export function relojParado(s: Estado): boolean {
+  return !!s.pausa || !!s.panel || s.entregada;
+}
 /** A x2 el maestro camina un poco más rápido, no el doble. */
 export function multPaso(ritmo: number): number {
   return ritmo >= 2 ? 1.3 : 1;
@@ -4506,7 +4519,8 @@ export function contratar(s: Estado, id: string): string | null {
   }
   diario(s, `Contrataste a ${p.nombre} ${p.apellido}, ${OFICIO_NOMBRE[p.oficio]}.`);
   // v22: si ya aprendiste a dar puestos, el nuevo entra a la tarea de la obra (sin quedar «Sin puesto»).
-  p.puesto = s.firmado && (s.tut.fin || s.tut.cuadrilla) ? "obra" : null;
+  // v23: todo contratado va solo a la obra (antes, sin el tutorial de puestos, quedaba «Sin tarea»).
+  p.puesto = "obra";
   p.cansancio = 0;
   if (s.gente.length + s.reserva.length >= 3) s.tut.parada = true;
   chequearTutorial(s);

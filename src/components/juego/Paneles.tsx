@@ -1707,7 +1707,8 @@ export function Paneles({
             <li key={g.id} className="flex items-center gap-2">
               <span>
                 {g.nombre}
-                {g.cansancio >= 85 ? " · mañana no viene y no cobra" : ""}
+                {` · cansancio ${Math.round(g.cansancio)}`}
+                {g.cansancio >= 85 ? " · frito: mañana no viene y no cobra" : g.cansancio >= 70 ? " · cansado (frito desde 85)" : ""}
                 {g.libre ? " · libre mañana" : ""}
                 {` · ánimo ${Math.round(g.animo ?? 100)}`}
               </span>

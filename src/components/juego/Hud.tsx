@@ -16,6 +16,7 @@ import {
   puedeAdelantar,
   razonAdelanto,
   reloj,
+  relojParado,
   textoFaltaNomina,
   textoMezcla,
   minutosMezcla,
@@ -355,6 +356,7 @@ export function Hud({
         <div className="flex items-center gap-2 bg-fondo/90 px-2 py-1 min-[900px]:mt-[52px]">
           <div className="font-hand text-sm leading-none whitespace-nowrap">
             {r.hora} {cortoDia(s.dia)} {s.dia}
+            {relojParado(s) && s.firmado && !s.entregada ? <span data-reloj-parado> · ⏸ reloj parado</span> : null}
           </div>
           <div className="truncate font-hand text-[11px] leading-none text-papel/80" data-clima>
             {r.clima}
@@ -406,6 +408,7 @@ export function Hud({
               </svg>
               <div className={"font-hand leading-none text-papel " + (chico ? "text-base" : "text-xl")}>
                 {r.hora} {cortoDia(s.dia)} {s.dia}
+                {relojParado(s) && s.firmado && !s.entregada ? <span data-reloj-parado> · ⏸ reloj parado</span> : null}
               </div>
             </div>
             <div className={"truncate font-hand leading-tight text-papel/80 " + (chico ? "text-[11px]" : "text-xs")} data-clima>
