@@ -12,6 +12,7 @@ import {
   contratar,
   despedir,
   fiar,
+  fiarPedido,
   marcarLibre,
   pedir,
   terminarJornada,
@@ -79,6 +80,9 @@ export function jugarTramposo(seed: number, clima: Clima = "normal", precios: nu
     });
     probar(s, "fiado repetido", () => {
       for (let i = 0; i < 3; i++) fiar(s);
+    });
+    if (vez("fiapedido" + s.dia)) probar(s, "fiar pedidos sueltos repetidos", () => {
+      for (let i = 0; i < 3; i++) fiarPedido(s, { cemento: 5 }, false);
     });
     probar(s, "adelanto y rescate repetidos", () => {
       for (let i = 0; i < 3; i++) adelantar(s);

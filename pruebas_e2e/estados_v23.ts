@@ -25,5 +25,9 @@ m.inv.block.q = 300; m.inv.block.valor = 300 * 55.4; m.inv.cemento.q = 12; m.inv
 m.mezclas = [{ tipo: "M", prog: 1, lista: true, vida: 140, costo: 471, restante: 1 } as any];
 m.jugador = { x: 17, y: 14.5 };
 out.muros = cp(m);
+// v24: una etapa a punto de sellar (cartel APROBADO).
+const sel = base(1, 4); for (const tt of ETAPAS[1]!.trabajos) { const rr = sel.runs[1]!.find((x) => x.id === tt.id); if (rr) rr.hecho = tt.q; }
+sel.runs[1]![0]!.hecho -= 0.0004; sel.minuto = 10 * 60; sel.jugador = { x: 17, y: 14.5 };
+out.sello = cp(sel);
 writeFileSync(new URL("./estados_v23.json", import.meta.url), JSON.stringify(out));
 console.log("ok", Object.keys(out));

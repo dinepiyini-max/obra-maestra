@@ -397,3 +397,38 @@ describe("v24: el tramposo no fabrica dinero", () => {
     });
   }
 });
+
+// ===================== v24: hallazgos del Revisor en la 1.0 =====================
+import { cuentaFiadoPedido, fiarPedido, limiteFiado } from "./motor.ts";
+import { FLETE as FLETE_NORMAL, MATERIALES as MAT } from "./datos.ts";
+
+describe("v24: Revisor 1.0", () => {
+  it("1. con la caja en P$0, el pedido suelto también se puede fiar (monto fijo)", () => {
+    const s = nueva(5);
+    firmar(s);
+    s.panel = null;
+    s.caja = 0;
+    s.adelantoDia = 1; // ya no hay adelanto
+    const items = { cemento: 5 };
+    const c = cuentaFiadoPedido(s, items, false);
+    assert.ok(c, "ofrece fiado");
+    assert.equal(c!.total, 5 * MAT.cemento.precio + FLETE_NORMAL); // 5 × 550 + 1,500 = 4,250
+    assert.equal(c!.total, 4250);
+    const lim = limiteFiado(s);
+    const d0 = descuadre(s);
+    assert.equal(fiarPedido(s, items, false), null);
+    assert.equal(s.caja, 0, "la caja no se toca");
+    assert.equal(s.fiado, 4250);
+    assert.equal(limiteFiado(s), lim - 4250);
+    assert.equal(s.pedidos.length, 1);
+    assert.equal(Math.round(descuadre(s) - d0), 0, "el fiado cuadra: entra material y deuda por igual");
+    // Con caja que lo paga, no se fía.
+    const r = nueva(5);
+    firmar(r);
+    r.caja = 50000;
+    assert.equal(cuentaFiadoPedido(r, items, false), null);
+    // Nunca más de lo que queda por cobrar.
+    s.fiado = limiteFiado(s) + (s.fiado ?? 0);
+    assert.equal(cuentaFiadoPedido(s, items, false), null);
+  });
+});

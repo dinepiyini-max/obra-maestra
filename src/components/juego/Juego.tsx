@@ -431,6 +431,22 @@ export function Juego() {
     [act, volarMonedas],
   );
 
+  // v24: el cartel APROBADO se cierra al primer toque en cualquier parte (aunque caiga sobre un botón del HUD o el dedo
+  // venga de la palanca). Antes solo escuchaba el pointerup del fondo y un toque sobre el HUD no lo cerraba.
+  useEffect(() => {
+    if (snap.panel !== "sello") return;
+    const desde = performance.now();
+    const cerrar = (e: PointerEvent) => {
+      if (performance.now() - desde < 300) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      cerrarSello(e.clientX, e.clientY);
+    };
+    window.addEventListener("pointerdown", cerrar, true);
+    return () => window.removeEventListener("pointerdown", cerrar, true);
+  }, [snap.panel, cerrarSello]);
+
   const colocarSello = useCallback(() => {
     const ancla = selloAncla.current;
     const canvas = canvasRef.current;
