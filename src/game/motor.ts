@@ -202,6 +202,40 @@ export interface Cierre {
   pagadoNomina: number;
   quedaDebiendo: number;
   cajaDespues: number;
+  /** v23: día de la entrega (para explicar el bono). */
+  dia?: number;
+}
+
+export interface LineaCierre {
+  texto: string;
+  /** Con signo: + entra a la caja, − sale. Ya redondeado a peso entero. */
+  monto: number;
+  total?: boolean;
+}
+
+/** v23: la cuenta completa de la Entrega, línea por línea, como la promete la Libreta. La suma de los montos da la caja final. */
+export function lineasCierre(c: Cierre): LineaCierre[] {
+  const r = (n: number) => Math.round(n);
+  const out: LineaCierre[] = [{ texto: "Caja antes del último sello", monto: r(c.cajaAntes) }];
+  out.push({ texto: "+ pago de Doña Carmen por el techo", monto: r(c.bruto) });
+  out.push({ texto: "− adelanto que ya te había dado", monto: -r(c.adelanto) });
+  out.push({ texto: "− fiado del guardalmacén", monto: -r(c.fiado) });
+  const dias = Math.round(c.bono / BONO_DIA);
+  out.push({
+    texto: c.bono > 0.5 ? `+ bono de Doña Carmen (${peso(BONO_DIA)} × ${dias} ${dias === 1 ? "día" : "días"} antes del día ${PLAZO_ENTREGA})` : `+ bono de Doña Carmen (entregaste el día ${c.dia ?? PLAZO_ENTREGA}: sin bono)`,
+    monto: r(c.bono),
+  });
+  out.push({ texto: "− jornales del día", monto: -r(c.jornales) });
+  out.push({ texto: "− herramienta (3% del jornal)", monto: -r(c.herramienta) });
+  out.push({ texto: "− Dirección del día", monto: -r(c.direccion) });
+  out.push({ texto: "− deuda de nómina de días anteriores", monto: -r(c.deudaPrevia) });
+  if (c.quedaDebiendo > 0.5) out.push({ texto: "+ lo que no alcanzó y queda debiendo a la cuadrilla", monto: r(c.quedaDebiendo) });
+  const suma = out.reduce((a, l) => a + l.monto, 0);
+  const final = r(c.cajaDespues);
+  // Redondeo de centavos: si la suma de pesos enteros se aleja de la caja real, se muestra (nunca se esconde).
+  if (suma !== final) out.push({ texto: "± centavos de redondeo", monto: final - suma });
+  out.push({ texto: "= caja final", monto: final, total: true });
+  return out;
 }
 
 export interface Sello {
@@ -2714,12 +2748,15 @@ export function continuarSello(s: Estado) {
     let herramienta = 0;
     let direccion = 0;
     if (!s.nominaPagada) {
-      jornales = d.jornales;
-      herramienta = d.herramienta;
-      direccion = d.direccion;
+      // v23: el desglose sale de lo que pagarNomina cobró de verdad (no de una estimación aparte).
+      void d;
+      const dirAntes = s.costos.direccion.mo;
       s.nominaRoja = s.dia;
       s.rachaCorta = 0;
       pagarNomina(s);
+      jornales = s.nominaHoy ?? 0;
+      herramienta = s.herrHoy ?? 0;
+      direccion = s.costos.direccion.mo - dirAntes;
       s.entregada = true;
       if (s.panel === "nomina") s.panel = null;
     } else {
@@ -2753,6 +2790,7 @@ export function continuarSello(s: Estado) {
       pagadoNomina: antesNom - s.caja,
       quedaDebiendo: s.deudaNomina ?? 0,
       cajaDespues: s.caja,
+      dia: s.dia,
     };
     notarMezclaTarde(s);
     s.panel = "informe";

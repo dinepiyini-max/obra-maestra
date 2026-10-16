@@ -96,6 +96,7 @@ import {
   type Estado,
   type OficinaTab,
   type Persona,
+  lineasCierre,
 } from "@/game/motor";
 import { Retrato, alToque } from "./Hud";
 import type { Ajustes } from "@/game/guardar";
@@ -1789,21 +1790,13 @@ export function Paneles({
               <div className="mt-2 border-2 border-tinta p-2 font-hand text-base" data-cierre>
                 <p className="font-display text-xl">Cuenta de la caja al entregar</p>
                 <ul className="space-y-0.5">
-                  <li>Caja antes del último sello {pesoCaja(s.cierre.cajaAntes)}</li>
-                  <li>
-                    + cobro del techo {peso(s.cierre.bruto)}
-                    {s.cierre.adelanto > 0.5 ? ` − adelanto ${peso(s.cierre.adelanto)}` : ""}
-                    {s.cierre.fiado > 0.5 ? ` − fiado ${peso(s.cierre.fiado)}` : ""} = {peso(s.cierre.bruto - s.cierre.adelanto - s.cierre.fiado)}
-                  </li>
-                  {s.cierre.bono > 0.5 ? <li>+ bono por entrega temprana {peso(s.cierre.bono)}</li> : null}
-                  <li>
-                    − nómina pagada al entregar {peso(s.cierre.pagadoNomina)}
-                    {s.cierre.pagadoNomina > 0.5
-                      ? ` (jornales ${peso(s.cierre.jornales)} + herramienta ${peso(s.cierre.herramienta)} + Dirección ${peso(s.cierre.direccion)} + deuda de nómina ${peso(s.cierre.deudaPrevia)}${s.cierre.quedaDebiendo > 0.5 ? ` − lo que queda debiendo ${peso(s.cierre.quedaDebiendo)}` : ""})`
-                      : ""}
-                  </li>
-                  <li>− multas {peso(0)} (las pérdidas de mezcla ya van en el costo, no salen de la caja)</li>
-                  <li className="font-bold">= caja final {pesoCaja(s.cierre.cajaDespues)}</li>
+                  {lineasCierre(s.cierre).map((l, i) => (
+                    <li key={i} className={`flex justify-between gap-2 ${l.total ? "border-t border-tinta pt-0.5 font-bold" : ""}`} data-linea-cierre>
+                      <span>{l.texto}</span>
+                      <span className="whitespace-nowrap">{i === 0 || l.total ? pesoCaja(l.monto) : peso(Math.abs(l.monto))}</span>
+                    </li>
+                  ))}
+                  <li className="text-sm">Multas: {peso(0)} (las pérdidas de mezcla ya van en el costo, no salen de la caja).</li>
                   {s.cierre.quedaDebiendo > 0.5 ? <li className="text-rojo">Queda debiendo a la cuadrilla {peso(s.cierre.quedaDebiendo)}.</li> : null}
                 </ul>
               </div>
