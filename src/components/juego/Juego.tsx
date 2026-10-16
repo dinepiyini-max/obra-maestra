@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { cargar, borrar, guardar as guardarCaja, pestanaVieja, tomarPartida, cargarAjustes, guardarAjustes, type Ajustes } from "@/game/guardar";
 
+// v24: lo que cambia con un pago, una compra o un fiado.
+function huellaDinero(s: Estado): string {
+  return JSON.stringify([s.caja, s.cobrado, s.adelanto, s.fiado, s.inv, s.entrada, s.pedidos.length, s.gente.length, s.rescateUsado]);
+}
+
 // v23: si otra pestaña tiene una partida más nueva, esta deja de guardar y lo dice una vez.
 let avisoVieja = false;
 function guardar(s: Estado) {
@@ -41,6 +46,7 @@ declare global {
       setKeys: (codes: string[]) => void;
       setPos: (x: number, y: number) => void;
       estado: () => Estado;
+      audio: () => string;
     };
   }
 }
@@ -115,7 +121,7 @@ function sonar(
   tipo: "toc" | "compas" | "sello" | "plomo" | "moneda" | "motor" | "pala" | "carretilla" | "trompo" | "cuchara" | "martillo" | "lluvia",
   callado: boolean,
 ) {
-  if (!ctx || callado) return;
+  if (!ctx || callado || (typeof document !== "undefined" && document.hidden)) return;
   const nota = (freq: number, t: number, dur: number, gain = 0.04, onda: OscillatorType = "triangle") => {
     const o = ctx.createOscillator();
     const g = ctx.createGain();
@@ -287,7 +293,11 @@ export function Juego() {
 
   const act = useCallback(
     (fn: (s: Estado) => void) => {
+      // v24: un pago, compra o fiado se guarda al instante, en una sola escritura: si la página se cierra
+      // justo después, al recargar no se pierde la partida ni se duplica dinero ni material.
+      const antes = huellaDinero(estado.current);
       fn(estado.current);
+      if (huellaDinero(estado.current) !== antes && estado.current.panel !== "perdida") guardar(estado.current);
       flush();
     },
     [flush],
@@ -334,7 +344,7 @@ export function Juego() {
       if (f) {
         vis.current.floaters = [{ x: f.x, y: f.y, texto: f.texto, oro: f.oro, vida: 0.9 }];
         if (f.oro) vis.current.ondas.push({ x: f.x, y: f.y, t: vis.current.t });
-        const callado = !ajustesRef.current.sonido || estado.current.pausa || !!estado.current.panel;
+        const callado = document.hidden || !ajustesRef.current.sonido || estado.current.pausa || !!estado.current.panel;
         sonar(audio.current, f.oro ? "compas" : "toc", callado);
       }
       flush();
@@ -487,6 +497,7 @@ export function Juego() {
           vis.current.cam.y = y;
         },
         estado: () => estado.current,
+        audio: () => audio.current?.state ?? "sin",
       };
     }
 
@@ -501,7 +512,7 @@ export function Juego() {
       v.dt = dt;
       v.compas = v.t % 1;
       aplicarMando();
-      const callado = !ajustesRef.current.sonido || estado.current.pausa || !!estado.current.panel;
+      const callado = document.hidden || !ajustesRef.current.sonido || estado.current.pausa || !!estado.current.panel;
       if (!callado) {
         const amb = sonidoObra(estado.current);
         if (amb && v.t - ultimoAmb > 0.55) {
@@ -537,7 +548,9 @@ export function Juego() {
         v.marca = null;
       }
       v.contrato = estado.current.panel === "contrato";
-      if (v.hit > 0) v.hit -= dt;
+      if (document.hidden) {
+        // v24: oculta no corre el reloj aunque el navegador siga dando cuadros.
+      } else if (v.hit > 0) v.hit -= dt;
       else tick(estado.current, Math.min(0.1, dt), ajustesRef.current.vel);
       if (
         dedo.current &&
@@ -629,14 +642,30 @@ export function Juego() {
       // v23: con el dedo en la palanca (p. ej. llega una notificación) no se suelta; se suelta al levantar el dedo.
       if (palancaDedo.id == null) joy.current = { ax: 0, ay: 0 };
     };
+    // v24: Safari iOS/iPadOS en segundo plano (visibilitychange o pagehide): se pausa el reloj, se calla el sonido y se guarda.
+    const aSegundoPlano = () => {
+      const st = estado.current;
+      if (st.firmado && !st.panel) {
+        st.panel = "pausa";
+        st.pausa = true;
+      }
+      keys.current.clear();
+      if (palancaDedo.id == null) joy.current = { ax: 0, ay: 0 };
+      if (audio.current && audio.current.state === "running") void audio.current.suspend();
+      guardar(st);
+      setSnap(structuredClone(st));
+    };
     const oculto = () => {
-      if (document.hidden) guardar(estado.current);
+      if (document.hidden) aSegundoPlano();
+      else if (audio.current && audio.current.state === "suspended") void audio.current.resume();
     };
     window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("keyup", onKeyUp, true);
     window.addEventListener("blur", blur);
     document.addEventListener("visibilitychange", oculto);
+    window.addEventListener("pagehide", aSegundoPlano);
     return () => {
+      window.removeEventListener("pagehide", aSegundoPlano);
       muerto = true;
       cancelAnimationFrame(raf);
       window.removeEventListener("keydown", onKeyDown, true);
