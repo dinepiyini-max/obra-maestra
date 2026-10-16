@@ -348,3 +348,26 @@ describe("regresión v23", () => {
     delete (globalThis as any).localStorage;
   });
 });
+
+// ===================== v24: obras que se trababan hasta el día 61 =====================
+import { PERFILES } from "./sim_v18.ts";
+
+describe("regresión v24: siempre hay salida", () => {
+  // Causa: en Relleno y piso el firme quedaba en 7.98 de 8 (falta 0.02 tanda de hormigón). tandaCabe pedía más de
+  // 0.02 tanda pendiente para batir, así que el trompo nunca batía y el guardalmacén (que ve 0.02 cubierto) no pedía nada.
+  const casos = [
+    ["principiante", 2, "mucha"],
+    ["principiante", 7, "normal"],
+    ["principiante", 40, "normal"],
+    ["humano", 32, "mucha"],
+    ["torpe", 38, "mucha"],
+  ] as const;
+  for (const [perfil, seed, clima] of casos) {
+    it(`${perfil} semilla ${seed} (${clima}) entrega y no se traba`, () => {
+      const r = correr(seed, PERFILES[perfil]!, clima, 0.15);
+      assert.equal(r.s.entregada, true, `día ${r.s.dia} etapa ${r.s.etapa}`);
+      assert.equal(r.s.etapa, 9);
+      assert.ok(r.s.dia <= 30, `entregó el día ${r.s.dia}`);
+    });
+  }
+});

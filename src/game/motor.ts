@@ -1709,8 +1709,11 @@ function tandaCabe(s: Estado, tipo: "H" | "M"): boolean {
   if (tipo === "H" && !albanilLibreParaVaciar(s)) return false;
   const falta = faltaMezclaUtil(s, tipo);
   const have = stockMezcla(s, tipo) + tandasEnCurso(s, tipo);
-  if (falta <= have + 0.02) return false;
+  // v24: el último pedacito (p. ej. 7.98 de 8 en el firme) también pide su tanda. Antes, con menos de 0.02 tanda
+  // pendiente, no se batía nunca y la obra quedaba trabada sin que el guardalmacén pidiera nada.
+  if (falta <= have + 1e-3) return false;
   const porMin = consumoPorMin(s, tipo);
+  if (have < 1e-3 && porMin > 0 && falta < 1) return true;
   const vida = tipo === "H" ? RECETA_H.vida : RECETA_M.vida;
   const hastaFaena = Math.max(0, 15 * 60 - s.minuto);
   const minutosBatir = tipo === "H" ? 60 : 22;
