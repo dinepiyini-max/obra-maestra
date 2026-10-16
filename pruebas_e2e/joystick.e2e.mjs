@@ -40,11 +40,22 @@ const paso = async (nombre, fn) => {
 await paso("solo el joystick", async () => {});
 await paso("segundo dedo en el mapa", async () => { const d2 = { x: 250, y: 300, id: 2 }; await touch("touchStart", [t1, d2]); await p.waitForTimeout(80); await touch("touchEnd", [d2]); });
 await paso("segundo dedo en el joystick", async () => { const d2 = { x: cx - 10, y: cy + 10, id: 3 }; await touch("touchStart", [t1, d2]); await p.waitForTimeout(80); await touch("touchEnd", [d2]); });
-await paso("pierde foco y visibilidad (notificación)", async () => {
-  await p.evaluate(() => { window.dispatchEvent(new Event("blur")); Object.defineProperty(document, "hidden", { configurable: true, get: () => true }); document.dispatchEvent(new Event("visibilitychange")); });
+// Un aviso del sistema (notificación, Centro de control a medias) solo quita el foco: la palanca no se suelta.
+await paso("pierde el foco (notificación)", async () => {
+  await p.evaluate(() => window.dispatchEvent(new Event("blur")));
   await p.waitForTimeout(150);
-  await p.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, get: () => false }); document.dispatchEvent(new Event("visibilitychange")); window.dispatchEvent(new Event("focus")); });
+  await p.evaluate(() => window.dispatchEvent(new Event("focus")));
 });
+// v24: a segundo plano (visibilitychange) el juego se pausa; al volver y quitar la pausa, el dedo que sigue en la palanca sigue mandando.
+let pausoOculto = false;
+await paso("segundo plano pausa y al volver la palanca sigue", async () => {
+  await p.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, get: () => true }); document.dispatchEvent(new Event("visibilitychange")); });
+  await p.waitForTimeout(150);
+  pausoOculto = await p.evaluate(() => window.__controlsTest.estado().panel === "pausa");
+  await p.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, get: () => false }); document.dispatchEvent(new Event("visibilitychange")); });
+  await p.keyboard.press("Escape"); await p.waitForTimeout(200);
+});
+if (!pausoOculto) res[res.length - 1].ok = false;
 if (dale) await paso("toca ¡Dale! con otro dedo", async () => { const d2 = { x: dale.x + dale.width / 2, y: dale.y + dale.height / 2, id: 4 }; await touch("touchStart", [t1, d2]); await p.waitForTimeout(80); await touch("touchEnd", [d2]); });
 // Terminar abre un aviso (panel): el joystick se oculta con el panel abierto; al cerrar debe seguir si el dedo sigue.
 if (terminar) await paso("toca Terminar con otro dedo y cierra el aviso", async () => {
