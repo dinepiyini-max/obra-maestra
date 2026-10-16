@@ -3,14 +3,8 @@ import {
   BLOCKS_MURO,
   TROMPO_CUERPO,
   COMPRA,
-  CONTRATO,
-  CUADRILLA,
   CURADO_DIAS,
-  DIRECCION_DIA,
-  BONO_DIA,
-  PLAZO_ENTREGA,
   EFI,
-  ETAPAS,
   FLETE,
   FLETE_URGENTE,
   FRASES_CANSANCIO,
@@ -19,7 +13,6 @@ import {
   INICIO,
   MAPA,
   JORNAL_BASE,
-  KIT_PRECIO,
   MATERIALES,
   MATS,
   MAX_CUADRILLA,
@@ -28,8 +21,6 @@ import {
   PARTIDAS,
   PARTIDA_NOMBRE,
   POR_HILADA,
-  PRESUPUESTO,
-  PRESUPUESTO_TOTAL,
   PUESTO_NOMBRE,
   PUESTO_SITIO,
   PUESTOS,
@@ -38,7 +29,6 @@ import {
   RECETA_H,
   RECETA_M,
   SITIOS,
-  SOLAR,
   TAREAS,
   TOPE_BLOCK_DIA,
   HILADA_TOPE,
@@ -63,6 +53,7 @@ import {
   type Puesto,
   type Tarea,
   type TrabajoDef, pesoCaja} from "./datos.ts";
+import { contratoDe } from "./contratos.ts";
 
 export type Panel =
   | null
@@ -215,15 +206,15 @@ export interface LineaCierre {
 }
 
 /** v23: la cuenta completa de la Entrega, línea por línea, como la promete la Libreta. La suma de los montos da la caja final. */
-export function lineasCierre(c: Cierre): LineaCierre[] {
+export function lineasCierre(c: Cierre, s?: { contrato?: string }): LineaCierre[] {
   const r = (n: number) => Math.round(n);
   const out: LineaCierre[] = [{ texto: "Caja antes del último sello", monto: r(c.cajaAntes) }];
   out.push({ texto: "+ pago de Doña Carmen por el techo", monto: r(c.bruto) });
   out.push({ texto: "− adelanto que ya te había dado", monto: -r(c.adelanto) });
   out.push({ texto: "− fiado del guardalmacén", monto: -r(c.fiado) });
-  const dias = Math.round(c.bono / BONO_DIA);
+  const dias = Math.round(c.bono / contratoDe(s).bonoDia);
   out.push({
-    texto: c.bono > 0.5 ? `+ bono de Doña Carmen (${peso(BONO_DIA)} × ${dias} ${dias === 1 ? "día" : "días"} antes del día ${PLAZO_ENTREGA})` : `+ bono de Doña Carmen (entregaste el día ${c.dia ?? PLAZO_ENTREGA}: sin bono)`,
+    texto: c.bono > 0.5 ? `+ bono de Doña Carmen (${peso(contratoDe(s).bonoDia)} × ${dias} ${dias === 1 ? "día" : "días"} antes del día ${contratoDe(s).plazo})` : `+ bono de Doña Carmen (entregaste el día ${c.dia ?? contratoDe(s).plazo}: sin bono)`,
     monto: r(c.bono),
   });
   out.push({ texto: "− jornales del día", monto: -r(c.jornales) });
@@ -265,6 +256,8 @@ export interface TutorialFlags {
 }
 
 export interface Estado {
+  /** Fase 3: id del contrato activo (ver contratos.ts). Sin él, la caseta de Doña Carmen. */
+  contrato?: string;
   v: 1;
   seed: number;
   rng: number;
@@ -617,8 +610,8 @@ export function nueva(seed?: number): Estado {
     candidatos: [],
     reserva: [],
     idSeq: 0,
-    etapas: ETAPAS.map(() => ({ sello: null, motivo: "", primera: null })),
-    runs: ETAPAS.map((e) => e.trabajos.map((t) => ({ id: t.id, hecho: 0, ini: false }))),
+    etapas: contratoDe().etapas.map(() => ({ sello: null, motivo: "", primera: null })),
+    runs: contratoDe().etapas.map((e) => e.trabajos.map((t) => ({ id: t.id, hecho: 0, ini: false }))),
     extras: [],
     etapa: 0,
     pedidos: [],
@@ -708,7 +701,7 @@ export function nueva(seed?: number): Estado {
     sita: sitaBase(),
   };
   planLluvia(s);
-  s.candidatos = CUADRILLA.map((b, i) => personaDe(s, b, i));
+  s.candidatos = contratoDe(s).cuadrilla.map((b, i) => personaDe(s, b, i));
   return s;
 }
 
@@ -946,12 +939,12 @@ export function flecha(s: Estado): { x: number; y: number } | null {
 }
 
 export function precioDe(s: Estado): number {
-  return s.precio > 0 ? s.precio : CONTRATO;
+  return s.precio > 0 ? s.precio : contratoDe(s).presupuesto;
 }
 
-/** v19: bono de Doña Carmen por entregar antes del día del plazo. Una regla: BONO_DIA por día de adelanto. */
+/** v19: bono de Doña Carmen por entregar antes del día del plazo. Una regla: contratoDe(s).bonoDia por día de adelanto. */
 export function bonoEntrega(s: Estado, dia = s.dia): number {
-  return Math.max(0, PLAZO_ENTREGA - dia) * BONO_DIA;
+  return Math.max(0, contratoDe(s).plazo - dia) * contratoDe(s).bonoDia;
 }
 
 export function techoCarmen(seed: number): number {
@@ -987,14 +980,14 @@ export function terminarEnFrio(): boolean {
 export function firmar(s: Estado) {
   if (s.firmado) return;
   s.firmado = true;
-  if (!(s.precio > 0)) s.precio = CONTRATO;
+  if (!(s.precio > 0)) s.precio = contratoDe(s).presupuesto;
   const anticipo = Math.round(s.precio * 0.3);
   s.caja = anticipo;
   s.cobrado = anticipo;
   diario(s, `Anticipo de Doña Carmen: +${peso(anticipo)}.`);
-  s.caja -= KIT_PRECIO;
-  diario(s, `Kit de replanteo: −${peso(KIT_PRECIO)}.`);
-  s.inv.kit = { q: 1, valor: KIT_PRECIO };
+  s.caja -= contratoDe(s).kit;
+  diario(s, `Kit de replanteo: −${peso(contratoDe(s).kit)}.`);
+  s.inv.kit = { q: 1, valor: contratoDe(s).kit };
   s.inv.agua = { q: 0.4, valor: 0 };
   s.panel = null;
   s.pausa = false;
@@ -1231,7 +1224,7 @@ function fraguaActiva(s: Estado): boolean {
 }
 
 function works(s: Estado): W[] {
-  const def = ETAPAS[s.etapa];
+  const def = contratoDe(s).etapas[s.etapa];
   if (!def) return [];
   const out: W[] = [];
   for (const t of def.trabajos) {
@@ -1285,7 +1278,7 @@ function works(s: Estado): W[] {
 
 function prereqOk(s: Estado, w: W): boolean {
   if (w.reqCurado && s.curadoDias.length < CURADO_DIAS) return false;
-  const def = ETAPAS[s.etapa];
+  const def = contratoDe(s).etapas[s.etapa];
   if (!def) return false;
   if (w.despuesDe) {
     for (const id of w.despuesDe) {
@@ -1336,7 +1329,7 @@ function hayLider(s: Estado, k: Tarea): boolean {
   if (!lid) return true;
   if (dist(s.jugador, SITIOS.obra) <= RADIO_LIDER) return true;
   return s.gente.some(
-    (g) => g.activo && !g.fuera && !g.falto && distAlSolar(g.x, g.y) <= 1.5 && lid.includes(g.oficio),
+    (g) => g.activo && !g.fuera && !g.falto && distAlSolar(g.x, g.y, s) <= 1.5 && lid.includes(g.oficio),
   );
 }
 
@@ -2545,7 +2538,7 @@ function casiLleno(q: number): number {
 }
 
 function etapaCompleta(s: Estado): boolean {
-  const def = ETAPAS[s.etapa];
+  const def = contratoDe(s).etapas[s.etapa];
   if (!def) return false;
   for (const t of def.trabajos) {
     if (runDe(s, s.etapa, t.id).hecho < t.q - casiLleno(t.q)) return false;
@@ -2556,7 +2549,7 @@ function etapaCompleta(s: Estado): boolean {
 
 /** Lo que falta para sellar, solo cuando la etapa ya se ve casi lista (90% o más en cada trabajo). */
 export function avisoSello(s: Estado): string {
-  const def = ETAPAS[s.etapa];
+  const def = contratoDe(s).etapas[s.etapa];
   if (!def || s.entregada || s.sello) return "";
   for (const t of def.trabajos) if (runDe(s, s.etapa, t.id).hecho < t.q * 0.9) return "";
   return faltaParaSellar(s);
@@ -2564,7 +2557,7 @@ export function avisoSello(s: Estado): string {
 
 /** Si la etapa no sella, qué falta, en palabras: trabajo pendiente, material, mezcla, plomo, lluvia o fragua. */
 export function faltaParaSellar(s: Estado): string {
-  const def = ETAPAS[s.etapa];
+  const def = contratoDe(s).etapas[s.etapa];
   if (!def || s.entregada || s.sello) return "";
   const partes: string[] = [];
   for (const t of def.trabajos) {
@@ -2585,9 +2578,9 @@ export function faltaParaSellar(s: Estado): string {
 function revisar(s: Estado) {
   if (s.sello || s.entregada || s.etapa >= 9) return;
   if (!etapaCompleta(s)) return;
-  const def = ETAPAS[s.etapa]!;
+  const def = contratoDe(s).etapas[s.etapa]!;
   let ok = true;
-  let motivo = s.etapa >= ETAPAS.length - 1 ? "Ta' derecho. Obra terminada: la caseta quedó en pie y se entrega a Doña Carmen." : "Ta' derecho. Sigue la obra.";
+  let motivo = s.etapa >= contratoDe(s).etapas.length - 1 ? "Ta' derecho. Obra terminada: la caseta quedó en pie y se entrega a Doña Carmen." : "Ta' derecho. Sigue la obra.";
   if (def.id === "muros" && s.desplomes > s.desplomesCobrados) {
     const n = s.desplomes - s.desplomesCobrados;
     ok = false;
@@ -2602,7 +2595,7 @@ function revisar(s: Estado) {
 
 /** v20: lo que entra de verdad al sellar una etapa: tramo − adelanto − fiado. */
 export function cobroDe(s: Estado, etapa = s.etapa): { bruto: number; adelanto: number; fiado: number; neto: number; texto: string } {
-  const def = ETAPAS[etapa];
+  const def = contratoDe(s).etapas[etapa];
   const bruto = def && def.tramo > 0 ? Math.round(precioDe(s) * def.tramo) : 0;
   const adelanto = Math.min(s.adelanto, bruto);
   const fiado = Math.min(s.fiado ?? 0, bruto - adelanto);
@@ -2615,7 +2608,7 @@ export function cobroDe(s: Estado, etapa = s.etapa): { bruto: number; adelanto: 
 }
 
 function proximoTramo(s: Estado): number {
-  for (let i = s.etapa; i < ETAPAS.length; i++) if (ETAPAS[i]!.tramo > 0) return i;
+  for (let i = s.etapa; i < contratoDe(s).etapas.length; i++) if (contratoDe(s).etapas[i]!.tramo > 0) return i;
   return -1;
 }
 
@@ -2638,7 +2631,7 @@ export function cuentaFiado(s: Estado): { items: Cantidades; total: number } | n
 /** v21: lo fiado se descuenta de los tramos que faltan (uno tras otro). El tope es lo que queda por cobrar. */
 export function limiteFiado(s: Estado): number {
   let suma = 0;
-  for (let i = s.etapa; i < ETAPAS.length; i++) if (ETAPAS[i]!.tramo > 0) suma += Math.round(precioDe(s) * ETAPAS[i]!.tramo);
+  for (let i = s.etapa; i < contratoDe(s).etapas.length; i++) if (contratoDe(s).etapas[i]!.tramo > 0) suma += Math.round(precioDe(s) * contratoDe(s).etapas[i]!.tramo);
   return Math.max(0, suma - s.adelanto - (s.fiado ?? 0));
 }
 
@@ -2659,7 +2652,7 @@ export function fiar(s: Estado): string | null {
   s.caja = caja;
   if (err) return err;
   s.fiado = (s.fiado ?? 0) + pagado;
-  const prox = ETAPAS[proximoTramo(s)]?.nombre ?? "la próxima etapa";
+  const prox = contratoDe(s).etapas[proximoTramo(s)]?.nombre ?? "la próxima etapa";
   const frase = `El guardalmacén fía ${peso(pagado)} de material. Se descuenta solo al cobrar ${prox}.`;
   diario(s, frase);
   aviso(s, frase);
@@ -2671,7 +2664,7 @@ export function continuarSello(s: Estado) {
   const seal = s.sello;
   if (!seal) return;
   const i = seal.etapa;
-  const def = ETAPAS[i];
+  const def = contratoDe(s).etapas[i];
   if (!def) {
     s.sello = null;
     s.panel = null;
@@ -2747,7 +2740,7 @@ export function continuarSello(s: Estado) {
       s.caja += bono;
       s.cobrado += bono;
       s.bono = bono;
-      diario(s, `Bono por entrega temprana (${PLAZO_ENTREGA - s.dia} días antes del día ${PLAZO_ENTREGA}): +${peso(bono)}.`);
+      diario(s, `Bono por entrega temprana (${contratoDe(s).plazo - s.dia} días antes del día ${contratoDe(s).plazo}): +${peso(bono)}.`);
     }
     // v22: al entregar se paga la nómina del día y la deuda de nómina; la cuenta queda a la vista.
     s.entregada = false;
@@ -2772,12 +2765,12 @@ export function continuarSello(s: Estado) {
     } else {
       s.entregada = true;
       if (!s.direccionCobrada) {
-        s.caja -= DIRECCION_DIA;
-        s.costos.direccion.mo += DIRECCION_DIA;
+        s.caja -= contratoDe(s).direccionDia;
+        s.costos.direccion.mo += contratoDe(s).direccionDia;
         s.direccionCobrada = true;
         s.diasTrabajados += 1;
-        direccion = DIRECCION_DIA;
-        diario(s, `Dirección del día: −${peso(DIRECCION_DIA)}.`);
+        direccion = contratoDe(s).direccionDia;
+        diario(s, `Dirección del día: −${peso(contratoDe(s).direccionDia)}.`);
       }
       const deuda = s.deudaNomina ?? 0;
       if (deuda > 0.5) {
@@ -2823,7 +2816,7 @@ function costoNominaHoy(s: Estado): { jornales: number; herr: number; direccion:
     jornales += j;
     herr += Math.round(j * HERRAMIENTA);
   }
-  const direccion = jornales > 0 && !s.direccionCobrada && s.firmado && !s.entregada ? DIRECCION_DIA : 0;
+  const direccion = jornales > 0 && !s.direccionCobrada && s.firmado && !s.entregada ? contratoDe(s).direccionDia : 0;
   return { jornales, herr, direccion, total: jornales + herr + direccion };
 }
 
@@ -2891,10 +2884,10 @@ function pagarNomina(s: Estado) {
   }
   let direccion = 0;
   if (jornales > 0 && !s.direccionCobrada && s.firmado && !s.entregada) {
-    s.costos.direccion.mo += DIRECCION_DIA;
+    s.costos.direccion.mo += contratoDe(s).direccionDia;
     s.direccionCobrada = true;
     s.diasTrabajados += 1;
-    direccion = DIRECCION_DIA;
+    direccion = contratoDe(s).direccionDia;
   }
   const hoy = jornales + herrSum + direccion;
   const totalDue = hoy + deudaPrev;
@@ -2969,7 +2962,7 @@ export function nominaManana(s: Estado): number {
     herr += Math.round(j * HERRAMIENTA);
   }
   if (jornales <= 0) return 0;
-  return jornales + herr + DIRECCION_DIA;
+  return jornales + herr + contratoDe(s).direccionDia;
 }
 
 function adelantoManana(s: Estado): number {
@@ -3005,8 +2998,8 @@ function avisarNominaManana(s: Estado) {
 /** Dos o tres cosas concretas para cubrir la nómina de mañana. */
 export function accionesNomina(s: Estado): string[] {
   const out: string[] = [];
-  const prox = ETAPAS.slice(s.etapa).find((e) => e.tramo > 0);
-  if (prox && !s.entregada) out.push(`sella ${prox.nombre} (cobra ${cobroDe(s, ETAPAS.indexOf(prox)).texto})`);
+  const prox = contratoDe(s).etapas.slice(s.etapa).find((e) => e.tramo > 0);
+  if (prox && !s.entregada) out.push(`sella ${prox.nombre} (cobra ${cobroDe(s, contratoDe(s).etapas.indexOf(prox)).texto})`);
   const ayuda = [...s.gente, ...s.reserva]
     .filter((g) => !g.libre && (g.oficio === "peon" || g.oficio === "ayudante"))
     .sort((a, b) => jornalDe(b.oficio, b.rinde) - jornalDe(a.oficio, a.rinde))[0];
@@ -3022,7 +3015,7 @@ export function esperaAlCobro(s: Estado): string {
   if (!s.firmado || s.entregada) return "";
   const i = proximoTramo(s);
   if (i !== s.etapa) return "";
-  const def = ETAPAS[i]!;
+  const def = contratoDe(s).etapas[i]!;
   let hecho = 0;
   let total = 0;
   for (const t of def.trabajos) {
@@ -3038,7 +3031,7 @@ export function esperaAlCobro(s: Estado): string {
 
 export function textoSeVaManana(s: Estado): string {
   if ((s.rachaCorta ?? 0) < 1) return "";
-  if (esperaAlCobro(s)) return ` Si vuelve a quedar corta, nadie se va: ${ETAPAS[s.etapa]?.nombre ?? "la etapa"} casi sella y su cobro paga la deuda («te pago al cobrar»).`;
+  if (esperaAlCobro(s)) return ` Si vuelve a quedar corta, nadie se va: ${contratoDe(s).etapas[s.etapa]?.nombre ?? "la etapa"} casi sella y su cobro paga la deuda («te pago al cobrar»).`;
   const g = quienSeVa(s);
   return g ? ` Si vuelve a quedar corta, mañana se va ${g.nombre}.` : "";
 }
@@ -3049,14 +3042,14 @@ function abrirFinde(s: Estado) {
   if (s.panel === "finde" || s.panel === "informe" || s.panel === "perdida") return;
   // v18: la dirección se cobra con la misma regla que el pronóstico: solo si ese día se pagaron jornales.
   if (!s.direccionCobrada && s.firmado && !s.entregada && (s.nominaHoy ?? 0) > 0.5) {
-    const pago = Math.min(Math.max(0, s.caja), DIRECCION_DIA);
+    const pago = Math.min(Math.max(0, s.caja), contratoDe(s).direccionDia);
     s.caja -= pago;
-    s.costos.direccion.mo += DIRECCION_DIA;
-    const resta = DIRECCION_DIA - pago;
+    s.costos.direccion.mo += contratoDe(s).direccionDia;
+    const resta = contratoDe(s).direccionDia - pago;
     if (resta > 0.5) s.deudaNomina = (s.deudaNomina ?? 0) + resta;
     s.direccionCobrada = true;
     s.diasTrabajados += 1;
-    const texto = resta > 0.5 ? `Dirección del día: −${peso(pago)} (de ${peso(DIRECCION_DIA)}). Quedan ${peso(resta)} de deuda para la nómina de mañana.` : `Dirección del día: −${peso(DIRECCION_DIA)}.`;
+    const texto = resta > 0.5 ? `Dirección del día: −${peso(pago)} (de ${peso(contratoDe(s).direccionDia)}). Quedan ${peso(resta)} de deuda para la nómina de mañana.` : `Dirección del día: −${peso(contratoDe(s).direccionDia)}.`;
     diario(s, texto);
     if (resta > 0.5) aviso(s, texto);
   }
@@ -3757,7 +3750,7 @@ export function desgloseNomina(s: Estado): { jornales: number; herramienta: numb
     jornales += j;
     herramienta += Math.round(j * HERRAMIENTA);
   }
-  const direccion = jornales > 0.5 && !s.direccionCobrada && s.firmado && !s.entregada ? DIRECCION_DIA : 0;
+  const direccion = jornales > 0.5 && !s.direccionCobrada && s.firmado && !s.entregada ? contratoDe(s).direccionDia : 0;
   return { jornales, herramienta, direccion, total: jornales + herramienta + direccion };
 }
 
@@ -3796,7 +3789,7 @@ export function textoCajaLibre(s: Estado): string {
 }
 
 function sumaNecesidad(s: Estado, idx: number, restante: boolean, enteras = false): Cantidades {
-  const def = ETAPAS[idx];
+  const def = contratoDe(s).etapas[idx];
   const need: Cantidades = {};
   if (!def) return need;
   const add = (m: Mat, n: number) => {
@@ -3838,7 +3831,7 @@ function enCamino(s: Estado, m: Mat): number {
 
 function tandasRestantes(s: Estado, tipo: "H" | "M"): number {
   let n = 0;
-  const def = ETAPAS[s.etapa];
+  const def = contratoDe(s).etapas[s.etapa];
   if (def) {
     for (const t of def.trabajos) {
       if (t.mezcla !== tipo || !t.mezclaQ || t.q <= 0) continue;
@@ -3865,7 +3858,7 @@ function recetaFraccion(s: Estado, idx: number, restante: boolean): Cantidades {
     if (batches <= 1e-8) return;
     for (const [k, n] of Object.entries(receta(tipo)) as [Mat, number][]) need[k] = (need[k] ?? 0) + n * batches;
   };
-  const def = ETAPAS[idx];
+  const def = contratoDe(s).etapas[idx];
   if (!def) return need;
   for (const t of def.trabajos) {
     if (!t.mezcla || !t.mezclaQ) continue;
@@ -4606,8 +4599,8 @@ export function textoDiasSinSello(s: Estado): string {
 export function topeAvance(s: Estado): number {
   const precio = precioDe(s);
   let suma = 0.3;
-  const hasta = Math.min(ETAPAS.length - 1, (s.etapa ?? 0) + 1);
-  for (let i = 0; i <= hasta; i++) suma += ETAPAS[i]!.tramo;
+  const hasta = Math.min(contratoDe(s).etapas.length - 1, (s.etapa ?? 0) + 1);
+  for (let i = 0; i <= hasta; i++) suma += contratoDe(s).etapas[i]!.tramo;
   return Math.max(0, Math.round(precio * Math.min(1, suma) - s.cobrado));
 }
 
@@ -4734,7 +4727,7 @@ export function libreTrasPedido(s: Estado, total: number): number {
 }
 
 function montoRescate(s: Estado): number {
-  const et = ETAPAS[s.etapa];
+  const et = contratoDe(s).etapas[s.etapa];
   if (!et || et.tramo <= 0) return 0;
   const monto = Math.round(precioDe(s) * et.tramo * 0.5);
   return monto >= 100 ? monto : 0;
@@ -4753,7 +4746,7 @@ export function puedeRescate(s: Estado): boolean {
 }
 
 export function fraseRescate(s: Estado): string {
-  const nombre = ETAPAS[s.etapa]?.nombre ?? "esta etapa";
+  const nombre = contratoDe(s).etapas[s.etapa]?.nombre ?? "esta etapa";
   return `Doña Carmen suelta ${peso(montoRescate(s))}, la mitad de ${nombre}, y lo descuenta de la entrega.`;
 }
 
@@ -4928,7 +4921,7 @@ export function siguienteDia(s: Estado) {
 
 function generarCandidatos(s: Estado): Persona[] {
   const usados = new Set([...s.gente, ...s.reserva].map((g) => g.nombre));
-  return CUADRILLA.filter((b) => !usados.has(b.nombre)).map((b, i) => personaDe(s, b, i));
+  return contratoDe(s).cuadrilla.filter((b) => !usados.has(b.nombre)).map((b, i) => personaDe(s, b, i));
 }
 
 export interface SitioCerca {
@@ -4939,19 +4932,20 @@ export interface SitioCerca {
   d: number;
 }
 
-function distAlSolar(x: number, y: number): number {
-  const dx = Math.max(SOLAR.x0 - x, 0, x - SOLAR.x1);
-  const dy = Math.max(SOLAR.y0 - y, 0, y - SOLAR.y1);
+function distAlSolar(x: number, y: number, s?: { contrato?: string }): number {
+  const sol = contratoDe(s).solar;
+  const dx = Math.max(sol.x0 - x, 0, x - sol.x1);
+  const dy = Math.max(sol.y0 - y, 0, y - sol.y1);
   return Math.hypot(dx, dy);
 }
 
 function juntoAZanja(s: Estado): boolean {
-  if (distAlSolar(s.jugador.x, s.jugador.y) <= 1.5) return true;
+  if (distAlSolar(s.jugador.x, s.jugador.y, s) <= 1.5) return true;
   return dist(s.jugador, SITIOS.obra) <= RADIO;
 }
 
 function juntoAlMuro(s: Estado): boolean {
-  if (distAlSolar(s.jugador.x, s.jugador.y) <= 1.5) return true;
+  if (distAlSolar(s.jugador.x, s.jugador.y, s) <= 1.5) return true;
   return dist(s.jugador, SITIOS.obra) <= 1.5;
 }
 
@@ -4973,7 +4967,7 @@ function distFerreteria(x: number, y: number): number {
 }
 
 export function cercano(s: Estado): SitioCerca | null {
-  const dObra = distAlSolar(s.jugador.x, s.jugador.y);
+  const dObra = distAlSolar(s.jugador.x, s.jugador.y, s);
   const pts: SitioCerca[] = [
     { ...SITIOS.toma, d: dist(s.jugador, SITIOS.toma) },
     { ...SITIOS.tanque, d: dist(s.jugador, SITIOS.tanque) },
@@ -5105,7 +5099,7 @@ function pulsoGolpeMaestro(s: Estado) {
   if (!s.firmado || s.entregada || s.minuto >= 15 * 60 || s.panel || s.pausa) return;
   s.sinGolpe = (s.sinGolpe ?? 0) + 1;
   if (s.sinGolpe < 15) return;
-  if (distAlSolar(s.jugador.x, s.jugador.y) > 3) return;
+  if (distAlSolar(s.jugador.x, s.jugador.y, s) > 3) return;
   if (lluviaAhora(s)) return;
   if (!hayPuestoUtil(s)) return;
   s.sinGolpe = 0;
@@ -5266,7 +5260,7 @@ function unidadDe(k: Tarea): string {
 }
 
 export function lineaAhora(s: Estado): string {
-  const def = ETAPAS[s.etapa];
+  const def = contratoDe(s).etapas[s.etapa];
   if (!def || s.entregada || s.etapa >= 9) return "Ahora: obra entregada";
   const abierto = def.trabajos.find((t) => runDe(s, s.etapa, t.id).hecho < t.q - 1e-4);
   const w = abierto ?? def.trabajos[def.trabajos.length - 1];
@@ -5450,7 +5444,7 @@ export function cuelloLabor(s: Estado): string {
   if (s.plomo) return "Toca plomear: ve al muro y pulsa Espacio.";
   if (s.curando && !s.regadoHoy && s.curadoDias.length < CURADO_DIAS)
     return `Toca regar la viga · ${s.curadoDias.length}/${CURADO_DIAS} días.`;
-  const def = ETAPAS[s.etapa];
+  const def = contratoDe(s).etapas[s.etapa];
   if (!def) return "Obra entregada.";
   const diag = runDe(s, 0, "replantear").hecho;
   if (def.id === "replanteo" && diag < 2 - 1e-4) {
@@ -5475,7 +5469,7 @@ export function cuelloLabor(s: Estado): string {
   if (siguiente?.reqCurado && s.curadoDias.length < CURADO_DIAS)
     return `Curado de la viga · ${s.curadoDias.length}/${CURADO_DIAS} días. El techo espera.`;
   if (siguiente && TAREAS[siguiente.k].lider && !hayLider(s, siguiente.k)) {
-    const hayGente = s.gente.some((g) => g.activo && !g.fuera && distAlSolar(g.x, g.y) <= 1.5);
+    const hayGente = s.gente.some((g) => g.activo && !g.fuera && distAlSolar(g.x, g.y, s) <= 1.5);
     if (hayGente) return "Falta un líder en la obra. Acércate o pon al oficio que manda.";
   }
   const hayTrabajo = listos(s).some((w) => w.k !== "regar");
@@ -5561,7 +5555,7 @@ function bateaSinAgua(s: Estado): boolean {
 }
 
 function progresoEtapa(s: Estado): number {
-  const def = ETAPAS[s.etapa];
+  const def = contratoDe(s).etapas[s.etapa];
   if (!def) return 1;
   let a = 0;
   let b = 0;
@@ -5637,7 +5631,7 @@ export function muertoPorVenir(s: Estado): number {
 }
 
 function quedaPresupuesto(s: Estado, p: Partida, real: number): number {
-  const pre = PRESUPUESTO[p];
+  const pre = contratoDe(s).partidas[p];
   if (pre <= 0 || s.entregada) return 0;
   if (p === "direccion" || p === "herramienta" || p === "fletes") return Math.max(0, pre - real);
   const tope: Partial<Record<Partida, number>> = {
@@ -5659,11 +5653,11 @@ function quedaPresupuesto(s: Estado, p: Partida, real: number): number {
 // ======== v18: ayuda al principiante ========
 
 /** Nómina de un día con esta gente: jornales, herramienta y dirección. */
-export function nominaDiaDe(gente: { oficio: Persona["oficio"]; rinde: number }[]): number {
+export function nominaDiaDe(gente: { oficio: Persona["oficio"]; rinde: number }[], s?: { contrato?: string }): number {
   if (!gente.length) return 0;
   let j = 0;
   for (const g of gente) j += jornalDe(g.oficio, g.rinde);
-  return j + Math.round(j * HERRAMIENTA) + DIRECCION_DIA;
+  return j + Math.round(j * HERRAMIENTA) + contratoDe(s).direccionDia;
 }
 
 /** Días hábiles que paga la caja con la cuadrilla de hoy (sin contar cobros). */
@@ -5741,8 +5735,8 @@ export function textoDiasCaja(s: Estado): string {
   if (nom <= 0 || s.entregada) return "";
   const dias = diasDeCaja(s);
   if (dias > 4) return "";
-  const prox = ETAPAS.slice(s.etapa).find((e) => e.tramo > 0);
-  const cobro = prox ? ` El próximo cobro es al aprobar ${prox.nombre}: ${cobroDe(s, ETAPAS.indexOf(prox)).texto}.` : "";
+  const prox = contratoDe(s).etapas.slice(s.etapa).find((e) => e.tramo > 0);
+  const cobro = prox ? ` El próximo cobro es al aprobar ${prox.nombre}: ${cobroDe(s, contratoDe(s).etapas.indexOf(prox)).texto}.` : "";
   const dd = dias === 1 ? "día" : "días";
   return `Te quedan ${dias} ${dd} de caja con esta cuadrilla (${peso(nom)} al día).${cobro} Si no llegas, da libre a un peón.`;
 }
@@ -5767,7 +5761,7 @@ export function libreta(s: Estado) {
     const mo = s.costos[p].mo;
     const mat = s.costos[p].mat;
     const real = mo + mat;
-    const pre = PRESUPUESTO[p];
+    const pre = contratoDe(s).partidas[p];
     return { partida: p, nombre: PARTIDA_NOMBRE[p], pre, mo, mat, real, desv: real - pre };
   });
   const costo = filas.reduce((a, f) => a + f.real, 0);
@@ -5775,7 +5769,7 @@ export function libreta(s: Estado) {
   return {
     filas,
     costo,
-    presupuesto: PRESUPUESTO_TOTAL,
+    presupuesto: contratoDe(s).partidasTotal,
     porHacer,
     ganancia: precioDe(s) + (s.bono ?? 0) - (costo + porHacer),
     bono: s.bono ?? 0,
@@ -5892,7 +5886,7 @@ export function textoSinTarea(g: Persona): string | null {
 }
 
 export function etapaActual(s: Estado): EtapaDef | null {
-  return ETAPAS[s.etapa] ?? null;
+  return contratoDe(s).etapas[s.etapa] ?? null;
 }
 
 export function minutosMezcla(s: Estado): { tipo: "H" | "M"; min: number; lista: boolean } | null {
