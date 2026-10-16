@@ -3,6 +3,7 @@
 import { correr, BOTS, jugarPasivo, ponerPrecios, type Cfg, type Clima } from "./auditoria_sim.ts";
 import { MATERIALES } from "./datos.ts";
 import type { Estado } from "./motor.ts";
+import { jugarTramposo } from "./tramposo.ts";
 
 /** Igual que cuadreCaja de motor.test.ts: caja − (cobrado − todo lo gastado o guardado). */
 export function cuadreCaja(s: Estado): number {
@@ -61,12 +62,17 @@ for (let seed = desde; seed <= hasta; seed++) {
     if (Math.abs(d) > 0.5) { difs++; peor = Math.max(peor, Math.abs(d)); }
   };
   let r: { s: any; inf: any; perdida?: boolean };
-  if (perfil === "pasivo") {
+  let trucos = 0;
+  if (perfil === "tramposo") {
+    const rt = jugarTramposo(seed, clima, 0.15, chequeo);
+    r = rt;
+    trucos = rt.encontrados.length;
+  } else if (perfil === "pasivo") {
     ponerPrecios(seed, 0.15);
     r = jugarPasivo(seed);
     chequeo(r.s);
     ponerPrecios(seed, null);
   } else r = correr(seed, PERFILES[perfil!]!, clima, 0.15, chequeo);
-  console.log(JSON.stringify({ perfil, seed, clima, ent: r.s.entregada, perdida: !!r.perdida || r.s.panel === "perdida", dia: r.s.dia, gan: Math.round(r.inf.ganancia), caja: Math.round(r.s.caja), adelantos: (r.s.adelantoDia > 0 ? 1 : 0), rescate: !!r.s.rescateUsado, pasos, movs, difs, peor, gente: r.s.gente.length, sinSalida: (r as any).sinSalida ?? 0, fiado: !!r.s.diario?.some((d: any) => /fía/.test(d.texto)) }));
+  console.log(JSON.stringify({ perfil, seed, clima, ent: r.s.entregada, perdida: !!r.perdida || r.s.panel === "perdida", dia: r.s.dia, gan: Math.round(r.inf.ganancia), caja: Math.round(r.s.caja), adelantos: (r.s.adelantoDia > 0 ? 1 : 0), rescate: !!r.s.rescateUsado, pasos, movs, difs, peor, gente: r.s.gente.length, sinSalida: (r as any).sinSalida ?? 0, fiado: !!r.s.diario?.some((d: any) => /fía/.test(d.texto)), trucos }));
 }
 }

@@ -371,3 +371,29 @@ describe("regresión v24: siempre hay salida", () => {
     });
   }
 });
+
+// ===================== v24: bot tramposo =====================
+import { jugarTramposo, patrimonio, avance } from "./tramposo.ts";
+
+describe("v24: el tramposo no fabrica dinero", () => {
+  it("el detector sí ve un truco plantado (dinero sin avance)", () => {
+    const s = nueva(3);
+    firmar(s);
+    const p0 = patrimonio(s);
+    const a0 = avance(s);
+    s.caja += 100;
+    assert.equal(Math.round(patrimonio(s) - p0), 100);
+    assert.equal(avance(s), a0);
+    // Pedir material no sube el patrimonio (paga material y flete).
+    const p1 = patrimonio(s);
+    pedir(s, { cemento: 5 }, false);
+    assert.ok(patrimonio(s) <= p1 + 0.5);
+  });
+  for (const seed of [1, 2, 3, 4, 5]) {
+    it(`semilla ${seed}: ningún truco sube el dinero sin avanzar la obra`, () => {
+      const r = jugarTramposo(seed, (["poca", "normal", "mucha"] as const)[seed % 3]!, 0.15);
+      assert.deepEqual(r.encontrados, []);
+      assert.equal(r.s.entregada, true, `día ${r.s.dia}`);
+    });
+  }
+});
