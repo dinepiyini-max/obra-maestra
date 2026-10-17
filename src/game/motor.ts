@@ -1704,7 +1704,7 @@ function faltaMezclaUtil(s: Estado, tipo: "H" | "M"): number {
   return falta;
 }
 
-/** El mortero que sirve antes del próximo plomo (y del tope de block del día). Lo demás esperaría y se vencería. */
+/** El mortero que sirve antes del próximo plomo (y del tope de block del día), más una tanda. Lo demás esperaría y se vencería. */
 function morteroHastaPlomo(s: Estado, w: W): number {
   if (!w.mezclaQ || w.q <= 0) return 0;
   if (s.plomo) return 0;
@@ -1717,7 +1717,8 @@ function morteroHastaPlomo(s: Estado, w: W): number {
     }
   }
   const bloques = Math.max(0, Math.min(hasta - w.hecho, TOPE_BLOCK_DIA - s.blocksHoy));
-  return Math.min(mezclaQueFalta(w), bloques * (w.mezclaQ / w.q));
+  // Una tanda de margen: el albañil no se queda esperando mezcla justo antes del plomo.
+  return Math.min(mezclaQueFalta(w), bloques * (w.mezclaQ / w.q) + 1);
 }
 
 /** No arranca una tanda que nadie va a usar antes de que se venza. */

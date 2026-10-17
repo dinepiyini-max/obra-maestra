@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { ETAPAS } from "./datos.ts";
-import { avanzarMinutos, contratar, firmar, hablarSita, laborDe, loQueFalta, nueva, pedirTambien, sinAyuda, type Estado } from "./motor.ts";
+import { avanzarMinutos, contratar, firmar, golpe, hablarSita, laborDe, loQueFalta, nueva, pedirTambien, sinAyuda, type Estado } from "./motor.ts";
 import { correr, BOTS, BOT_SIN_AYUDA } from "./auditoria_sim.ts";
 
 function obraEn(etapa: number): Estado {
@@ -63,24 +63,28 @@ function estadoAlPlomo(): Estado {
 }
 
 describe("v26: plomear no deja vencer el mortero", () => {
-  it("al primer plomo hay a lo sumo una tanda de mortero batida y no se bate más hasta plomear", () => {
+  it("al primer plomo hay a lo sumo 2 tandas de mortero; esperando el plomo no se bate ni se vence nada, y tras plomear tampoco", () => {
     const s = estadoAlPlomo();
     assert.equal(s.etapa, 4);
     const m = s.mezclas.filter((x) => x.tipo === "M");
-    assert.ok(m.length <= 1, `tandas de mortero al plomo: ${m.length}`);
+    assert.equal(m.length, 2, "lo que alcanza hasta el plomo más una tanda");
     const vidas = m.filter((x) => x.lista).map((x) => x.vida);
     const perdidas = s.stats.tandasPerdidas;
-    s.plomo = { ...s.plomo! };
     // El maestro tarda 90 minutos en llegar al muro: nadie plomea.
     for (let i = 0; i < 90; i++) {
       const plomo: Estado["plomo"] = s.plomo;
       avanzarMinutos(s, 1);
       if (!s.plomo) s.plomo = plomo;
     }
-    assert.equal(s.stats.tandasPerdidas, perdidas, "no se venció nada");
+    assert.equal(s.stats.tandasPerdidas, perdidas, "no se venció nada esperando el plomo");
     const despues = s.mezclas.filter((x) => x.tipo === "M");
     assert.deepEqual(despues.filter((x) => x.lista).map((x) => x.vida), vidas, "el mortero batido no envejece");
     assert.equal(despues.filter((x) => !x.lista).length, 0, "no se empezó otra tanda de mortero");
+    s.jugador = { x: 19, y: 14.5 };
+    golpe(s, true);
+    assert.equal(s.plomo, null, "plomeado");
+    avanzarMinutos(s, 180);
+    assert.equal(s.stats.tandasPerdidas, perdidas, "tampoco se vence en las 3 horas después del plomeo");
   });
 });
 
