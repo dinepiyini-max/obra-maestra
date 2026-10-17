@@ -3724,7 +3724,7 @@ export function ancla(s: Estado, g: Persona): { x: number; y: number } | null {
     const u = t < 0.5 ? t * 2 : (1 - t) * 2;
     const puerta = puertaAlmacen();
     const vias = [SITIOS.entrada, { x: 11.4, y: 18.95 }, { x: 6.3, y: 18.15 }, puerta];
-    let rest = u * (vias.length - 1);
+    const rest = u * (vias.length - 1);
     const i = Math.min(vias.length - 2, Math.floor(rest));
     const f = rest - i;
     const a = vias[i]!;
@@ -4521,7 +4521,7 @@ export function pedir(s: Estado, items: Cantidades, urgente: boolean, mantener =
   const flete = fleteDe(s, urgente);
   const total = mats + flete;
   if (total > s.caja + 0.5) return `No alcanza la caja. Tienes ${pesoCaja(s.caja)} y el pedido es ${peso(total)}.`;
-  let cementoNuevo = limpio.cemento ?? 0;
+  const cementoNuevo = limpio.cemento ?? 0;
   if (cementoNuevo > 0) {
     const bajoTecho = s.inv.cemento.q;
     const ya = (s.entrada.cemento?.q ?? 0) + enCamino(s, "cemento");
@@ -4935,7 +4935,7 @@ export function siguienteDia(s: Estado) {
       return;
     }
   }
-  let dia = s.dia + 1;
+  const dia = s.dia + 1;
   s.dia = dia;
   s.minuto = 7 * 60;
   s.frac = 0;

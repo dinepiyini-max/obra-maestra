@@ -1809,7 +1809,7 @@ describe("obra", () => {
     const inv = viejo.inv as unknown as Record<string, { q: number; valor: number }>;
     inv.arenaBruta = { q: 1.5, valor: 0 };
     inv.piedra = { q: 0.4, valor: 0 };
-    viejo.gente[0] && (viejo.gente[0].puesto = "piedra" as Puesto);
+    if (viejo.gente[0]) viejo.gente[0].puesto = "piedra" as Puesto;
     viejo.runs[0]!.push({ id: "trazar", hecho: 1, ini: true });
     const caja = viejo.caja;
     sanear(viejo);
