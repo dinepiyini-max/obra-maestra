@@ -208,6 +208,7 @@ export function Hud({
   onQuitar,
   onAdelanto,
   onFiar,
+  onReporte,
 }: {
   s: Estado;
   movil: boolean;
@@ -219,6 +220,8 @@ export function Hud({
   onQuitar: (id: number) => void;
   onAdelanto: () => void;
   onFiar: () => void;
+  /** v28: con «Reportar» abierto el reloj se para (antes seguía y al cerrar la cuadrilla ya se había ido). */
+  onReporte?: (abierto: boolean) => void;
 }) {
   const [chico, setChico] = useState(false);
   const [bajo, setBajo] = useState(false);
@@ -227,6 +230,11 @@ export function Hud({
   const [versionReporte, setVersionReporte] = useState(VERSION_REPORTE);
   const [avisoReporte, setAvisoReporte] = useState<string | null>(null);
   const [reporteOk, setReporteOk] = useState(false);
+  const reporteAbierto = useRef(onReporte);
+  reporteAbierto.current = onReporte;
+  useEffect(() => {
+    reporteAbierto.current?.(reporte);
+  }, [reporte]);
   const [enviandoReporte, setEnviandoReporte] = useState(false);
   const [, setGuiaTick] = useState(0);
   useEffect(() => alCambioGuia(() => setGuiaTick((n) => n + 1)), []);

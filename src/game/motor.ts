@@ -442,6 +442,8 @@ export interface Sita {
   x: number;
   y: number;
   fase: "casa" | "yendo" | "nota" | "vuelta";
+  /** v28: segundos (reales en juego, o de simulación) que lleva caminando hacia el maestro. */
+  andando?: number;
   oferta: OfertaSita | null;
   ultima: OfertaSita | null;
   rechazoDia: number;
@@ -3279,8 +3281,15 @@ export function tick(s: Estado, dtReal: number, ritmo = 1) {
     return;
   }
   const sim = dtReal >= 0.15;
+  if (s.sita && s.sita.fase !== "yendo") s.sita.andando = 0;
   if (!sim && s.sita?.fase === "yendo" && !s.panel) {
-    moverSita(s, clamp(dtReal, 0, 0.1), 11);
+    // v28: mientras el guardalmacén camina hacia el maestro el reloj espera. Si se trababa contra un muro o el maestro
+    // estaba donde no llegaba (p. ej. detrás del almacén), el reloj quedaba parado a las 14:01 para siempre y había que
+    // recargar. Ahora, si en SITA_MAX_SEG no llegó, la nota llega igual (la trae corriendo).
+    const dt = clamp(dtReal, 0, 0.1);
+    s.sita.andando = (s.sita.andando ?? 0) + dt;
+    moverSita(s, dt, 11);
+    if (s.sita.fase === "yendo" && s.sita.andando >= SITA_MAX_SEG) llegaSita(s);
     if (s.sita.fase === "yendo") return;
     if (!s.panel) s.panel = "sita";
     return;
@@ -3306,7 +3315,14 @@ export function tick(s: Estado, dtReal: number, ritmo = 1) {
     s.frac -= 1;
     n += 1;
   }
-  if (s.sita?.fase === "yendo" && !s.panel) moverSita(s, sim ? 1 : dt, sim ? 240 : 11);
+  if (s.sita?.fase === "yendo" && !s.panel) {
+    moverSita(s, sim ? 1 : dt, sim ? 240 : 11);
+    // v28: en simulación tampoco se queda trabado para siempre (después de ~1 h de juego, la nota llega igual).
+    if (sim && s.sita.fase === "yendo") {
+      s.sita.andando = (s.sita.andando ?? 0) + 1;
+      if (s.sita.andando >= 60) llegaSita(s);
+    }
+  }
   else if (s.sita?.fase === "vuelta") moverSita(s, sim ? 1 : dt, sim ? 240 : 11);
 }
 
@@ -4591,6 +4607,27 @@ export function editarSita(s: Estado) {
   s.sita.editando = true;
   s.sita.fase = "nota";
   s.panel = "ferreteria";
+}
+
+/** v28: segundos reales como mucho que el reloj espera al guardalmacén. */
+export const SITA_MAX_SEG = 4;
+
+/** v28: el guardalmacén llega con la nota aunque no haya podido caminar hasta el maestro. */
+function llegaSita(s: Estado) {
+  if (!s.sita) return;
+  const j = s.jugador;
+  const cerca = [
+    { x: j.x + 0.9, y: j.y },
+    { x: j.x - 0.9, y: j.y },
+    { x: j.x, y: j.y + 0.9 },
+    { x: j.x, y: j.y - 0.9 },
+  ].find((p) => !choca(p.x, p.y));
+  if (cerca) {
+    s.sita.x = cerca.x;
+    s.sita.y = cerca.y;
+  }
+  s.sita.fase = "nota";
+  s.sita.andando = 0;
 }
 
 function moverSita(s: Estado, dt: number, vel: number) {

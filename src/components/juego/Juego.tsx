@@ -320,6 +320,7 @@ export function Juego() {
   const [late, setLate] = useState(false);
   const [firmadoSello, setFirmadoSello] = useState(false);
   const [plano, setPlano] = useState<number | null>(null);
+  const pausaReporte = useRef(false);
   const planoRef = useRef<number | null>(null);
   planoRef.current = plano;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -913,6 +914,17 @@ export function Juego() {
           guardar(estado.current);
         }}
         onQuitar={(id) => act((s) => quitarAviso(s, id))}
+        onReporte={(abierto) => {
+          // v28: «Reportar» para el reloj mientras se escribe; al cerrar sigue solo si lo paró el reporte.
+          const st = estado.current;
+          if (abierto && !st.pausa) {
+            st.pausa = true;
+            pausaReporte.current = true;
+          } else if (!abierto && pausaReporte.current) {
+            pausaReporte.current = false;
+            if (st.panel !== "pausa") st.pausa = false;
+          }
+        }}
         onAdelanto={() =>
           act((s) => {
             const e = adelantar(s);

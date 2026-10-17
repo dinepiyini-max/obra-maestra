@@ -5,6 +5,8 @@ import { describe, it } from "node:test";
 import { ETAPAS } from "./datos.ts";
 import {
   avanzarMinutos,
+  cerrarPanel,
+  tick,
   contratar,
   cuentaFiadoPedido,
   fiarPedido,
@@ -162,5 +164,42 @@ describe("v28 hallazgo 1: todo lo pedido llega y la siguiente etapa no se come l
     assert.match(src, /data-primero-esta-etapa/);
     assert.match(src, /&& !primeroEstaEtapa\(s\) \? \(/);
     assert.match(src, /data-trae/);
+  });
+});
+
+describe("v28 hallazgo 2: el reloj no se congela y «Reportar» lo para", () => {
+  it("el guardalmacén trabado detrás del almacén ya no para el reloj (antes quedaba a las 14:00 para siempre)", () => {
+    for (const [x, y] of [[8, 17], [9.5, 17], [3, 3], [20, 10]] as const) {
+      const s = obraEn(7);
+      s.minuto = 14 * 60;
+      s.jugador = { x, y };
+      s.destino = null;
+      s.sita!.oferta = { items: { cemento: 1 }, urgente: false, mats: 550, flete: 1500, total: 2050, texto: "Para mañana faltan" };
+      s.sita!.fase = "yendo";
+      s.sita!.x = 3;
+      s.sita!.y = 3;
+      // 6 s reales a 60 cuadros por segundo.
+      for (let i = 0; i < 360 && s.sita!.fase === "yendo"; i++) tick(s, 1 / 60, 1);
+      assert.notEqual(s.sita!.fase, "yendo", `(${x},${y}) la nota llega`);
+      assert.equal(s.panel, "sita");
+      cerrarPanel(s);
+      for (let i = 0; i < 120; i++) tick(s, 1 / 60, 1);
+      assert.ok(s.minuto > 14 * 60, `(${x},${y}) el reloj sigue: ${s.minuto}`);
+    }
+  });
+
+  it("con «Reportar» abierto el reloj está parado y al cerrarlo sigue", () => {
+    const hud = readFileSync(new URL("../components/juego/Hud.tsx", import.meta.url), "utf8");
+    const juego = readFileSync(new URL("../components/juego/Juego.tsx", import.meta.url), "utf8");
+    assert.match(hud, /onReporte\?: \(abierto: boolean\) => void/);
+    assert.match(hud, /reporteAbierto\.current\?\.\(reporte\)/);
+    assert.match(juego, /onReporte=\{\(abierto\) => \{/);
+    assert.match(juego, /st\.pausa = true;\s*pausaReporte\.current = true;/);
+    // Con pausa el motor no avanza.
+    const s = obraEn(4);
+    s.minuto = 10 * 60;
+    s.pausa = true;
+    for (let i = 0; i < 600; i++) tick(s, 1 / 60, 1);
+    assert.equal(s.minuto, 10 * 60);
   });
 });
