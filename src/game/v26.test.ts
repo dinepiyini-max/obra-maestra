@@ -118,3 +118,27 @@ describe("v26: sin peón ni ayudante el albañil bate", () => {
     assert.equal(sinAyuda(s), false);
   });
 });
+
+describe("v26: «Sita» no sale en ningún texto del motor ni de los datos", () => {
+  it("ningún literal de texto de motor.ts, datos.ts, guia.ts ni dibujo.ts dice «Sita» (los identificadores se quedan)", async () => {
+    const { readFileSync } = await import("node:fs");
+    for (const f of ["motor.ts", "datos.ts", "guia.ts", "dibujo.ts"]) {
+      const src = readFileSync(new URL(`./${f}`, import.meta.url), "utf8");
+      const literales = src.match(/"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`|'(?:[^'\\\n]|\\.)*'/g) ?? [];
+      const malos = literales.filter((l) => /\bSita\b/.test(l));
+      assert.deepEqual(malos, [], f);
+    }
+  });
+  it("una partida completa (experto, semilla 3, lluvia normal) no muestra «Sita» en avisos, diario, bitácora ni ofertas", () => {
+    const textos: string[] = [];
+    const r = correr(3, BOTS.experto!, "normal", 0.15, (s) => {
+      for (const a of s.avisos) textos.push(a.texto);
+      if (s.sita?.oferta) textos.push(s.sita.oferta.texto);
+    });
+    for (const d of r.s.diario) textos.push(d.texto);
+    for (const b of r.s.bitacora) textos.push(b.texto);
+    assert.equal(r.s.entregada, true);
+    assert.ok(textos.length > 100, `textos revisados: ${textos.length}`);
+    assert.deepEqual(textos.filter((t) => /Sita/.test(t)), []);
+  });
+});
