@@ -42,15 +42,6 @@ async function revisar(p, errs, caso, ok, extra = {}) {
   res.push(r);
   return r;
 }
-/** Lo guardado (cada pago, compra o fiado se guarda al instante). */
-async function guardado(p) {
-  return p.evaluate(() => {
-    const raw = localStorage.getItem("obra-maestra-v2");
-    if (!raw) return null;
-    const s = JSON.parse(raw).s;
-    return { caja: Math.round(s.caja), fiado: Math.round(s.fiado ?? 0), pedidos: s.pedidos.length };
-  });
-}
 async function cerrarHojas(p) {
   for (let i = 0; i < 3 && (await p.locator(".velo-obra").count()); i++) { await p.keyboard.press("Escape"); await espera(p, 400); }
 }
