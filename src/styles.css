@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* Logo de la 1.0 (portada): «Obra Maestra» en Jolly Lodger, como en la 1.0. */
+@font-face {
+  font-family: "Jolly Lodger";
+  src: url("/fonts/JollyLodger-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 @font-face {
   font-family: "Bungee";
   src: url("/fonts/Bungee-Regular.ttf") format("truetype");
@@ -201,10 +210,21 @@ body {
   }
 }
 
-/* Logo de la 1.0: la casa se traza en la portada (tinta sobre cielo) y el menú sale al terminar. */
+/* Logo de la 1.0, idéntico: papel crema con grano, la casa se traza en tinta #1d1712 y el menú sale al terminar. */
+.papel-grano {
+  background-color: #e8dcc2;
+  background-image: radial-gradient(rgba(29, 23, 18, 0.05) 0.7px, transparent 0.7px);
+  background-size: 8px 8px;
+}
+
+.logo-1-0 {
+  font-family: "Jolly Lodger", cursive;
+  color: #1d1712;
+}
+
 .trazo-casa {
   fill: none;
-  stroke: var(--color-tinta);
+  stroke: #1d1712;
   stroke-width: 2.4;
   stroke-linecap: round;
   stroke-linejoin: round;

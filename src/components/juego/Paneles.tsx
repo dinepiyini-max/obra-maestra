@@ -856,8 +856,8 @@ export function Paneles({
         style={{ paddingTop: "max(0.5rem, env(safe-area-inset-top))", paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
       >
         <div className="flex min-h-full items-center justify-center py-2">
-        <section className="w-full max-w-[280px] text-center min-[900px]:max-w-[420px]">
-          {/* El logo de la 1.0: la casa se traza sola y debajo sale el nombre; el menú aparece cuando termina. */}
+        <section className="papel-grano w-full max-w-sm border-2 border-[#1d1712] px-4 py-4 text-center text-tinta shadow-[6px_8px_0_#1d1712] [@media(max-height:520px)]:py-2">
+          {/* El logo de la 1.0, idéntico: la casa se traza sola y debajo sale el nombre; el menú aparece cuando termina. */}
           <svg viewBox="0 0 240 150" className="mx-auto h-36 w-full [@media(max-height:520px)]:h-14" aria-hidden="true" data-logo-casa>
             <path className="trazo-casa" d="M36 112 L22 78 L120 28 L214 82 L196 116 Z" />
             <path className="trazo-casa" d="M18 80 L118 22 L222 86" />
@@ -867,7 +867,7 @@ export function Paneles({
             <path className="trazo-casa" d="M28 104 L208 108" />
             <path className="trazo-casa" d="M124 96 L124 112" />
           </svg>
-          <h2 className="-mt-4 font-display text-4xl leading-none text-tinta sm:text-5xl [@media(max-height:520px)]:mt-0 [@media(max-height:520px)]:text-2xl">Obra Maestra</h2>
+          <h2 className="logo-1-0 -mt-4 text-5xl leading-none sm:text-6xl [@media(max-height:520px)]:-mt-1 [@media(max-height:520px)]:text-4xl">Obra Maestra</h2>
           <AvisoRoto s={s} />
           <div className="menu-luego mt-3 flex flex-col gap-2 [@media(max-height:520px)]:mt-1 [@media(max-height:520px)]:gap-1">
             {seguir ? (
