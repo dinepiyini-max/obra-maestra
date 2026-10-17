@@ -164,6 +164,10 @@
     max-height: 100dvh;
     margin: 0;
   }
+  /* La hoja del Guardalmacén es larga: en pantallas bajas usa más ancho para que quepa con sus botones en una fila. */
+  .marco-obra.marco-ancho {
+    width: min(74vw, 40rem);
+  }
   .marco-obra > header h2 {
     font-size: 18px;
     line-height: 1.15;

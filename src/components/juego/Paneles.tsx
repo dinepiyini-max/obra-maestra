@@ -1254,8 +1254,8 @@ export function Paneles({
     const compra = of.recorte ? (of.cabe ?? {}) : of.items;
     const pedido = !!of.hecho || !Object.values(compra).some((n) => (n ?? 0) > 0);
     return (
-      <Marco titulo="Guardalmacén" ancho="max-w-md [@media(max-height:520px)]:max-w-2xl" onCerrar={cerrar}>
-        <p className="font-hand text-lg whitespace-pre-line [@media(max-height:520px)]:columns-2 [@media(max-height:520px)]:gap-6 [@media(max-height:520px)]:text-base [@media(max-height:520px)]:leading-snug" data-hoja-guardalmacen>{of.texto.replace(/Caja libre [^\n]*?(?=\.( |\n|$))/g, () => textoCajaLibre(s))}</p>
+      <Marco titulo="Guardalmacén" ancho="max-w-md marco-ancho" onCerrar={cerrar}>
+        <p className="font-hand text-lg whitespace-pre-line [@media(max-height:520px)]:text-base [@media(max-height:520px)]:leading-snug" data-hoja-guardalmacen>{of.texto.replace(/Caja libre [^\n]*?(?=\.( |\n|$))/g, () => textoCajaLibre(s))}</p>
         <div className="sticky bottom-0 -mx-3 mt-3 flex flex-wrap gap-2 bg-cemento-claro px-3 py-2 sm:-mx-5 sm:px-5" data-botones-guardalmacen>
           {pedido ? null : (
             <button
@@ -1290,7 +1290,7 @@ export function Paneles({
           ).alcanza ? (
             <button
               type="button"
-              className={btn}
+              className={pedido && !of.hecho ? btnPri : btn}
               onClick={() => {
                 const matsSig = Object.entries(of.siguiente ?? {}).reduce(
                   (a, [k, n]) => a + (n ?? 0) * MATERIALES[k as Mat].precio,
@@ -1330,7 +1330,7 @@ export function Paneles({
           )}
           {pedido ? (
             <button type="button" className={btn} onClick={cerrar}>
-              Listo
+              {of.hecho ? "Listo" : "Ahora no"}
             </button>
           ) : null}
         </div>
@@ -1343,8 +1343,8 @@ export function Paneles({
   if (s.panel === "sita") {
     const hoja = hojaGuardalmacen(s);
     return (
-      <Marco titulo="Guardalmacén" ancho="max-w-md [@media(max-height:520px)]:max-w-2xl" onCerrar={cerrar}>
-        <p className="font-hand text-lg whitespace-pre-line [@media(max-height:520px)]:columns-2 [@media(max-height:520px)]:gap-6 [@media(max-height:520px)]:text-base [@media(max-height:520px)]:leading-snug" data-hoja-guardalmacen>{hoja.texto}</p>
+      <Marco titulo="Guardalmacén" ancho="max-w-md marco-ancho" onCerrar={cerrar}>
+        <p className="font-hand text-lg whitespace-pre-line [@media(max-height:520px)]:text-base [@media(max-height:520px)]:leading-snug" data-hoja-guardalmacen>{hoja.texto}</p>
         <h3 className="mt-4 font-display text-2xl">En obra</h3>
         <RegistroAlmacen s={s} />
       </Marco>
