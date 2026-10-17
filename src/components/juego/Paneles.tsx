@@ -47,6 +47,9 @@ import {
   contratar,
   cuentaPedido,
   despedir,
+  costoDespedir,
+  fiadoFerreteria,
+  obraPerdida,
   editarSita,
   firmar,
   hablarSita,
@@ -696,6 +699,8 @@ export function Paneles({
   const [pausaHoja, setPausaHoja] = useState<null | "creditos">(null);
   const [freno, setFreno] = useState<null | { origen: "sita" | "tambien" | "tel"; urgente: boolean; total: number; items?: Cantidades }>(null);
   const [aceptaCorta, setAceptaCorta] = useState(false);
+  // v27: «Despedir» pide confirmación con el costo a la vista.
+  const [porDespedir, setPorDespedir] = useState<string | null>(null);
   useEffect(() => setAceptaCorta(false), [freno]);
   const [angosta, setAngosta] = useState(false);
   const [telefono, setTelefono] = useState(false);
@@ -741,7 +746,8 @@ export function Paneles({
     s.firmado ||
     (typeof localStorage !== "undefined" && localStorage.getItem("obra-maestra-v1") != null);
   const quiereNueva = () => {
-    if (hayPartida) setHoja("confirmar");
+    // v27: tras «Obra perdida» no hay nada que perder: se empieza otra sin preguntar.
+    if (hayPartida && !obraPerdida(s)) setHoja("confirmar");
     else onNueva();
   };
 
@@ -870,7 +876,7 @@ export function Paneles({
           <h2 className="logo-1-0 -mt-4 text-5xl leading-none sm:text-6xl [@media(max-height:520px)]:-mt-1 [@media(max-height:520px)]:text-4xl">Obra Maestra</h2>
           <AvisoRoto s={s} />
           <div className="menu-luego mt-3 flex flex-col gap-2 [@media(max-height:520px)]:mt-1 [@media(max-height:520px)]:gap-1">
-            {seguir ? (
+            {seguir && !obraPerdida(s) ? (
               <button type="button" className={btnPri} onClick={onContinuar}>
                 Continuar
               </button>
@@ -1152,10 +1158,30 @@ export function Paneles({
                     {g.libre ? "Sí viene mañana" : "Libre mañana"}
                   </button>
                 ) : null}
-                <button type="button" className={btn} onClick={() => act((st) => despedir(st, g.id))}>
+                <button type="button" className={btn} data-despedir onClick={() => setPorDespedir(g.id)}>
                   Despedir
                 </button>
               </div>
+              {porDespedir === g.id ? (
+                <div className="mt-2 border-2 border-colmado-rojo p-2 font-hand" data-confirmar-despedir>
+                  <p>{costoDespedir(s, g.id)?.texto ?? ""} ¿Despedir?</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className={btnPeligro}
+                      onClick={() => {
+                        setPorDespedir(null);
+                        act((st) => despedir(st, g.id));
+                      }}
+                    >
+                      Sí, despedir{(costoDespedir(s, g.id)?.total ?? 0) > 0 ? ` (${peso(costoDespedir(s, g.id)!.total)})` : ""}
+                    </button>
+                    <button type="button" className={btn} onClick={() => setPorDespedir(null)}>
+                      No
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -1224,7 +1250,7 @@ export function Paneles({
         {!cuenta.alcanza && paga ? (
           <label className="mt-2 flex min-h-11 items-center gap-2 border-2 border-colmado-rojo p-1 font-hand text-colmado-rojo" data-confirma-corta>
             <input type="checkbox" className="h-6 w-6" checked={aceptaCorta} onChange={(e) => setAceptaCorta(e.target.checked)} />
-            Entiendo: la nómina de las 3 quedará corta por {peso(cuenta.faltaNomina)}, baja el ánimo y dos días seguidos se va un obrero.
+            Entiendo: la nómina de las 3 quedará corta por {peso(cuenta.faltaNomina)}, baja el ánimo y, si el próximo cobro no paga la deuda, al segundo día seguido se va un obrero (el último se queda mientras haya cobro por delante).
           </label>
         ) : null}
         {cuentaFiado(s) ? (
@@ -1291,21 +1317,19 @@ export function Paneles({
               Fiado: lo de esta etapa ({peso(cuentaFiado(s)!.total)})
             </button>
           ) : null}
-          {of.siguiente &&
-          Object.values(of.siguiente).some((n) => (n ?? 0) > 0) &&
-          cuentaPedido(
-            s,
-            Object.entries(of.siguiente).reduce((a, [k, n]) => a + (n ?? 0) * MATERIALES[k as Mat].precio, 0) + fleteDe(s, of.urgente),
-          ).alcanza ? (
+          {/* v27: el botón sale siempre que haya algo que pedir para más adelante, aunque la caja no alcance:
+              «Antes de pedir» muestra la cuenta y ofrece el fiado. */}
+          {of.siguiente && Object.values(of.siguiente).some((n) => (n ?? 0) > 0) ? (
             <button
               type="button"
               className={pedido && !of.hecho ? btnPri : btn}
+              data-pedir-siguiente
               onClick={() => {
                 const matsSig = Object.entries(of.siguiente ?? {}).reduce(
                   (a, [k, n]) => a + (n ?? 0) * MATERIALES[k as Mat].precio,
                   0,
                 );
-                setFreno({ origen: "tambien", urgente: of.urgente, total: matsSig + fleteDe(s, of.urgente) });
+                setFreno({ origen: "tambien", urgente: of.urgente, total: matsSig + fleteDe(s, of.urgente), items: { ...(of.siguiente ?? {}) } });
               }}
             >
               {pedido && !of.hecho ? "Pedir la siguiente etapa" : "Pedir también"}
@@ -1426,6 +1450,31 @@ export function Paneles({
           {mats <= 0 ? "" : fleteNormal < FLETE ? ` · va en el camión ${peso(mats + fleteNormal)}` : ` · con flete ${peso(mats + fleteNormal)}`}
         </p>
         {nota ? <p className={"font-hand " + (notaRoja ? "text-colmado-rojo" : "text-tinta")}>{nota}</p> : null}
+        {(() => {
+          // v27: con la caja en P$0 (o sin alcanzar) la Ferretería ofrece el fiado a la vista, sin pasar por «Antes de pedir».
+          const urg = false;
+          const f = fiadoFerreteria(s, cart, urg);
+          if (!f) return null;
+          return (
+            <div className="mt-2 border-2 border-colmado-rojo p-1 font-hand" data-fiado-ferreteria>
+              <p className="text-sm">La caja no alcanza. El guardalmacén te fía {Object.keys(cart).length ? "este pedido" : "lo que falta"}: sale solo del próximo cobro.</p>
+              <button
+                type="button"
+                className={`${btnPri} mt-1`}
+                data-fiar-ferreteria
+                {...alToque(() => {
+                  const items = { ...f.items };
+                  setCart({});
+                  setDraft({});
+                  ponerNota("");
+                  act((st) => decir(st, fiarPedido(st, items, urg)));
+                })}
+              >
+                {f.texto}
+              </button>
+            </div>
+          );
+        })()}
         <div className="mt-2 flex flex-wrap gap-2">
           <button
             type="button"
@@ -1441,7 +1490,7 @@ export function Paneles({
               });
               setCart(q);
               setDraft({});
-              ponerNota(avisoFalta, avisoFalta.startsWith("No alcanza"));
+              ponerNota(avisoFalta, avisoFalta.startsWith("No alcanza") || avisoFalta.startsWith("La caja no alcanza"));
             }}
           >
             Lo que falta

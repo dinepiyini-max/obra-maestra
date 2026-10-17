@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { cargar, borrar, guardar as guardarCaja, pestanaVieja, tomarPartida, cargarAjustes, guardarAjustes, type Ajustes } from "@/game/guardar";
+import { cargar, guardar as guardarCaja, pestanaVieja, tomarPartida, cargarAjustes, guardarAjustes, type Ajustes } from "@/game/guardar";
 
 // lo que cambia con un pago, una compra o un fiado.
 function huellaDinero(s: Estado): string {
@@ -23,6 +23,7 @@ import { reiniciarGuia } from "@/game/guia";
 import {
   abrirDespacho,
   abrirPanel,
+  obraPerdida,
   adelantar,
   cobroDe,
   fiar,
@@ -539,6 +540,7 @@ export function Juego() {
     let ultimoT = performance.now();
     let acc = 0;
     let guardado = 0;
+    let archivada: Estado | null = null;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
@@ -705,7 +707,14 @@ export function Juego() {
         setSnap(structuredClone(estado.current));
       }
       guardado += dt;
-      if (estado.current.panel === "perdida") borrar(estado.current);
+      // v27: la obra perdida se archiva una vez (y se borra la partida): «Continuar» ya no la abre.
+      if (obraPerdida(estado.current)) {
+        if (archivada !== estado.current) {
+          archivada = estado.current;
+          estado.current.perdida = true;
+          guardar(estado.current);
+        }
+      }
       else if (guardado >= 20) {
         guardado = 0;
         guardar(estado.current);
@@ -990,7 +999,12 @@ export function Juego() {
           if (estado.current.panel === null && estado.current.firmado) guardar(estado.current);
         }}
         onNueva={nuevaObra}
-        onContinuar={() =>
+        onContinuar={() => {
+          // v27: una obra perdida no se continúa: se empieza otra.
+          if (obraPerdida(estado.current)) {
+            nuevaObra();
+            return;
+          }
           act((s) => {
             s.pausa = false;
             if (!s.firmado) s.panel = null;
@@ -999,8 +1013,8 @@ export function Juego() {
               s.sita.fase = "nota";
               s.panel = "sita";
             } else s.panel = null;
-          })
-        }
+          });
+        }}
         ajustes={ajustes}
         onAjustes={(a) => {
           ajustesRef.current = a;

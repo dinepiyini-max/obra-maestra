@@ -1,4 +1,4 @@
-import { sanear, validar, type Estado } from "./motor.ts";
+import { obraPerdida, sanear, validar, type Estado } from "./motor.ts";
 
 /**
  * v23: el guardado lleva sobre con versión y dueño. Clave nueva (v2) para que una pestaña vieja de v22 o antes,
@@ -8,6 +8,8 @@ import { sanear, validar, type Estado } from "./motor.ts";
 export const KEY = "obra-maestra-v2";
 export const KEY_VIEJA = "obra-maestra-v1";
 export const VERSION_GUARDADO = 2;
+/** v27: una obra perdida no se queda en la clave de la partida: se archiva aquí (la última) y se empieza otra. */
+export const KEY_PERDIDA = "obra-maestra-v2-perdida";
 
 type Sobre = { v: number; partida: string; rev: number; t: number; s: unknown };
 
@@ -64,8 +66,27 @@ function puedoEscribir(s: Estado): boolean {
   return true;
 }
 
+/** v27: archiva la obra perdida (solo la última) y borra la partida, para que «Continuar» no la abra. */
+export function archivarPerdida(s: Estado, ahora = Date.now()) {
+  if (typeof localStorage === "undefined") return;
+  try {
+    const sobre = leerSobre();
+    // Una pestaña vieja no archiva ni borra la partida (distinta) de otra.
+    if (sobre && sobre.partida !== partidaDe(s) && (vieja || (mia && sobre.t > mia.desde))) return;
+    localStorage.setItem(KEY_PERDIDA, JSON.stringify({ v: VERSION_GUARDADO, partida: partidaDe(s), rev: 0, t: ahora, s }));
+    localStorage.removeItem(KEY);
+    localStorage.removeItem(KEY_VIEJA);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function guardar(s: Estado, ahora = Date.now()): boolean {
   if (typeof localStorage === "undefined") return false;
+  if (obraPerdida(s)) {
+    archivarPerdida(s, ahora);
+    return false;
+  }
   try {
     if (!puedoEscribir(s)) return false;
     const rev = mia!.rev + 1;
@@ -79,7 +100,7 @@ export function guardar(s: Estado, ahora = Date.now()): boolean {
   }
 }
 
-export function cargar(): { s: Estado | null; roto: boolean } {
+export function cargar(): { s: Estado | null; roto: boolean; perdida?: boolean } {
   if (typeof localStorage === "undefined") return { s: null, roto: false };
   let raw = localStorage.getItem(KEY);
   let clave = KEY;
@@ -94,6 +115,16 @@ export function cargar(): { s: Estado | null; roto: boolean } {
     const j: unknown = JSON.parse(raw);
     data = clave === KEY ? (j as Sobre).s : j;
     if (!validar(data)) throw new Error("forma");
+    // v27: una obra perdida guardada (p. ej. al pasar a segundo plano en el teléfono) no se carga: se archiva.
+    if (obraPerdida(data as Estado)) {
+      try {
+        localStorage.setItem(KEY_PERDIDA, raw);
+        localStorage.removeItem(clave);
+      } catch {
+        /* ignore */
+      }
+      return { s: null, roto: false, perdida: true };
+    }
     const s = sanear(data);
     tomarPartida(s);
     if (clave === KEY_VIEJA) guardar(s);

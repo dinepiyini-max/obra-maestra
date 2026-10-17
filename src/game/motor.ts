@@ -353,6 +353,8 @@ export interface Estado {
   rescateUsado: boolean;
   /** v20: material fiado por el guardalmacén; se descuenta solo del próximo cobro. */
   fiado?: number;
+  /** v27: la obra se perdió. Una obra perdida no se guarda ni se puede «Continuar». */
+  perdida?: boolean;
   /** v19: bono cobrado al entregar antes del plazo. */
   bono?: number;
   /** v22: cuenta de la caja al entregar. */
@@ -1670,6 +1672,7 @@ function consumoPorMin(s: Estado, tipo: "H" | "M"): number {
   for (const w of listos(s)) {
     if (w.mezcla !== tipo || !w.mezclaQ || w.q <= 0) continue;
     if (!alguienHara(s, w)) continue;
+    if (mezclaPorMaterial(s, w) <= 1e-6) continue;
     const per = w.mezclaQ / w.q;
     for (const g of s.gente) {
       if (!g.activo || g.fuera || g.falto || g.puesto !== "obra") continue;
@@ -1699,9 +1702,27 @@ function faltaMezclaUtil(s: Estado, tipo: "H" | "M"): number {
   for (const w of listos(s)) {
     if (w.mezcla !== tipo) continue;
     if (!alguienHara(s, w)) continue;
-    falta += w.id === "block" ? morteroHastaPlomo(s, w) : mezclaQueFalta(w);
+    // v27: sin el material de la tarea en el almacén (p. ej. el block sigue en la entrada o en el camión) nadie gasta
+    // la mezcla: se batía igual y se vencía tanda tras tanda con el peón en el Trompo.
+    const util = w.id === "block" ? morteroHastaPlomo(s, w) : mezclaQueFalta(w);
+    falta += Math.min(util, mezclaPorMaterial(s, w));
   }
   return falta;
+}
+
+/** v27: la mezcla que se puede gastar con el material (sin contar la mezcla) que hay hoy en el almacén. */
+function mezclaPorMaterial(s: Estado, w: W): number {
+  if (!w.mezcla || !w.mezclaQ || w.q <= 0) return 0;
+  if (w.usaIni && !w.ini && !tieneMapa(s, w.usaIni)) return 0;
+  let unidades = Math.max(0, w.q - w.hecho);
+  if (w.usa) {
+    for (const [k, total] of Object.entries(w.usa) as [Mat, number][]) {
+      const per = total / Math.max(w.q, 1e-9);
+      if (per <= 1e-9) continue;
+      unidades = Math.min(unidades, Math.max(0, s.inv[k].q) / per);
+    }
+  }
+  return unidades * (w.mezclaQ / w.q);
 }
 
 /** El mortero que sirve antes del próximo plomo (y del tope de block del día), más una tanda. Lo demás esperaría y se vencería. */
@@ -1738,6 +1759,10 @@ function tandaCabe(s: Estado, tipo: "H" | "M"): boolean {
   const uso = porMin * Math.min(vida, ventana);
   if (uso < 0.9) return false;
   if (have + 0.05 >= Math.min(falta, uso)) return false;
+  // v27: la tanda nueva se gasta después de las que ya hay (la más vieja primero). Si lo batido más esta tanda no se
+  // alcanza a gastar dentro de su vida, la última se vence: con un solo albañil y el peón en el Trompo se vencían
+  // varias al día. Se deja un 15 % de margen por cansancio y plomeos.
+  if (have > 1e-3 && have + 1 > uso * 0.85) return false;
   return true;
 }
 
@@ -2896,11 +2921,23 @@ export function quienSeVa(s: Estado): Persona | null {
   return lista[0]!;
 }
 
+/** v27: la obra se pierde (no quedó nadie). Queda marcada para que el guardado la archive y no se pueda continuar. */
+function perderObra(s: Estado) {
+  s.panel = "perdida";
+  s.perdida = true;
+  if (!s.diario.some((d) => d.texto === "No quedó nadie trabajando. La obra se perdió.")) diario(s, "No quedó nadie trabajando. La obra se perdió.");
+}
+
+/** v27: true si la obra se perdió (marca nueva o, en guardados de la v26 o antes, el panel «Obra perdida»). */
+export function obraPerdida(s: Estado | null | undefined): boolean {
+  if (!s) return false;
+  return s.perdida === true || s.panel === "perdida";
+}
+
 function seVaObrero(s: Estado) {
   const lista = [...s.gente, ...s.reserva];
   if (!lista.length) {
-    s.panel = "perdida";
-    diario(s, "No quedó nadie trabajando. La obra se perdió.");
+    perderObra(s);
     return;
   }
   const g = quienSeVa(s)!;
@@ -2914,10 +2951,7 @@ function seVaObrero(s: Estado) {
   const frase = `${g.nombre} se fue: dos días seguidos sin cobrar completo.`;
   diario(s, frase);
   aviso(s, frase);
-  if (s.gente.length + s.reserva.length === 0) {
-    s.panel = "perdida";
-    diario(s, "No quedó nadie trabajando. La obra se perdió.");
-  }
+  if (s.gente.length + s.reserva.length === 0) perderObra(s);
 }
 
 function pagarNomina(s: Estado) {
@@ -2974,7 +3008,7 @@ function pagarNomina(s: Estado) {
     diario(s, frase);
     aviso(s, frase);
     if (s.rachaCorta >= 2) {
-      const espera = esperaAlCobro(s);
+      const espera = esperaAlCobro(s) || esperaUltimo(s);
       if (espera) {
         // v22: «te pago al cobrar»: con la etapa casi lista y un cobro que cubre la deuda, nadie se va.
         s.rachaCorta = 1;
@@ -3081,24 +3115,39 @@ export function accionesNomina(s: Estado): string[] {
 export function esperaAlCobro(s: Estado): string {
   if (!s.firmado || s.entregada) return "";
   const i = proximoTramo(s);
-  if (i !== s.etapa) return "";
+  if (i < 0) return "";
   const def = ETAPAS[i]!;
-  let hecho = 0;
-  let total = 0;
-  for (const t of def.trabajos) {
-    hecho += Math.min(t.q, runDe(s, i, t.id).hecho) / t.q;
-    total += 1;
-  }
-  if (!total || hecho / total < 0.75) return "";
+  // v27: margen. Antes solo se esperaba con la etapa que cobra al 75 % o más (por trabajos), y el Revisor perdió la obra
+  // con los muros al 85 % del block: el promedio con los huecos no llegaba. Ahora la cuadrilla espera mientras lo neto
+  // del próximo cobro pague la deuda de nómina, vaya la obra por donde vaya. La deuda crece cada día corto, así que el
+  // margen se acaba solo si el cobro ya no alcanza.
   const neto = cobroDe(s, i).neto;
   const deuda = (s.deudaNomina ?? 0) + desgloseNomina(s).total;
   if (neto + Math.max(0, s.caja) < deuda - 0.5) return "";
-  return `Nadie se va: «te pago al cobrar». ${def.nombre} ya casi sella y su cobro (${peso(neto)}) cubre la deuda de nómina (${peso(s.deudaNomina ?? 0)}).`;
+  return `Nadie se va: «te pago al cobrar». El cobro de ${def.nombre} (${peso(neto)}) cubre la deuda de nómina (${peso(s.deudaNomina ?? 0)}).`;
+}
+
+/** v27: el último que queda no se va mientras lo que falta por cobrar (todos los tramos, menos adelanto y fiado) pague
+ * la deuda: la obra no se pierde por la nómina mientras haya cobro por delante. */
+export function esperaUltimo(s: Estado): string {
+  if (!s.firmado || s.entregada) return "";
+  if (s.gente.length + s.reserva.length !== 1) return "";
+  if (proximoTramo(s) < 0) return "";
+  // Con la obra parada (más de 18 días sin sellar nada) no hay cobro a la vista: el último también se va.
+  if (obraParada(s)) return "";
+  const deuda = (s.deudaNomina ?? 0) + desgloseNomina(s).total;
+  if (limiteFiado(s) + Math.max(0, s.caja) < deuda - 0.5) return "";
+  const g = [...s.gente, ...s.reserva][0]!;
+  return `${g.nombre} se queda: es el último y espera el cobro («te pago al cobrar»). Quedan ${peso(s.deudaNomina ?? 0)} de deuda de nómina.`;
 }
 
 export function textoSeVaManana(s: Estado): string {
   if ((s.rachaCorta ?? 0) < 1) return "";
-  if (esperaAlCobro(s)) return ` Si vuelve a quedar corta, nadie se va: ${ETAPAS[s.etapa]?.nombre ?? "la etapa"} casi sella y su cobro paga la deuda («te pago al cobrar»).`;
+  if (esperaAlCobro(s)) {
+    const i = proximoTramo(s);
+    return ` Si vuelve a quedar corta, nadie se va: el cobro de ${ETAPAS[i]?.nombre ?? "la próxima etapa"} paga la deuda («te pago al cobrar»).`;
+  }
+  if (esperaUltimo(s)) return ` Si vuelve a quedar corta, ${[...s.gente, ...s.reserva][0]!.nombre} se queda: es el último y espera el cobro.`;
   const g = quienSeVa(s);
   return g ? ` Si vuelve a quedar corta, mañana se va ${g.nombre}.` : "";
 }
@@ -3143,8 +3192,7 @@ function abrirFinde(s: Estado) {
     }
   }
   if (!s.entregada && s.gente.length + s.reserva.length === 0) {
-    s.panel = "perdida";
-    diario(s, "No quedó nadie trabajando. La obra se perdió.");
+    perderObra(s);
     return;
   }
   s.panel = s.entregada ? "informe" : "finde";
@@ -4219,6 +4267,28 @@ export function pedidoQueAlcanza(s: Estado, items: Cantidades, urgente: boolean,
   return pedidoQueCabe(s, items, urgente, comerNomina ? s.caja : cajaLibre(s));
 }
 
+export const NOTA_FIADO_FERRETERIA = "La caja no alcanza. El guardalmacén te lo fía: toca «Fiado». Sale solo del próximo cobro.";
+
+/** v27: lo que la Ferretería ofrece fiar ahora: el pedido armado (si la caja no lo paga) o, si no hay pedido,
+ * lo que falta para esta etapa o para la próxima que compra. null si la caja alcanza o ya no cabe más fiado. */
+export function fiadoFerreteria(s: Estado, carrito?: Cantidades, urgente = false): { items: Cantidades; total: number; texto: string } | null {
+  const prox = ETAPAS[proximoTramo(s)]?.nombre ?? "la próxima etapa";
+  const texto = (total: number) => `Fiado: ${peso(total)}, sale del cobro de ${prox}`;
+  if (carrito && tieneItems(carrito)) {
+    const c = cuentaFiadoPedido(s, carrito, urgente);
+    return c ? { ...c, texto: texto(c.total) } : null;
+  }
+  const falta = loQueFalta(s);
+  if (tieneItems(falta)) {
+    const c = cuentaFiadoPedido(s, falta, urgente);
+    return c ? { ...c, texto: texto(c.total) } : null;
+  }
+  const sig = siguienteConCompra(s);
+  if (!sig) return null;
+  const c = cuentaFiadoPedido(s, sig.items, urgente);
+  return c ? { ...c, texto: texto(c.total) } : null;
+}
+
 const AVISO_LIBRE_MANANA =
   "No alcanza para la nómina de hoy. Da libre a alguien mañana: abre Cuadrilla y toca Libre mañana.";
 
@@ -4241,7 +4311,11 @@ export function ajusteLoQueFalta(s: Estado): { items: Cantidades; nota: string }
   const of = ofertaDe(s, full, false, "Lo que falta");
   if (!of) return { items: {}, nota: viene ? "Ya viene en el camión. No se vuelve a pedir ni se cobra el flete otra vez." : "Por ahora no falta nada." };
   if (of.recorte) {
-    if (!tieneItems(of.cabe ?? {})) return { items: {}, nota: AVISO_LIBRE_MANANA };
+    if (!tieneItems(of.cabe ?? {})) {
+      // v27: con la caja en P$0 «Lo que falta» llena el pedido igual y ofrece el fiado (antes quedaba vacío).
+      if (cuentaFiadoPedido(s, full, false)) return { items: { ...full }, nota: NOTA_FIADO_FERRETERIA };
+      return { items: {}, nota: AVISO_LIBRE_MANANA };
+    }
     let nota = of.comeNomina
       ? "Pedir lo que alcanza. La caja paga esto aunque la nómina quede corta."
       : "No cabe el pedido completo. Esto entra sin tocar la nómina de hoy.";
@@ -4434,19 +4508,45 @@ function ofrecerManual(s: Estado, items: Cantidades, urgente: boolean) {
   s.sita.editando = false;
 }
 
-/** La etapa actual no compra nada, pero la siguiente sí: el guardalmacén deja pedirla de una vez. */
+/** v27: la primera etapa después de la actual a la que todavía le falta comprar algo. Salta las que no compran
+ * (Excavación) y las que ya tienen todo en el almacén o en camino. */
+export function siguienteConCompra(s: Estado): { idx: number; items: Cantidades; lineas: string } | null {
+  const base = stockBase(s);
+  const ahora = renglonesDe(s, necesidadActual(s), base.hay, base.vienen);
+  let hay = ahora.haySobra;
+  let vienen = ahora.vienenSobra;
+  for (let i = s.etapa + 1; i < ETAPAS.length; i++) {
+    const r = renglonesDe(s, sumaNecesidad(s, i, false), hay, vienen);
+    const items = itemsDe(r.renglones);
+    if (tieneItems(items)) return { idx: i, items, lineas: lineasCuenta(r.renglones) };
+    hay = r.haySobra;
+    vienen = r.vienenSobra;
+  }
+  return null;
+}
+
+/** La etapa actual no compra nada, pero otra más adelante sí: el guardalmacén deja pedirla de una vez.
+ * v27: también cuando la etapa que sigue ya está cubierta (busca la próxima que compra) y aunque la caja no alcance
+ * (entonces la hoja lo dice y el pedido se puede fiar). */
 export function ofertaSiguiente(s: Estado, urgente = false): OfertaSita | null {
   const cuerpo = cuerpoNota(s);
-  if (tieneItems(cuerpo.items) || !tieneItems(cuerpo.siguiente)) return null;
-  const sig = { ...cuerpo.siguiente };
+  if (tieneItems(cuerpo.items)) return null;
+  const prox = siguienteConCompra(s);
+  if (!prox) return null;
+  const sig = { ...prox.items };
   const flete = fleteDe(s, urgente);
   const mats = costoMats(sig);
   const total = mats + flete;
   const cuando = fraseCuando(s, urgente, llegadaPedido(s, urgente, s.minuto + 1));
-  let texto = `Esta etapa no necesita material.\nPara la siguiente etapa:\n${cuerpo.lineasSig}`;
+  const estaCompra = tieneItems(sumaNecesidad(s, s.etapa, true));
+  let texto = estaCompra ? "Lo de esta etapa ya está en el almacén o en camino." : "Esta etapa no necesita material.";
+  texto += prox.idx === s.etapa + 1 ? `\nPara la siguiente etapa:\n${prox.lineas}` : `\nPara ${ETAPAS[prox.idx]!.nombre} (la próxima que compra):\n${prox.lineas}`;
   texto += `\n¿Pido la siguiente? ${urgente ? "Urgente" : "Normal"} ${peso(total)}, ${cuando}.`;
   const cuenta = cuentaPedido(s, total);
-  if (!cuenta.alcanza) texto += ` ${textoCajaLibre(s)}.`;
+  if (!cuenta.alcanza) {
+    texto += ` ${textoCajaLibre(s)}.`;
+    if (cuentaFiadoPedido(s, sig, urgente)) texto += " Si la caja no alcanza, te lo fío: sale del próximo cobro.";
+  }
   return { items: {}, urgente, mats: 0, flete, total: 0, texto, siguiente: sig };
 }
 
@@ -4638,6 +4738,24 @@ export function asignar(s: Estado, id: string, puesto: Puesto | null) {
   chequearTutorial(s);
 }
 
+/** v27: lo que cuesta despedir a alguien ahora (el día completo y la herramienta, si hoy vino y aún no se pagó la
+ * nómina), para mostrarlo y pedir confirmación antes. */
+export function costoDespedir(s: Estado, id: string): { total: number; jornal: number; herramienta: number; texto: string; ultimo: boolean } | null {
+  const g = s.gente.find((x) => x.id === id) ?? s.reserva.find((x) => x.id === id);
+  if (!g) return null;
+  const ultimo = s.gente.length + s.reserva.length === 1;
+  const cobra = s.gente.includes(g) && g.activo && !g.falto && !s.nominaPagada;
+  const jornal = cobra ? jornalDe(g.oficio, g.rinde) : 0;
+  const herramienta = cobra ? Math.round(jornal * HERRAMIENTA) : 0;
+  const total = jornal + herramienta;
+  let texto = total > 0
+    ? `Despedir a ${g.nombre} cuesta ${peso(total)}: el día completo (${peso(jornal)}) y la herramienta (${peso(herramienta)}).`
+    : `Despedir a ${g.nombre} no cuesta nada: hoy no cobra.`;
+  if (total > 0 && s.caja < total - 0.5) texto += ` La caja tiene ${pesoCaja(s.caja)}: lo que falte queda como deuda de nómina.`;
+  if (ultimo) texto += " Es el último de la cuadrilla: sin nadie, la obra se pierde.";
+  return { total, jornal, herramienta, texto, ultimo };
+}
+
 export function despedir(s: Estado, id: string) {
   const gi = s.gente.findIndex((g) => g.id === id);
   if (gi >= 0) {
@@ -4648,10 +4766,16 @@ export function despedir(s: Estado, id: string) {
       s.costos.muerto.mo += diff;
       anotarMuerto(s, g, diff, j > 0 ? (diff * 480) / j : 0, "resto");
       const herr = Math.round(j * HERRAMIENTA);
-      s.caja -= j + herr;
+      // v27: la caja no baja de P$0; lo que no alcanza queda como deuda de nómina (se paga con la nómina de mañana).
+      const paga = Math.min(Math.max(0, s.caja), j + herr);
+      s.caja -= paga;
+      const resta = j + herr - paga;
+      if (resta > 0.5) s.deudaNomina = (s.deudaNomina ?? 0) + resta;
       s.costos.herramienta.mo += herr;
-      aviso(s, `Despediste a ${g.nombre}. Le pagaste el día (${peso(j)}) y la herramienta (${peso(herr)}).`);
-      diario(s, `Despediste a ${g.nombre} ${g.apellido}: −${peso(j + herr)}.`);
+      aviso(s, resta > 0.5
+        ? `Despediste a ${g.nombre}. Le pagaste ${peso(paga)} de ${peso(j + herr)} (día y herramienta). Quedan ${peso(resta)} de deuda de nómina.`
+        : `Despediste a ${g.nombre}. Le pagaste el día (${peso(j)}) y la herramienta (${peso(herr)}).`);
+      diario(s, `Despediste a ${g.nombre} ${g.apellido}: −${peso(paga)}${resta > 0.5 ? ` (debes ${peso(resta)})` : ""}.`);
     } else {
       aviso(s, `Despediste a ${g.nombre}. Hoy no cobró.`);
       diario(s, `Despediste a ${g.nombre} ${g.apellido}.`);
@@ -5006,10 +5130,8 @@ export function siguienteDia(s: Estado) {
     diario(s, caja);
     aviso(s, caja);
   }
-  if (s.gente.length + s.reserva.length === 0) {
-    s.panel = "perdida";
-    diario(s, "No quedó nadie trabajando. La obra se perdió.");
-  } else s.panel = null;
+  if (s.gente.length + s.reserva.length === 0) perderObra(s);
+  else s.panel = null;
 }
 
 function generarCandidatos(s: Estado): Persona[] {
