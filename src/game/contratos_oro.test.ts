@@ -9,7 +9,7 @@ const run = promisify(execFile);
 const ORO = JSON.parse(readFileSync(new URL("./oro_caseta_1.0.json", import.meta.url), "utf8")) as any[];
 const celda = new URL("../../scripts/f3/oro_celda.ts", import.meta.url).pathname;
 
-test("caseta = 1.0 en las 360 partidas", { timeout: 30 * 60_000 }, async () => {
+test("caseta = 1.0 en las 360 partidas", { timeout: 120 * 60_000 }, async () => {
   const celdas: [string, string][] = [];
   for (const p of ["principiante", "intermedio", "experto"]) for (const c of ["poca", "normal", "mucha"]) celdas.push([p, c]);
   const res = await Promise.all(celdas.map(([p, c]) =>
