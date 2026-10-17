@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { ETAPAS } from "./datos.ts";
+import { ETAPAS, esSabado } from "./datos.ts";
 import {
   asignar,
   avanzarMinutos,
@@ -18,12 +18,14 @@ import {
   hablarSita,
   limiteFiado,
   aceptarSita,
+  alternarLibre,
   loQueFalta,
   loQueFaltaSiguiente,
   nueva,
   pedir,
   pedirTambien,
   primeroEstaEtapa,
+  siguienteDia,
   type Estado,
 } from "./motor.ts";
 import { correr } from "./auditoria_sim.ts";
@@ -284,5 +286,63 @@ describe("v28 hallazgo 4: con el peón en el Trompo el mortero no se vence (juga
       assert.equal(d.vencidos, 0, `${a} albañil(es), ${p} peón(es), x${r}: ${d.vencidos} vencidos`);
       assert.ok(d.block >= (a === 1 ? 120 : 230), `${a} albañil(es): ${d.block} block`);
     }
+  });
+});
+
+describe("v28 hallazgo 5: «Libre mañana» se marca, se ve y se aplica", () => {
+  it("al tocarlo queda marcado sobre el estado vivo, avisa y al otro día no viene ni cobra; los demás sí", () => {
+    const s = obraEn(4, 3);
+    s.minuto = 10 * 60;
+    const [a, b] = s.gente;
+    assert.equal(alternarLibre(s, a!.id), true);
+    assert.match(s.avisos.at(-1)!.texto, new RegExp(`${a!.nombre} libre (mañana|el lunes): no viene ni cobra`));
+    s.minuto = 18 * 60;
+    siguienteDia(s);
+    if (s.descanso) siguienteDia(s);
+    const a2 = s.gente.find((g) => g.id === a!.id)!;
+    const b2 = s.gente.find((g) => g.id === b!.id)!;
+    assert.equal(a2.activo, false, "el que tiene libre no viene");
+    assert.equal(b2.activo, true);
+    assert.equal(a2.libre, false, "el libre es de un solo día");
+  });
+
+  it("tocarlo otra vez lo deshace («Que venga mañana») y funciona con quien entra mañana", () => {
+    const s = obraEn(4, 2);
+    const g = s.gente[0]!;
+    assert.equal(alternarLibre(s, g.id), true);
+    assert.equal(alternarLibre(s, g.id), false);
+    assert.match(s.avisos.at(-1)!.texto, /sí viene/);
+    s.minuto = 18 * 60;
+    siguienteDia(s);
+    if (s.descanso) siguienteDia(s);
+    assert.equal(s.gente.find((x) => x.id === g.id)!.activo, true);
+    // Alguien contratado tarde (entra mañana) también se puede marcar.
+    const nuevo = s.candidatos[0]!;
+    s.minuto = 12 * 60;
+    contratar(s, nuevo.id);
+    if (s.reserva.some((x) => x.id === nuevo.id)) assert.equal(alternarLibre(s, nuevo.id), true);
+  });
+
+  it("el sábado, «Libre mañana» vale para el lunes", () => {
+    const s = obraEn(4, 2);
+    while (!esSabado(s.dia)) s.dia += 1;
+    const g = s.gente[0]!;
+    alternarLibre(s, g.id);
+    assert.match(s.avisos.at(-1)!.texto, /libre el lunes/);
+    s.minuto = 18 * 60;
+    siguienteDia(s); // domingo
+    assert.equal(s.descanso, true);
+    siguienteDia(s); // lunes
+    assert.equal(s.gente.find((x) => x.id === g.id)!.activo, false);
+  });
+
+  it("la Cuadrilla muestra la marca, el botón dice «Que venga mañana» y el cambio se guarda al instante", () => {
+    const p = readFileSync(new URL("../components/juego/Paneles.tsx", import.meta.url), "utf8");
+    const j = readFileSync(new URL("../components/juego/Juego.tsx", import.meta.url), "utf8");
+    assert.equal((p.match(/data-libre aria-pressed=\{!!g\.libre\} onClick=\{\(\) => act\(\(st\) => void alternarLibre\(st, g\.id\)\)\}/g) ?? []).length, 2);
+    assert.match(p, /data-libre-marca/);
+    assert.doesNotMatch(p, /Sí viene mañana/);
+    assert.match(p, /Que venga mañana/);
+    assert.match(j, /libres\(\) !== antes\)\) guardar\(estado\.current\)/);
   });
 });

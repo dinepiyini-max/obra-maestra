@@ -59,7 +59,7 @@ import {
   libreta,
   lineaAhora,
   lineaFicha,
-  marcarLibre,
+  alternarLibre,
   marcarLoQueFalta,
   nominaPendiente,
   notarCierreHoja,
@@ -549,9 +549,12 @@ function SinTarea({ s, act }: { s: Estado; act: (fn: (st: Estado) => void) => vo
       <h3 className="font-display text-2xl">Sin tarea</h3>
       {ociosos.map((g) => (
         <div key={g.id} className="mt-2 flex flex-wrap items-center gap-2">
-          <p className="min-w-0 font-hand text-sm">{textoSinTarea(g)}</p>
-          <button type="button" className={btn} onClick={() => act((st) => marcarLibre(st, g.id, !g.libre))}>
-            {g.libre ? "Sí viene mañana" : "Libre mañana"}
+          <p className="min-w-0 font-hand text-sm">
+            {textoSinTarea(g)}
+            {g.libre ? " · libre mañana (no cobra)" : ""}
+          </p>
+          <button type="button" className={btn} data-libre aria-pressed={!!g.libre} onClick={() => act((st) => void alternarLibre(st, g.id))}>
+            {g.libre ? "Que venga mañana" : "Libre mañana"}
           </button>
         </div>
       ))}
@@ -1137,6 +1140,7 @@ export function Paneles({
                   <div className="font-hand">
                     {g.nombre} {g.apellido} · {OFICIO_NOMBRE[g.oficio]}
                     {manana ? " · entra mañana" : ""}
+                    {g.libre ? <span data-libre-marca>{" · libre mañana (no cobra)"}</span> : ""}
                     {g.falto ? " · no vino" : ""}
                     {g.fuera ? " · ya se fue" : ""}
                   </div>
@@ -1167,8 +1171,8 @@ export function Paneles({
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {!manana ? (
-                  <button type="button" className={btn} onClick={() => act((st) => marcarLibre(st, g.id, !g.libre))}>
-                    {g.libre ? "Sí viene mañana" : "Libre mañana"}
+                  <button type="button" className={btn} data-libre aria-pressed={!!g.libre} onClick={() => act((st) => void alternarLibre(st, g.id))}>
+                    {g.libre ? "Que venga mañana" : "Libre mañana"}
                   </button>
                 ) : null}
                 <button type="button" className={btn} data-despedir onClick={() => setPorDespedir(g.id)}>

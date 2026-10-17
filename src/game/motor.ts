@@ -4877,9 +4877,20 @@ export function despedir(s: Estado, id: string) {
 }
 
 export function marcarLibre(s: Estado, id: string, valor: boolean) {
-  const g = s.gente.find((x) => x.id === id);
+  const g = s.gente.find((x) => x.id === id) ?? s.reserva.find((x) => x.id === id);
   if (!g) return;
   g.libre = valor;
+}
+
+/** v28: «Libre mañana» cambia sobre el estado vivo (no sobre la foto de la pantalla, que podía estar 0,2 s atrasada y
+ * dejar el botón como estaba) y lo dice claro. Devuelve cómo quedó. */
+export function alternarLibre(s: Estado, id: string): boolean | null {
+  const g = s.gente.find((x) => x.id === id) ?? s.reserva.find((x) => x.id === id);
+  if (!g) return null;
+  g.libre = !g.libre;
+  const otroDia = esDomingo(s.dia + 1) ? "el lunes" : "mañana";
+  aviso(s, g.libre ? `${g.nombre} libre ${otroDia}: no viene ni cobra.` : `${g.nombre} sí viene ${otroDia}.`);
+  return g.libre;
 }
 
 function pideCompra(need: Cantidades): boolean {

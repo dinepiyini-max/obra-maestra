@@ -1007,8 +1007,11 @@ export function Juego() {
         s={snap}
         seguir={seguir}
         act={(fn) => {
+          // v28: «Libre mañana» se guarda al instante aunque la Cuadrilla siga abierta (al recargar se perdía).
+          const libres = () => [...estado.current.gente, ...estado.current.reserva].map((g) => (g.libre ? 1 : 0)).join("");
+          const antes = libres();
           act(fn);
-          if (estado.current.panel === null && estado.current.firmado) guardar(estado.current);
+          if (estado.current.firmado && (estado.current.panel === null || libres() !== antes)) guardar(estado.current);
         }}
         onNueva={nuevaObra}
         onContinuar={() => {
