@@ -1176,7 +1176,7 @@ export function Paneles({
                 </button>
               </div>
               {porDespedir === g.id ? (
-                <div className="mt-2 border-2 border-colmado-rojo p-2 font-hand" data-confirmar-despedir>
+                <div className="mt-2 border-2 border-colmado-rojo p-2 font-hand" data-confirmar-despedir ref={(el) => el?.scrollIntoView?.({ block: "nearest" })}>
                   <p>{costoDespedir(s, g.id)?.texto ?? ""} ¿Despedir?</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <button

@@ -8,6 +8,8 @@ import {
   cerrarPanel,
   tick,
   contratar,
+  costoDespedir,
+  despedir,
   cuentaFiadoPedido,
   fiarPedido,
   firmar,
@@ -201,5 +203,37 @@ describe("v28 hallazgo 2: el reloj no se congela y «Reportar» lo para", () => 
     s.pausa = true;
     for (let i = 0; i < 600; i++) tick(s, 1 / 60, 1);
     assert.equal(s.minuto, 10 * 60);
+  });
+});
+
+describe("v28 hallazgo 3: «Despedir» siempre muestra el costo y pide confirmación", () => {
+  it("en toda la interfaz solo se despide desde «Sí, despedir», y la confirmación se ve en pantalla", () => {
+    const dir = new URL("../components/juego/", import.meta.url);
+    let llamadas = 0;
+    for (const f of ["Paneles.tsx", "Juego.tsx", "Hud.tsx"]) {
+      const src = readFileSync(new URL(f, dir), "utf8");
+      const m = src.match(/[^a-zA-Z]despedir\(st/g) ?? [];
+      llamadas += m.length;
+      if (f !== "Paneles.tsx") assert.equal(m.length, 0, `${f} no despide directo`);
+    }
+    assert.equal(llamadas, 1, "una sola ruta despide");
+    const p = readFileSync(new URL("Paneles.tsx", dir), "utf8");
+    const i = p.indexOf("data-confirmar-despedir");
+    const j = p.indexOf("despedir(st, g.id)");
+    assert.ok(i > 0 && j > i && j - i < 1200, "despedir() está dentro de la caja de confirmación");
+    assert.match(p, /data-despedir onClick=\{\(\) => setPorDespedir\(g\.id\)\}/);
+    assert.match(p, /data-confirmar-despedir ref=\{\(el\) => el\?\.scrollIntoView/);
+  });
+
+  it("el costo que se muestra es el que se paga", () => {
+    const s = obraEn(4);
+    s.minuto = 10 * 60;
+    s.caja = 50_000;
+    const g = s.gente[0]!;
+    const c = costoDespedir(s, g.id)!;
+    assert.match(c.texto, /^Despedir a .+ cuesta P\$/);
+    const caja = s.caja;
+    despedir(s, g.id);
+    assert.equal(Math.round(caja - s.caja), Math.round(c.total));
   });
 });
