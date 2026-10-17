@@ -1747,6 +1747,21 @@ function morteroHastaPlomo(s: Estado, w: W): number {
   return Math.min(mezclaQueFalta(w), bloques * (w.mezclaQ / w.q) + margen);
 }
 
+/** v28: el muro de block de hoy lo frena el tope de hiladas del día (y no el plomo ni el final de la etapa). */
+function topeDelDiaManda(s: Estado): boolean {
+  const w = listos(s).find((x) => x.id === "block");
+  if (!w || s.plomo) return false;
+  let hasta = w.q;
+  for (const u of UMBRALES) {
+    const ya = s.plumbed.some((p) => Math.abs(p - u) < 1e-3);
+    if (!ya && u > w.hecho + 1e-6) {
+      hasta = Math.min(hasta, u);
+      break;
+    }
+  }
+  return TOPE_BLOCK_DIA - s.blocksHoy < hasta - w.hecho;
+}
+
 /** No arranca una tanda que nadie va a usar antes de que se venza. */
 function tandaCabe(s: Estado, tipo: "H" | "M"): boolean {
   if (tipo === "H" && !albanilLibreParaVaciar(s)) return false;
@@ -1756,7 +1771,9 @@ function tandaCabe(s: Estado, tipo: "H" | "M"): boolean {
   // pendiente, no se batía nunca y la obra quedaba trabada sin que el guardalmacén pidiera nada.
   if (falta <= have + 1e-3) return false;
   const porMin = consumoPorMin(s, tipo);
-  if (have < 1e-3 && porMin > 0 && falta < 1) return true;
+  // v28: pero si lo que frena es el tope de hiladas del día (no el final de la etapa), una tanda para menos de dos
+  // tercios se vencería: mañana sigue.
+  if (have < 1e-3 && porMin > 0 && falta < 1) return !(tipo === "M" && falta < 0.65 && topeDelDiaManda(s));
   const vida = tipo === "H" ? RECETA_H.vida : RECETA_M.vida;
   const hastaFaena = Math.max(0, 15 * 60 - s.minuto);
   const minutosBatir = tipo === "H" ? 60 : 22;
@@ -1768,6 +1785,9 @@ function tandaCabe(s: Estado, tipo: "H" | "M"): boolean {
   // alcanza a gastar dentro de su vida, la última se vence: con un solo albañil y el peón en el Trompo se vencían
   // varias al día. Se deja un 15 % de margen por cansancio y plomeos.
   if (tipo === "M" && have > 1e-3 && have + 1 > uso * 0.85) return false;
+  // v28: con lo batido más esta tanda no se puede pasar de lo que se va a gastar hoy (con el peón en el Trompo, al
+  // llegar al tope de hiladas del día sobraba media tanda y se vencía a las 15:2x).
+  if (tipo === "M" && have > 1e-3 && have + 1 > falta + 0.35 && topeDelDiaManda(s)) return false;
   return true;
 }
 

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { ETAPAS } from "./datos.ts";
 import {
+  asignar,
   avanzarMinutos,
   cerrarPanel,
   tick,
@@ -12,6 +13,7 @@ import {
   despedir,
   cuentaFiadoPedido,
   fiarPedido,
+  golpe,
   firmar,
   hablarSita,
   limiteFiado,
@@ -235,5 +237,52 @@ describe("v28 hallazgo 3: «Despedir» siempre muestra el costo y pide confirmac
     const caja = s.caja;
     despedir(s, g.id);
     assert.equal(Math.round(caja - s.caja), Math.round(c.total));
+  });
+});
+
+describe("v28 hallazgo 4: con el peón en el Trompo el mortero no se vence (jugando en tiempo real, como en la pantalla)", () => {
+  /** Un día de muros a 60 cuadros por segundo; el jugador plomea 10 s reales después del aviso. */
+  function diaDeMuros(albaniles: number, peones: number, ritmo: number) {
+    const s = obraEn(4, 0);
+    const albs = s.candidatos.filter((c) => c.oficio === "albanil").slice(0, albaniles);
+    const pes = s.candidatos.filter((c) => c.oficio === "peon" || c.oficio === "ayudante").slice(0, peones);
+    for (const c of [...albs, ...pes]) contratar(s, c.id);
+    for (const c of albs) asignar(s, c.id, "obra");
+    for (const c of pes) asignar(s, c.id, "batea");
+    for (const g of s.gente) {
+      g.activo = true;
+      g.falto = false;
+    }
+    for (const k of Object.keys(s.inv) as (keyof Estado["inv"])[]) s.inv[k] = { q: 50, valor: 0 };
+    s.inv.cemento = { q: 20, valor: 11_000 };
+    s.inv.block = { q: 500, valor: 20_000 };
+    s.lluvias = [];
+    s.minuto = 7 * 60;
+    let desde = -1;
+    for (let i = 0; i < 400_000 && s.minuto < 18 * 60 && s.panel !== "finde"; i++) {
+      tick(s, 1 / 60, ritmo);
+      if (s.panel) s.panel = null;
+      if (s.plomo) {
+        if (desde < 0) desde = i;
+        if (i - desde > 600) {
+          const j = s.jugador;
+          s.jugador = { x: 19, y: 14.5 };
+          golpe(s, true);
+          s.jugador = j;
+          desde = -1;
+        }
+      } else desde = -1;
+    }
+    const vencidos = (s.perdidasHoy ?? []).filter((x) => /Mortero vencido/.test(x.texto)).length;
+    const block = s.runs[4]!.find((r) => r.id === "block")!.hecho;
+    return { vencidos, block };
+  }
+
+  it("1 o 2 albañiles con el peón en el Trompo: 0 morteros vencidos en el día y el muro avanza", () => {
+    for (const [a, p, r] of [[1, 1, 1], [2, 1, 1], [2, 2, 2], [3, 1, 1]] as const) {
+      const d = diaDeMuros(a, p, r);
+      assert.equal(d.vencidos, 0, `${a} albañil(es), ${p} peón(es), x${r}: ${d.vencidos} vencidos`);
+      assert.ok(d.block >= (a === 1 ? 120 : 230), `${a} albañil(es): ${d.block} block`);
+    }
   });
 });
