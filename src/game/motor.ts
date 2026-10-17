@@ -1737,9 +1737,12 @@ function morteroHastaPlomo(s: Estado, w: W): number {
       break;
     }
   }
-  const bloques = Math.max(0, Math.min(hasta - w.hecho, TOPE_BLOCK_DIA - s.blocksHoy));
+  const porTope = TOPE_BLOCK_DIA - s.blocksHoy;
+  const bloques = Math.max(0, Math.min(hasta - w.hecho, porTope));
   // Una tanda de margen: el albañil no se queda esperando mezcla justo antes del plomo.
-  return Math.min(mezclaQueFalta(w), bloques * (w.mezclaQ / w.q) + 1);
+  // v27: el margen no va cuando lo que frena es el tope de hiladas del día: esa tanda sobraba y se vencía.
+  const margen = bloques > 1e-6 && porTope > hasta - w.hecho ? 1 : 0;
+  return Math.min(mezclaQueFalta(w), bloques * (w.mezclaQ / w.q) + margen);
 }
 
 /** No arranca una tanda que nadie va a usar antes de que se venza. */

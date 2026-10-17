@@ -58,7 +58,18 @@ for (let seed = desde; seed <= hasta; seed++) {
   const clima = climaDe(seed);
   let pasos = 0, difs = 0, peor = 0, ultimoCobrado = 0, ultimoCaja = NaN;
   let movs = 0;
+  // v27: montos negativos a la vista (caja bajo cero, deuda o fiado negativos, «P$-» o «-P$» en un texto) y morteros
+  // vencidos en un mismo día.
+  let neg = 0, vencDia = 0;
+  const visto = new Set<string>();
   const chequeo = (s: Estado) => {
+    if (s.caja < -0.5 || (s.deudaNomina ?? 0) < -0.5 || (s.fiado ?? 0) < -0.5) neg++;
+    for (const t of [...s.avisos.map((a) => a.texto), s.sita?.oferta?.texto ?? "", s.notaNomina ?? ""]) {
+      if (!t || visto.has(t)) continue;
+      visto.add(t);
+      if (/P\$-|-P\$|[−+-]−P\$|(tienes|caja|libre|quedan|entran?|cobra) −P\$|\s-\d+ días/i.test(t)) neg++;
+    }
+    vencDia = Math.max(vencDia, (s.perdidasHoy ?? []).filter((x) => /Mortero vencido/.test(x.texto)).length);
     pasos++;
     if (s.caja !== ultimoCaja || s.cobrado !== ultimoCobrado) movs++;
     ultimoCaja = s.caja; ultimoCobrado = s.cobrado;
@@ -77,6 +88,6 @@ for (let seed = desde; seed <= hasta; seed++) {
     chequeo(r.s);
     ponerPrecios(seed, null);
   } else r = correr(seed, PERFILES[perfil!]!, clima, 0.15, chequeo);
-  console.log(JSON.stringify({ perfil, seed, clima, ent: r.s.entregada, perdida: !!r.perdida || r.s.panel === "perdida", dia: r.s.dia, gan: Math.round(r.inf.ganancia), caja: Math.round(r.s.caja), adelantos: (r.s.adelantoDia > 0 ? 1 : 0), rescate: !!r.s.rescateUsado, pasos, movs, difs, peor, gente: r.s.gente.length, sinSalida: (r as any).sinSalida ?? 0, fiado: !!r.s.diario?.some((d: any) => /fía/.test(d.texto)), trucos }));
+  console.log(JSON.stringify({ perfil, seed, clima, ent: r.s.entregada, perdida: !!r.perdida || r.s.panel === "perdida", dia: r.s.dia, gan: Math.round(r.inf.ganancia), caja: Math.round(r.s.caja), adelantos: (r.s.adelantoDia > 0 ? 1 : 0), rescate: !!r.s.rescateUsado, pasos, movs, difs, peor, gente: r.s.gente.length, sinSalida: (r as any).sinSalida ?? 0, fiado: !!r.s.diario?.some((d: any) => /fía/.test(d.texto)), trucos, neg, vencDia, finCaja: Math.round(r.s.caja), deuda: Math.round(r.s.deudaNomina ?? 0) }));
 }
 }

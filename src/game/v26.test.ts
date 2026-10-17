@@ -69,6 +69,8 @@ describe("v26: plomear no deja vencer el mortero", () => {
     const m = s.mezclas.filter((x) => x.tipo === "M");
     assert.equal(m.length, 2, "lo que alcanza hasta el plomo más una tanda");
     const vidas = m.filter((x) => x.lista).map((x) => x.vida);
+    // v27: la tanda que ya se estaba batiendo cuando sonó el plomo se queda a medias (no envejece); no se empieza otra.
+    const enCurso = m.filter((x) => !x.lista).length;
     const perdidas = s.stats.tandasPerdidas;
     // El maestro tarda 90 minutos en llegar al muro: nadie plomea.
     for (let i = 0; i < 90; i++) {
@@ -79,7 +81,7 @@ describe("v26: plomear no deja vencer el mortero", () => {
     assert.equal(s.stats.tandasPerdidas, perdidas, "no se venció nada esperando el plomo");
     const despues = s.mezclas.filter((x) => x.tipo === "M");
     assert.deepEqual(despues.filter((x) => x.lista).map((x) => x.vida), vidas, "el mortero batido no envejece");
-    assert.equal(despues.filter((x) => !x.lista).length, 0, "no se empezó otra tanda de mortero");
+    assert.equal(despues.filter((x) => !x.lista).length, enCurso, "no se empezó otra tanda de mortero");
     s.jugador = { x: 19, y: 14.5 };
     golpe(s, true);
     assert.equal(s.plomo, null, "plomeado");
@@ -89,7 +91,7 @@ describe("v26: plomear no deja vencer el mortero", () => {
 });
 
 describe("v26: sin peón ni ayudante el albañil bate", () => {
-  it("con solo oficiales y caja P$0, un albañil (uno solo) va al trompo y la obra llega a Muros el día 8", () => {
+  it("con solo oficiales y caja P$0, un albañil (uno solo) va al trompo y la obra llega a Muros a más tardar el día 8", () => {
     let maxBatiendo = 0;
     let vecesBatiendo = 0;
     let diaCimientos = -1;
@@ -109,7 +111,8 @@ describe("v26: sin peón ni ayudante el albañil bate", () => {
     }
     assert.equal(maxBatiendo, 1, "un solo albañil en el trompo a la vez");
     assert.ok(vecesBatiendo > 0, "alguien batió");
-    assert.equal(diaCimientos, 8, "Muros empieza el día 8");
+    // v27: sin batir mortero de más llega antes (día 6); lo que importa es no pasar del día 8.
+    assert.ok(diaCimientos > 0 && diaCimientos <= 8, `Muros empieza el día ${diaCimientos}`);
   });
   it("el albañil solo hace de ayuda cuando no hay peón ni ayudante trabajando hoy", () => {
     const s = obraEn(2);
