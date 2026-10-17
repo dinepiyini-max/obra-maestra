@@ -1,6 +1,6 @@
 // v18: tabla de 40 obras por perfil, con lluvia y precios variables, y control de caja en cada paso.
 // Uso: node --experimental-strip-types src/game/sim_v18.ts <perfil> [desde] [hasta]
-import { correr, BOTS, jugarPasivo, ponerPrecios, type Cfg, type Clima } from "./auditoria_sim.ts";
+import { correr, BOTS, BOT_SIN_AYUDA, jugarPasivo, ponerPrecios, type Cfg, type Clima } from "./auditoria_sim.ts";
 import { MATERIALES } from "./datos.ts";
 import type { Estado } from "./motor.ts";
 import { jugarTramposo } from "./tramposo.ts";
@@ -20,11 +20,15 @@ export function cuadreCaja(s: Estado): number {
   for (const m of s.mezclas) mezcla += m.lista ? m.costo * m.restante : m.costo;
   let mo = 0;
   if (!s.nominaPagada) for (const g of s.gente) if (g.activo && !g.falto) mo += g.moHoy;
-  const esperado = s.cobrado + (s.fiado ?? 0) - (costos + valor(s.inv) + valor(s.entrada) + camino + mezcla - mo - (s.deudaNomina ?? 0));
+  // v26: el bot sinAyuda vacía la caja a mano al empezar; eso no es un descuadre del motor.
+  const quitado = (s as Estado & { quitadoBot?: number }).quitadoBot ?? 0;
+  const esperado = s.cobrado + (s.fiado ?? 0) - quitado - (costos + valor(s.inv) + valor(s.entrada) + camino + mezcla - mo - (s.deudaNomina ?? 0));
   return Math.round((s.caja - esperado) * 100) / 100;
 }
 
 export const PERFILES: Record<string, Cfg> = {
+  // v26: sin peón ni ayudante y con la caja en P$0 desde el día 1 (el caso del Revisor en la v25).
+  sinAyuda: BOT_SIN_AYUDA,
   principiante: { ...BOTS.principiante!, nombre: "principiante", sugerida: true },
   humano: { nombre: "humano", cupo: 4, orden: "lista", horaPedido: 9 * 60, siguiente: false, olvido: 0.2, errorPuesto: 0.15, golpeCada: 15, fallaPlomo: 0.2, urgente: false, soloSita: false, cortarTemprano: false, sugerida: true },
   // v23: humano lento: los mismos errores que humano, pero reacciona a un tercio de la velocidad

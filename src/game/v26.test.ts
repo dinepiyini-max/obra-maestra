@@ -2,8 +2,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { ETAPAS } from "./datos.ts";
-import { avanzarMinutos, contratar, firmar, hablarSita, loQueFalta, nueva, pedirTambien, type Estado } from "./motor.ts";
-import { correr, BOTS } from "./auditoria_sim.ts";
+import { avanzarMinutos, contratar, firmar, hablarSita, laborDe, loQueFalta, nueva, pedirTambien, sinAyuda, type Estado } from "./motor.ts";
+import { correr, BOTS, BOT_SIN_AYUDA } from "./auditoria_sim.ts";
 
 function obraEn(etapa: number): Estado {
   const s = nueva(5);
@@ -81,5 +81,40 @@ describe("v26: plomear no deja vencer el mortero", () => {
     const despues = s.mezclas.filter((x) => x.tipo === "M");
     assert.deepEqual(despues.filter((x) => x.lista).map((x) => x.vida), vidas, "el mortero batido no envejece");
     assert.equal(despues.filter((x) => !x.lista).length, 0, "no se empezó otra tanda de mortero");
+  });
+});
+
+describe("v26: sin peón ni ayudante el albañil bate", () => {
+  it("con solo oficiales y caja P$0, un albañil (uno solo) va al trompo y la obra llega a Muros el día 8", () => {
+    let maxBatiendo = 0;
+    let vecesBatiendo = 0;
+    let diaCimientos = -1;
+    try {
+      correr(1, BOT_SIN_AYUDA, "normal", 0.15, (s) => {
+        assert.equal(sinAyuda(s), true);
+        const n = s.gente.filter((g) => laborDe(s, g) === "batea").length;
+        maxBatiendo = Math.max(maxBatiendo, n);
+        if (n > 0) vecesBatiendo++;
+        if (s.etapa >= 4 && diaCimientos < 0) {
+          diaCimientos = s.dia;
+          throw new Error("alto");
+        }
+      });
+    } catch (e) {
+      if (!String(e).includes("alto")) throw e;
+    }
+    assert.equal(maxBatiendo, 1, "un solo albañil en el trompo a la vez");
+    assert.ok(vecesBatiendo > 0, "alguien batió");
+    assert.equal(diaCimientos, 8, "Muros empieza el día 8");
+  });
+  it("el albañil solo hace de ayuda cuando no hay peón ni ayudante trabajando hoy", () => {
+    const s = obraEn(2);
+    const ayudas = s.gente.filter((g) => g.oficio === "peon" || g.oficio === "ayudante");
+    assert.ok(ayudas.length > 0, "la cuadrilla de prueba trae ayuda");
+    assert.equal(sinAyuda(s), false);
+    for (const g of ayudas) g.falto = true;
+    assert.equal(sinAyuda(s), true);
+    for (const g of ayudas) g.falto = false;
+    assert.equal(sinAyuda(s), false);
   });
 });

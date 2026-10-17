@@ -1857,6 +1857,15 @@ function esAyuda(of: Oficio): boolean {
   return of === "peon" || of === "ayudante";
 }
 
+/** Sin peón ni ayudante trabajando hoy, el albañil hace de ayuda: bate en el trompo, busca agua y acarrea. Siempre hay salida. */
+export function sinAyuda(s: Estado): boolean {
+  return !s.gente.some((g) => esAyuda(g.oficio) && g.activo && !g.fuera && !g.falto);
+}
+
+function haceDeAyuda(s: Estado, g: Persona): boolean {
+  return esAyuda(g.oficio) || (g.oficio === "albanil" && sinAyuda(s));
+}
+
 function puedeTarea(of: Oficio, k: Tarea): boolean {
   if (of === "varillero") return k === "acero" || k === "calzos";
   if (of === "carpintero") return k === "encofrar" || k === "techo" || k === "limpieza" || k === "limpiar";
@@ -2451,7 +2460,7 @@ function laborEnZona(puesto: Puesto, labor: Labor): boolean {
 
 function elegirAuto(s: Estado, g: Persona, batiendo: number): Labor {
   const ops = opcionesAuto(s, g, batiendo);
-  const ayuda = esAyuda(g.oficio);
+  const ayuda = haceDeAyuda(s, g);
   const puestoIlegal = !ayuda && (g.puesto === "batea" || g.puesto === "agua" || g.puesto === "acarreo");
   const propio =
     !puestoIlegal && (g.puesto === "batea" || g.puesto === "agua" || g.puesto === "acarreo" || g.puesto === "obra")
@@ -2464,12 +2473,12 @@ function elegirAuto(s: Estado, g: Persona, batiendo: number): Labor {
 }
 
 function opcionesAuto(s: Estado, g: Persona, batiendo: number): { labor: Labor; prio: number }[] {
-  const ayuda = esAyuda(g.oficio);
+  const ayuda = haceDeAyuda(s, g);
   const out: { labor: Labor; prio: number }[] = [];
   const ayudarBatea =
     ayuda &&
     bateaTieneTrabajo(s) &&
-    batiendo < 2 &&
+    batiendo < (esAyuda(g.oficio) ? 2 : 1) &&
     (batiendo === 0 || (g.puesto === "obra" && obraEsperaMezcla(s)));
   if (ayudarBatea) out.push({ labor: "batea", prio: 1 });
   if (ayuda && s.inv.agua.q < 1.1 - 1e-9) out.push({ labor: "agua", prio: 2 });
@@ -2501,7 +2510,7 @@ function planLabores(s: Estado): Map<string, Labor | null> {
       continue;
     }
     const puestoAjeno =
-      (g.puesto === "batea" || g.puesto === "agua" || g.puesto === "acarreo") && !esAyuda(g.oficio);
+      (g.puesto === "batea" || g.puesto === "agua" || g.puesto === "acarreo") && !haceDeAyuda(s, g);
     if (!puestoAjeno && puestoTieneTrabajo(s, g, g.puesto)) {
       out.set(g.id, g.puesto);
       if (g.puesto === "batea") batiendo += 1;
@@ -2523,7 +2532,7 @@ function planLabores(s: Estado): Map<string, Labor | null> {
   const hayAcarreo = s.gente.some((g) => g.activo && !g.fuera && !g.falto && (g.puesto === "acarreo" || out.get(g.id) === "acarreo"));
   if (frenaEntrada && !hayAcarreo) {
     const libre = s.gente.find((g) => {
-      if (!g.activo || g.fuera || g.falto || !esAyuda(g.oficio)) return false;
+      if (!g.activo || g.fuera || g.falto || !haceDeAyuda(s, g)) return false;
       if (g.puesto === "acarreo" || out.get(g.id) === "acarreo") return false;
       if ((g.puesto === "batea" || g.puesto === "agua") && g.puesto && puestoTieneTrabajo(s, g, g.puesto)) return false;
       return true;

@@ -146,7 +146,7 @@ import {
   textoSinTarea,
   type Cierre,
 } from "./motor.ts";
-import { correr, BOTS } from "./auditoria_sim.ts";
+import { correr, BOTS, BOT_SIN_AYUDA } from "./auditoria_sim.ts";
 
 describe("regresión v23", () => {
   it("1. la Entrega muestra pago, adelanto, fiado, bono, nómina y deuda, y cuadra con montos fijos", () => {
@@ -350,7 +350,7 @@ describe("regresión v23", () => {
 });
 
 // ===================== v24: obras que se trababan hasta el día 61 =====================
-import { PERFILES } from "./sim_v18.ts";
+import { PERFILES, cuadreCaja } from "./sim_v18.ts";
 
 describe("regresión v24: siempre hay salida", () => {
   // Causa: en Relleno y piso el firme quedaba en 7.98 de 8 (falta 0.02 tanda de hormigón). tandaCabe pedía más de
@@ -368,6 +368,21 @@ describe("regresión v24: siempre hay salida", () => {
       assert.equal(r.s.entregada, true, `día ${r.s.dia} etapa ${r.s.etapa}`);
       assert.equal(r.s.etapa, 9);
       assert.ok(r.s.dia <= 30, `entregó el día ${r.s.dia}`);
+    });
+  }
+  // v26: el caso del Revisor en la v25: sin peón ni ayudante y con la caja en P$0 nadie batía y la obra quedaba
+  // trabada en Cimientos hasta el día 61. Ahora el albañil hace de ayuda (trompo, agua, acarreo) y el fiado paga.
+  for (const [seed, dia] of [[1, 34], [2, 30], [4, 30]] as const) {
+    it(`sin peón ni ayudante y caja P$0, semilla ${seed}: entrega el día ${dia}`, () => {
+      const r = correr(seed, BOT_SIN_AYUDA, "normal", 0.15);
+      assert.equal(r.perdida, false);
+      assert.equal(r.sinSalida, 0);
+      assert.equal(r.s.entregada, true, `día ${r.s.dia} etapa ${r.s.etapa}`);
+      assert.equal(r.s.etapa, 9);
+      assert.equal(r.s.dia, dia);
+      assert.equal(r.s.gente.some((g) => g.oficio === "peon" || g.oficio === "ayudante"), false);
+      assert.equal(Math.round(cuadreCaja(r.s)) + 0, 0, "descuadre 0 (descontando la caja que el bot vació a mano)");
+      assert.equal(Math.round(descuadre(r.s)), -89400, "lo único fuera de cuadre es la caja vaciada a mano");
     });
   }
 });
