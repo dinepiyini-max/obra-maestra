@@ -1765,7 +1765,7 @@ function tandaCabe(s: Estado, tipo: "H" | "M"): boolean {
   // v27: la tanda nueva se gasta después de las que ya hay (la más vieja primero). Si lo batido más esta tanda no se
   // alcanza a gastar dentro de su vida, la última se vence: con un solo albañil y el peón en el Trompo se vencían
   // varias al día. Se deja un 15 % de margen por cansancio y plomeos.
-  if (have > 1e-3 && have + 1 > uso * 0.85) return false;
+  if (tipo === "M" && have > 1e-3 && have + 1 > uso * 0.85) return false;
   return true;
 }
 
@@ -4541,7 +4541,7 @@ export function ofertaSiguiente(s: Estado, urgente = false): OfertaSita | null {
   const mats = costoMats(sig);
   const total = mats + flete;
   const cuando = fraseCuando(s, urgente, llegadaPedido(s, urgente, s.minuto + 1));
-  const estaCompra = tieneItems(sumaNecesidad(s, s.etapa, true));
+  const estaCompra = pideCompra(sumaNecesidad(s, s.etapa, true));
   let texto = estaCompra ? "Lo de esta etapa ya está en el almacén o en camino." : "Esta etapa no necesita material.";
   texto += prox.idx === s.etapa + 1 ? `\nPara la siguiente etapa:\n${prox.lineas}` : `\nPara ${ETAPAS[prox.idx]!.nombre} (la próxima que compra):\n${prox.lineas}`;
   texto += `\n¿Pido la siguiente? ${urgente ? "Urgente" : "Normal"} ${peso(total)}, ${cuando}.`;

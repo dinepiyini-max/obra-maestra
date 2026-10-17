@@ -372,7 +372,8 @@ describe("regresión v24: siempre hay salida", () => {
   }
   // v26: el caso del Revisor en la v25: sin peón ni ayudante y con la caja en P$0 nadie batía y la obra quedaba
   // trabada en Cimientos hasta el día 61. Ahora el albañil hace de ayuda (trompo, agua, acarreo) y el fiado paga.
-  for (const [seed, dia] of [[1, 34], [2, 30], [4, 30]] as const) {
+  // v27: entrega antes (34/30/30 → 31/29/29): el mortero ya no se bate sin block en el almacén ni se vence en el trompo.
+  for (const [seed, dia] of [[1, 31], [2, 29], [4, 29]] as const) {
     it(`sin peón ni ayudante y caja P$0, semilla ${seed}: entrega el día ${dia}`, () => {
       const r = correr(seed, BOT_SIN_AYUDA, "normal", 0.15);
       assert.equal(r.perdida, false);
