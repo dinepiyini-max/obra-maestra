@@ -65,6 +65,7 @@ import {
   notarCierreHoja,
   pedir,
   pedirTambien,
+  primeroEstaEtapa,
   partesMuerto,
   precioDe,
   adelantoUsado,
@@ -147,6 +148,18 @@ function HojaMenu({ children, onVolver }: { children: ReactNode; onVolver?: () =
       </section>
     </div>
   );
+}
+
+/** v28: «Antes de pedir» dice qué trae el pedido, para que no se confunda con lo de la hoja. */
+function tieneAlgo(items: Cantidades): boolean {
+  return Object.values(items).some((n) => (n ?? 0) > 1e-6);
+}
+
+function lineaPedido(items: Cantidades): string {
+  return (Object.entries(items) as [Mat, number][])
+    .filter(([, n]) => (n ?? 0) > 1e-6)
+    .map(([k, n]) => `${num(n, n >= 10 ? 0 : 2)} ${MATERIALES[k].unidad} de ${MATERIALES[k].nombre}`)
+    .join(", ");
 }
 
 function decir(s: Estado, texto: string | null) {
@@ -1220,9 +1233,14 @@ export function Paneles({
     const puede = cuenta.alcanza || paga;
     return (
       <Marco titulo="Antes de pedir" ancho="max-w-md" onCerrar={() => setFreno(null)}>
-        {freno.origen === "sita" && faltaEnPedido(s, s.sita?.oferta?.items).length ? (
+        {faltaEnPedido(s, freno.origen === "sita" ? s.sita?.oferta?.items : freno.items).length ? (
           <p className="mb-2 border-2 border-colmado-rojo p-1 font-hand text-colmado-rojo" data-incompleto>
-            Ojo: este pedido no trae todo. Falta: {faltaEnPedido(s, s.sita?.oferta?.items).join(", ")}.
+            Ojo: este pedido no trae todo lo de esta etapa. Falta: {faltaEnPedido(s, freno.origen === "sita" ? s.sita?.oferta?.items : freno.items).join(", ")}.
+          </p>
+        ) : null}
+        {freno.items && tieneAlgo(freno.items) ? (
+          <p className="mb-2 font-hand text-sm" data-trae>
+            Trae: {lineaPedido(freno.items)}.
           </p>
         ) : null}
         <ul className="space-y-1 font-hand text-lg">
@@ -1319,7 +1337,14 @@ export function Paneles({
           ) : null}
           {/* v27: el botón sale siempre que haya algo que pedir para más adelante, aunque la caja no alcance:
               «Antes de pedir» muestra la cuenta y ofrece el fiado. */}
-          {of.siguiente && Object.values(of.siguiente).some((n) => (n ?? 0) > 0) ? (
+          {/* v28: mientras a esta etapa le falte material, la siguiente no se pide sola (el Revisor pidió «la
+              siguiente» creyendo que traía el cemento de la hoja y la cuadrilla quedó parada). */}
+          {of.siguiente && Object.values(of.siguiente).some((n) => (n ?? 0) > 0) && primeroEstaEtapa(s) ? (
+            <p className="w-full font-hand text-sm" data-primero-esta-etapa>
+              {primeroEstaEtapa(s)}
+            </p>
+          ) : null}
+          {of.siguiente && Object.values(of.siguiente).some((n) => (n ?? 0) > 0) && !primeroEstaEtapa(s) ? (
             <button
               type="button"
               className={pedido && !of.hecho ? btnPri : btn}

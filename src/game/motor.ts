@@ -2727,7 +2727,16 @@ export function cuentaFiadoPedido(s: Estado, items: Cantidades, urgente = false)
   const total = costoMats(limpio) + fleteDe(s, urgente);
   if (s.caja >= total - 0.5) return null;
   if (puedeAdelantar(s, total) && cajaLibre(s) + montoAdelanto(s) >= total - 0.5) return null;
-  if (total > limiteFiado(s) + 0.5) return null;
+  // v28: lo que esta etapa necesita y este pedido no trae queda reservado en el fiado. Antes se podía fiar la etapa
+  // siguiente entera y ya no quedaba fiado para el cemento de hoy: la obra se paraba.
+  const falta = loQueFalta(s);
+  const reserva: Cantidades = {};
+  for (const [k, n] of Object.entries(falta) as [Mat, number][]) {
+    const resto = (n ?? 0) - (limpio[k] ?? 0);
+    if (resto > 1e-6) reserva[k] = resto;
+  }
+  const guardar = tieneItems(reserva) ? costoMats(reserva) + FLETE : 0;
+  if (total + guardar > limiteFiado(s) + 0.5) return null;
   return { items: limpio, total };
 }
 
@@ -4143,6 +4152,17 @@ export function faltaEnPedido(s: Estado, items: Cantidades | undefined): string[
   return out;
 }
 
+/** v28: texto para frenar un pedido de más adelante mientras a esta etapa le falte material; "" si no falta nada. */
+export function primeroEstaEtapa(s: Estado): string {
+  const falta = loQueFalta(s);
+  if (!tieneItems(falta)) return "";
+  const lista = (Object.entries(falta) as [Mat, number][])
+    .filter(([, n]) => (n ?? 0) > 1e-6)
+    .map(([k]) => MATERIALES[k].nombre.toLowerCase())
+    .join(", ");
+  return `Primero lo de esta etapa: falta ${lista}. Pídelo (o fíalo) y después la siguiente.`;
+}
+
 export function loQueFaltaSiguiente(s: Estado): Cantidades {
   return cuerpoNota(s).siguiente;
 }
@@ -4687,6 +4707,11 @@ export function pedirTambien(s: Estado): string | null {
   const of = s.sita?.oferta;
   const sig = of?.siguiente;
   if (!of || !sig || !tieneItems(sig)) return "La etapa siguiente no pide material.";
+  // v28: el Revisor pidió con la hoja mostrando cemento, arena y grava, tocó el botón de la siguiente etapa y solo le
+  // llegó pino y abeto: al otro día la cuadrilla quedó parada. Mientras a esta etapa le falte material, la siguiente
+  // no sale sola: primero lo de esta etapa.
+  const antes = primeroEstaEtapa(s);
+  if (antes) return antes;
   const quedaMain = tieneItems(of.items);
   const err = pedir(s, sig, !!of.urgente, quedaMain);
   if (!err && quedaMain && s.sita?.oferta) s.sita.oferta.siguiente = undefined;
