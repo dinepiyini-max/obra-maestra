@@ -226,8 +226,8 @@ function Marco({
       <section
         className={`marco-obra relative flex w-full ${ancho} flex-col overflow-hidden rounded-md border-2 border-block-sombra bg-cemento-claro text-tinta shadow-[3px_3px_0_#1B1F23] ${alto || "max-h-[92dvh]"}`}
       >
-        <header className="flex items-center justify-between gap-3 bg-block px-3 py-2">
-          <h2 className="min-w-0 flex-1 font-display text-2xl leading-tight break-words text-tinta sm:text-3xl">{titulo}</h2>
+        <header className="flex items-center justify-between gap-3 bg-block px-3 py-2 [@media(max-height:520px)]:py-1">
+          <h2 className="min-w-0 flex-1 font-display text-2xl leading-tight break-words text-tinta sm:text-3xl [@media(max-height:520px)]:text-xl">{titulo}</h2>
           {onCerrar ? (
             <button type="button" className={btn} {...alToque(onCerrar)}>
               Cerrar
@@ -1254,9 +1254,9 @@ export function Paneles({
     const compra = of.recorte ? (of.cabe ?? {}) : of.items;
     const pedido = !!of.hecho || !Object.values(compra).some((n) => (n ?? 0) > 0);
     return (
-      <Marco titulo="Guardalmacén" ancho="max-w-md" onCerrar={cerrar}>
-        <p className="font-hand text-lg whitespace-pre-line">{of.texto.replace(/Caja libre [^\n]*?(?=\.( |\n|$))/g, () => textoCajaLibre(s))}</p>
-        <div className="mt-3 flex flex-wrap gap-2">
+      <Marco titulo="Guardalmacén" ancho="max-w-md [@media(max-height:520px)]:max-w-2xl" onCerrar={cerrar}>
+        <p className="font-hand text-lg whitespace-pre-line [@media(max-height:520px)]:columns-2 [@media(max-height:520px)]:gap-6 [@media(max-height:520px)]:text-base [@media(max-height:520px)]:leading-snug" data-hoja-guardalmacen>{of.texto.replace(/Caja libre [^\n]*?(?=\.( |\n|$))/g, () => textoCajaLibre(s))}</p>
+        <div className="sticky bottom-0 -mx-3 mt-3 flex flex-wrap gap-2 bg-cemento-claro px-3 py-2 sm:-mx-5 sm:px-5" data-botones-guardalmacen>
           {pedido ? null : (
             <button
               type="button"
@@ -1343,8 +1343,8 @@ export function Paneles({
   if (s.panel === "sita") {
     const hoja = hojaGuardalmacen(s);
     return (
-      <Marco titulo="Guardalmacén" ancho="max-w-md" onCerrar={cerrar}>
-        <p className="font-hand text-lg whitespace-pre-line">{hoja.texto}</p>
+      <Marco titulo="Guardalmacén" ancho="max-w-md [@media(max-height:520px)]:max-w-2xl" onCerrar={cerrar}>
+        <p className="font-hand text-lg whitespace-pre-line [@media(max-height:520px)]:columns-2 [@media(max-height:520px)]:gap-6 [@media(max-height:520px)]:text-base [@media(max-height:520px)]:leading-snug" data-hoja-guardalmacen>{hoja.texto}</p>
         <h3 className="mt-4 font-display text-2xl">En obra</h3>
         <RegistroAlmacen s={s} />
       </Marco>
@@ -1859,7 +1859,7 @@ export function Paneles({
                   {lineasCierre(s.cierre).map((l, i) => (
                     <li key={i} className={`flex justify-between gap-2 ${l.total ? "border-t border-tinta pt-0.5 font-bold" : ""}`} data-linea-cierre>
                       <span>{l.texto}</span>
-                      <span className="whitespace-nowrap">{i === 0 || l.total ? pesoCaja(l.monto) : peso(Math.abs(l.monto))}</span>
+                      <span className="whitespace-nowrap font-ui font-medium tabular-nums" data-cifra>{i === 0 || l.total ? pesoCaja(l.monto) : peso(Math.abs(l.monto))}</span>
                     </li>
                   ))}
                   <li className="text-sm">Multas: {peso(0)} (las pérdidas de mezcla ya van en el costo, no salen de la caja).</li>
@@ -1868,12 +1868,12 @@ export function Paneles({
               </div>
             ) : null}
             <ul className="mt-2 space-y-1 font-hand text-base">
-              <li>Días {inf.dias}</li>
-              <li>Costo total {peso(inf.costo)}</li>
-              <li>{inf.ganancia >= 0 ? `Ganancia ${peso(inf.ganancia)}` : `Pérdida ${peso(-inf.ganancia)}`}</li>
-              <li>Tiempo muerto (jornal pagado sin trabajo) {peso(muerto?.real ?? 0)}</li>
-              {inf.bono > 0 ? <li>Bono por entrega temprana {peso(inf.bono)}</li> : <li>Sin bono: se entregó el día {PLAZO_ENTREGA} o después</li>}
-              <li>Desplomes {s.desplomes}</li>
+              <li>Días <span className="font-ui font-medium tabular-nums" data-cifra>{inf.dias}</span></li>
+              <li>Costo total <span className="font-ui font-medium tabular-nums" data-cifra>{peso(inf.costo)}</span></li>
+              <li>{inf.ganancia >= 0 ? "Ganancia " : "Pérdida "}<span className="font-ui font-medium tabular-nums" data-cifra>{peso(Math.abs(inf.ganancia))}</span></li>
+              <li>Tiempo muerto (jornal pagado sin trabajo) <span className="font-ui font-medium tabular-nums" data-cifra>{peso(muerto?.real ?? 0)}</span></li>
+              {inf.bono > 0 ? <li>Bono por entrega temprana <span className="font-ui font-medium tabular-nums" data-cifra>{peso(inf.bono)}</span></li> : <li>Sin bono: se entregó el día <span className="font-ui font-medium tabular-nums" data-cifra>{PLAZO_ENTREGA}</span> o después</li>}
+              <li>Desplomes <span className="font-ui font-medium tabular-nums" data-cifra>{s.desplomes}</span></li>
               <li>Ingeniera: {notaIng}</li>
             </ul>
             <div className="mt-4 flex flex-wrap gap-2">

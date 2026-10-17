@@ -353,7 +353,7 @@ export function Hud({
             {r.hora} {cortoDia(s.dia)} {s.dia}
             {relojParado(s) && s.firmado && !s.entregada ? <span data-reloj-parado> · reloj parado</span> : null}
           </div>
-          <div className="min-w-0 flex-1 truncate font-ui text-sm leading-none text-cemento-claro" data-clima>
+          <div className="min-w-[7rem] flex-1 font-ui text-sm leading-tight break-words text-cemento-claro" data-clima>
             {r.clima}
           </div>
           <div data-caja className={"rounded-md bg-colmado-amarillo px-2 py-1 font-ui text-sm font-bold leading-none text-tinta " + (late ? "caja-latido" : "")}>
