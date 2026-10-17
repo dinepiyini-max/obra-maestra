@@ -1299,7 +1299,7 @@ export function Paneles({
                 setFreno({ origen: "tambien", urgente: of.urgente, total: matsSig + fleteDe(s, of.urgente) });
               }}
             >
-              Pedir también
+              {pedido && !of.hecho ? "Pedir la siguiente etapa" : "Pedir también"}
             </button>
           ) : null}
           {pedido ? null : (

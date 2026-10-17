@@ -1699,9 +1699,25 @@ function faltaMezclaUtil(s: Estado, tipo: "H" | "M"): number {
   for (const w of listos(s)) {
     if (w.mezcla !== tipo) continue;
     if (!alguienHara(s, w)) continue;
-    falta += mezclaQueFalta(w);
+    falta += w.id === "block" ? morteroHastaPlomo(s, w) : mezclaQueFalta(w);
   }
   return falta;
+}
+
+/** El mortero que sirve antes del próximo plomo (y del tope de block del día). Lo demás esperaría y se vencería. */
+function morteroHastaPlomo(s: Estado, w: W): number {
+  if (!w.mezclaQ || w.q <= 0) return 0;
+  if (s.plomo) return 0;
+  let hasta = w.q;
+  for (const u of UMBRALES) {
+    const ya = s.plumbed.some((p) => Math.abs(p - u) < 1e-3);
+    if (!ya && u > w.hecho + 1e-6) {
+      hasta = Math.min(hasta, u);
+      break;
+    }
+  }
+  const bloques = Math.max(0, Math.min(hasta - w.hecho, TOPE_BLOCK_DIA - s.blocksHoy));
+  return Math.min(mezclaQueFalta(w), bloques * (w.mezclaQ / w.q));
 }
 
 /** No arranca una tanda que nadie va a usar antes de que se venza. */
@@ -2083,8 +2099,14 @@ function trabajarPersona(s: Estado, g: Persona) {
   g.anim = got > 0 ? herramientaDe(w.k) : "nada";
 }
 
+/** Con el plomo pendiente no se bate mortero: lo batido se quedaría esperando y se vence después del plomeo. */
+function morteroEnPausa(s: Estado, tipo: "H" | "M" | null | undefined): boolean {
+  return !!s.plomo && tipo === "M";
+}
+
 function trabajarBatea(s: Estado, g: Persona): boolean {
   let curso = s.mezclas.find((m) => !m.lista);
+  if (morteroEnPausa(s, curso ? curso.tipo : tipoQueFalta(s))) return false;
   if (!curso) {
     const tipo = tipoQueFalta(s);
     if (!tipo) return false;
@@ -4402,13 +4424,31 @@ function ofrecerManual(s: Estado, items: Cantidades, urgente: boolean) {
   s.sita.editando = false;
 }
 
+/** La etapa actual no compra nada, pero la siguiente sí: el guardalmacén deja pedirla de una vez. */
+export function ofertaSiguiente(s: Estado, urgente = false): OfertaSita | null {
+  const cuerpo = cuerpoNota(s);
+  if (tieneItems(cuerpo.items) || !tieneItems(cuerpo.siguiente)) return null;
+  const sig = { ...cuerpo.siguiente };
+  const flete = fleteDe(s, urgente);
+  const mats = costoMats(sig);
+  const total = mats + flete;
+  const cuando = fraseCuando(s, urgente, llegadaPedido(s, urgente, s.minuto + 1));
+  let texto = `Esta etapa no necesita material.\nPara la siguiente etapa:\n${cuerpo.lineasSig}`;
+  texto += `\n¿Pido la siguiente? ${urgente ? "Urgente" : "Normal"} ${peso(total)}, ${cuando}.`;
+  const cuenta = cuentaPedido(s, total);
+  if (!cuenta.alcanza) texto += ` ${textoCajaLibre(s)}.`;
+  return { items: {}, urgente, mats: 0, flete, total: 0, texto, siguiente: sig };
+}
+
 export function hablarSita(s: Estado) {
   if (!s.firmado || !s.sita || s.entregada) return;
   const items = loQueFalta(s);
   if (tieneItems(items)) ofrecerManual(s, items, false);
   else {
-    s.sita.oferta = null;
-    s.sita.ultima = null;
+    const sig = ofertaSiguiente(s);
+    s.sita.oferta = sig;
+    s.sita.ultima = sig ? { ...sig, items: {}, siguiente: { ...sig.siguiente } } : null;
+    s.sita.editando = false;
   }
   s.panel = "sita";
 }
@@ -4537,6 +4577,14 @@ export function pedirTambien(s: Estado): string | null {
   const quedaMain = tieneItems(of.items);
   const err = pedir(s, sig, !!of.urgente, quedaMain);
   if (!err && quedaMain && s.sita?.oferta) s.sita.oferta.siguiente = undefined;
+  else if (!err && s.sita?.oferta) {
+    // Solo se pidió la siguiente: la hoja queda como pedida, sin botón para repetir el pedido.
+    const hoja = hojaGuardalmacen(s, textoLlegada(s, !!of.urgente));
+    s.sita.oferta.siguiente = undefined;
+    s.sita.oferta.hecho = true;
+    s.sita.oferta.texto = hoja.texto;
+    s.sita.ultima = null;
+  }
   return err;
 }
 
