@@ -73,7 +73,7 @@ describe("v26: plomear no deja vencer el mortero", () => {
     s.plomo = { ...s.plomo! };
     // El maestro tarda 90 minutos en llegar al muro: nadie plomea.
     for (let i = 0; i < 90; i++) {
-      const plomo = s.plomo;
+      const plomo: Estado["plomo"] = s.plomo;
       avanzarMinutos(s, 1);
       if (!s.plomo) s.plomo = plomo;
     }
