@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { cargar, borrar, guardar as guardarCaja, pestanaVieja, tomarPartida, cargarAjustes, guardarAjustes, type Ajustes } from "@/game/guardar";
+import { cargar, guardar as guardarCaja, pestanaVieja, tomarPartida, cargarAjustes, guardarAjustes, type Ajustes } from "@/game/guardar";
 
-// v23: si otra pestaña tiene una partida más nueva, esta deja de guardar y lo dice una vez.
+// lo que cambia con un pago, una compra o un fiado.
+function huellaDinero(s: Estado): string {
+  return JSON.stringify([s.caja, s.cobrado, s.adelanto, s.fiado, s.inv, s.entrada, s.pedidos.length, s.gente.length, s.rescateUsado]);
+}
+
+// si otra pestaña tiene una partida más nueva, esta deja de guardar y lo dice una vez.
 let avisoVieja = false;
 function guardar(s: Estado) {
   const ok = guardarCaja(s);
@@ -18,12 +23,14 @@ import { reiniciarGuia } from "@/game/guia";
 import {
   abrirDespacho,
   abrirPanel,
+  obraPerdida,
   adelantar,
   cobroDe,
   fiar,
   cerrarPanel,
   continuarSello,
   golpe,
+  hechoDe,
   nueva,
   marcarGuia,
   quitarAviso,
@@ -31,7 +38,7 @@ import {
   tick,
   type Estado,
 } from "@/game/motor";
-import { Hud } from "./Hud";
+import { Hud, sonidoUi } from "./Hud";
 import { Paneles } from "./Paneles";
 
 declare global {
@@ -41,6 +48,8 @@ declare global {
       setKeys: (codes: string[]) => void;
       setPos: (x: number, y: number) => void;
       estado: () => Estado;
+      audio: () => string;
+      congelar: (v: boolean) => void;
     };
   }
 }
@@ -110,38 +119,112 @@ function crear(): { s: Estado; seguir: boolean; roto: boolean } {
   return { s, seguir: false, roto: c.roto };
 }
 
-function sonar(
-  ctx: AudioContext | null,
-  tipo: "toc" | "compas" | "sello" | "plomo" | "moneda" | "motor" | "pala" | "carretilla" | "trompo" | "cuchara" | "martillo" | "lluvia",
-  callado: boolean,
-) {
-  if (!ctx || callado) return;
+type Sonido =
+  | "toc"
+  | "compas"
+  | "sello"
+  | "plomo"
+  | "moneda"
+  | "motor"
+  | "camion"
+  | "pala"
+  | "carretilla"
+  | "trompo"
+  | "cuchara"
+  | "martillo"
+  | "lluvia"
+  | "block"
+  | "amarre"
+  | "vaciado"
+  | "trueno"
+  | "gallo"
+  | "colmado"
+  | "silbato"
+  | "error";
+
+function sonar(ctx: AudioContext | null, tipo: Sonido, callado: boolean) {
+  if (!ctx || callado || (typeof document !== "undefined" && document.hidden)) return;
   const nota = (freq: number, t: number, dur: number, gain = 0.04, onda: OscillatorType = "triangle") => {
     const o = ctx.createOscillator();
     const g = ctx.createGain();
     o.type = onda;
-    o.frequency.value = freq;
-    g.gain.value = gain;
+    o.frequency.setValueAtTime(freq, ctx.currentTime + t);
+    g.gain.setValueAtTime(gain, ctx.currentTime + t);
     o.connect(g);
     g.connect(ctx.destination);
     o.start(ctx.currentTime + t);
     g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + dur);
-    o.stop(ctx.currentTime + t + dur);
+    o.stop(ctx.currentTime + t + dur + 0.02);
+  };
+  const ruido = (t: number, dur: number, gain: number) => {
+    const n = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const g = ctx.createGain();
+    const f = ctx.createBiquadFilter();
+    f.type = "lowpass";
+    f.frequency.value = 900;
+    g.gain.setValueAtTime(gain, ctx.currentTime + t);
+    src.connect(f);
+    f.connect(g);
+    g.connect(ctx.destination);
+    src.start(ctx.currentTime + t);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + dur);
+    src.stop(ctx.currentTime + t + dur + 0.02);
   };
   if (tipo === "toc") nota(196, 0, 0.06, 0.03);
   else if (tipo === "compas") nota(620, 0, 0.07, 0.035);
-  else if (tipo === "sello") nota(140, 0, 0.18, 0.05);
-  else if (tipo === "plomo") {
-    nota(520, 0, 0.1, 0.03);
-    nota(390, 0.12, 0.14, 0.03);
-  } else if (tipo === "moneda") nota(880, 0, 0.12, 0.03);
-  else if (tipo === "pala") nota(130, 0, 0.07, 0.012);
-  else if (tipo === "carretilla") nota(78, 0, 0.1, 0.01);
-  else if (tipo === "trompo") nota(52, 0, 0.18, 0.011, "sawtooth");
-  else if (tipo === "cuchara") nota(340, 0, 0.04, 0.011);
-  else if (tipo === "martillo") nota(168, 0, 0.05, 0.013);
-  else if (tipo === "lluvia") nota(420, 0, 0.22, 0.006);
-  else nota(70, 0, 0.25, 0.02, "sawtooth");
+  else if (tipo === "sello") {
+    ruido(0, 0.08, 0.08);
+    nota(90, 0, 0.12, 0.06, "sine");
+  } else if (tipo === "plomo") {
+    nota(880, 0, 0.12, 0.03);
+    nota(660, 0.08, 0.16, 0.025);
+  } else if (tipo === "moneda") {
+    nota(988, 0, 0.08, 0.04);
+    nota(1318, 0.06, 0.1, 0.03);
+    nota(1568, 0.12, 0.12, 0.02);
+  } else if (tipo === "pala") ruido(0, 0.09, 0.05);
+  else if (tipo === "carretilla") {
+    nota(220, 0, 0.12, 0.02, "sawtooth");
+    ruido(0, 0.14, 0.03);
+  } else if (tipo === "trompo") nota(58, 0, 0.22, 0.02, "sawtooth");
+  else if (tipo === "cuchara") nota(520, 0, 0.04, 0.03, "square");
+  else if (tipo === "block") {
+    ruido(0, 0.07, 0.07);
+    nota(70, 0, 0.1, 0.05, "sine");
+  } else if (tipo === "martillo") {
+    nota(180, 0, 0.04, 0.04, "square");
+    nota(140, 0.09, 0.05, 0.035, "square");
+  } else if (tipo === "amarre") {
+    nota(640, 0, 0.05, 0.02);
+    nota(420, 0.05, 0.08, 0.02);
+  } else if (tipo === "vaciado") ruido(0, 0.28, 0.05);
+  else if (tipo === "lluvia") ruido(0, 0.25, 0.015);
+  else if (tipo === "trueno") {
+    ruido(0, 0.7, 0.09);
+    nota(48, 0, 0.6, 0.05, "sine");
+  } else if (tipo === "gallo") {
+    nota(700, 0, 0.12, 0.03);
+    nota(880, 0.14, 0.1, 0.03);
+    nota(620, 0.28, 0.18, 0.025);
+  } else if (tipo === "colmado") {
+    nota(196, 0, 0.4, 0.012, "sine");
+    nota(247, 0.05, 0.35, 0.008, "triangle");
+  } else if (tipo === "silbato") {
+    nota(1400, 0, 0.18, 0.03);
+    nota(1800, 0.16, 0.22, 0.025);
+  } else if (tipo === "error") {
+    nota(140, 0, 0.08, 0.04, "square");
+    nota(110, 0.1, 0.1, 0.04, "square");
+  } else if (tipo === "camion" || tipo === "motor") {
+    ruido(0, 0.18, 0.06);
+    nota(330, 0.12, 0.12, 0.04);
+    nota(415, 0.26, 0.14, 0.035);
+  }
 }
 
 function sonidoObra(s: Estado): "pala" | "carretilla" | "trompo" | "cuchara" | "martillo" | "lluvia" | null {
@@ -164,7 +247,7 @@ function sonidoObra(s: Estado): "pala" | "carretilla" | "trompo" | "cuchara" | "
   return null;
 }
 
-/** v23: el dedo que maneja la palanca. Un segundo dedo, perder el foco o tocar otro botón no la sueltan. */
+/** El dedo que maneja la palanca. Un segundo dedo, perder el foco o tocar otro botón no la sueltan. */
 export const palancaDedo: { id: number | null } = { id: null };
 
 function Palanca({ on, compacto, oculto }: { on: (ax: number, ay: number) => void; compacto?: boolean; oculto?: boolean }) {
@@ -196,7 +279,7 @@ function Palanca({ on, compacto, oculto }: { on: (ax: number, ay: number) => voi
   return (
     <div
       ref={ref}
-      className={"absolute bottom-3 left-3 z-20 touch-manipulation rounded-full border-2 border-papel/80 bg-fondo/50 " + (compacto ? "h-16 w-16" : "h-28 w-28")}
+      className={"absolute bottom-3 left-3 z-20 touch-manipulation rounded-full border-4 border-block bg-block-sombra/50 " + (compacto ? "h-16 w-16" : "h-28 w-28")}
       style={{ touchAction: "none", visibility: oculto ? "hidden" : undefined, pointerEvents: oculto ? "none" : undefined }}
       data-palanca
       onContextMenu={(e) => e.preventDefault()}
@@ -213,7 +296,7 @@ function Palanca({ on, compacto, oculto }: { on: (ax: number, ay: number) => voi
       onPointerCancel={soltar}
     >
       <div
-        className={"absolute top-1/2 left-1/2 rounded-full border-2 border-tinta bg-papel " + (compacto ? "h-7 w-7" : "h-12 w-12")}
+        className={"absolute top-1/2 left-1/2 rounded-full border-2 border-tinta bg-colmado-amarillo " + (compacto ? "h-7 w-7" : "h-12 w-12")}
         style={{ transform: `translate(calc(-50% + ${knob.x}px), calc(-50% + ${knob.y}px))` }}
       />
     </div>
@@ -235,10 +318,9 @@ export function Juego() {
   const [movil, setMovil] = useState(false);
   const [bajo, setBajo] = useState(false);
   const [late, setLate] = useState(false);
-  const [vuelo, setVuelo] = useState<"entra" | "sale" | null>(null);
-  const [vueloSello, setVueloSello] = useState<{ id: number; texto: string; x: number; y: number; tx: number; ty: number } | null>(null);
   const [firmadoSello, setFirmadoSello] = useState(false);
   const [plano, setPlano] = useState<number | null>(null);
+  const pausaReporte = useRef(false);
   const planoRef = useRef<number | null>(null);
   planoRef.current = plano;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -287,7 +369,11 @@ export function Juego() {
 
   const act = useCallback(
     (fn: (s: Estado) => void) => {
+      // un pago, compra o fiado se guarda al instante, en una sola escritura: si la página se cierra
+      // justo después, al recargar no se pierde la partida ni se duplica dinero ni material.
+      const antes = huellaDinero(estado.current);
       fn(estado.current);
+      if (huellaDinero(estado.current) !== antes && estado.current.panel !== "perdida") guardar(estado.current);
       flush();
     },
     [flush],
@@ -334,7 +420,7 @@ export function Juego() {
       if (f) {
         vis.current.floaters = [{ x: f.x, y: f.y, texto: f.texto, oro: f.oro, vida: 0.9 }];
         if (f.oro) vis.current.ondas.push({ x: f.x, y: f.y, t: vis.current.t });
-        const callado = !ajustesRef.current.sonido || estado.current.pausa || !!estado.current.panel;
+        const callado = document.hidden || !ajustesRef.current.sonido || estado.current.pausa || !!estado.current.panel;
         sonar(audio.current, f.oro ? "compas" : "toc", callado);
       }
       flush();
@@ -361,14 +447,9 @@ export function Juego() {
       cobrado.current = snap.cobrado;
       if (firma || subioAdelanto) return;
       setLate(true);
-      setVuelo("entra");
-      sonar(audio.current, "moneda", !ajustesRef.current.sonido || snap.pausa || !!snap.panel);
+      sonar(audio.current, "moneda", !ajustesRef.current.sonido || estado.current.pausa || !!estado.current.panel);
       const a = window.setTimeout(() => setLate(false), 350);
-      const b = window.setTimeout(() => setVuelo(null), 700);
-      return () => {
-        window.clearTimeout(a);
-        window.clearTimeout(b);
-      };
+      return () => window.clearTimeout(a);
     }
     cobrado.current = snap.cobrado;
   }, [snap.cobrado, snap.adelanto]);
@@ -377,8 +458,9 @@ export function Juego() {
   const firmadoYa = useRef(snap.firmado);
   useEffect(() => {
     if (!nominaYa.current && snap.nominaPagada && snap.firmado) {
-      setVuelo("sale");
-      const id = window.setTimeout(() => setVuelo(null), 700);
+      setLate(true);
+      sonar(audio.current, "moneda", !ajustesRef.current.sonido || estado.current.pausa || !!estado.current.panel);
+      const id = window.setTimeout(() => setLate(false), 350);
       nominaYa.current = snap.nominaPagada;
       return () => window.clearTimeout(id);
     }
@@ -400,36 +482,42 @@ export function Juego() {
     firmadoYa.current = snap.firmado;
   }, [snap.firmado]);
 
-  const volarMonedas = useCallback((texto: string, x: number, y: number) => {
-    const caja = document.querySelector("[data-caja]")?.getBoundingClientRect();
-    const cx = caja ? caja.left + caja.width * 0.42 : window.innerWidth - 78;
-    const cy = caja ? caja.top + caja.height * 0.35 : 28;
+  const parpadearCaja = useCallback((texto: string) => {
     const neto = Number(texto.replace(/[^\d]/g, ""));
     if (neto > 0) cobrado.current = estado.current.cobrado + neto;
     setLate(true);
-    setVueloSello({ id: performance.now(), texto, x, y, tx: cx - x, ty: cy - y });
     sonar(audio.current, "moneda", !ajustesRef.current.sonido || estado.current.pausa || !!estado.current.panel);
     window.setTimeout(() => setLate(false), 350);
-    window.setTimeout(() => setVueloSello(null), 900);
   }, []);
 
   const cerrarSello = useCallback(
-    (x?: number, y?: number) => {
+    (_x?: number, _y?: number) => {
       const st = estado.current;
       if (st.panel !== "sello" || !st.sello) return;
       const ok = st.sello.ok;
       const def = ETAPAS[st.sello.etapa];
       const neto = ok && def ? cobroDe(st, st.sello.etapa).neto : 0;
-      if (neto > 0) {
-        const ancla = selloAncla.current?.getBoundingClientRect();
-        const px = x ?? (ancla ? ancla.left + ancla.width / 2 : window.innerWidth / 2);
-        const py = y ?? (ancla ? ancla.top + ancla.height * 0.55 : window.innerHeight * 0.46);
-        volarMonedas(`+${peso(neto)}`, px, py);
-      }
+      if (neto > 0) parpadearCaja(`+${peso(neto)}`);
       act((s) => continuarSello(s));
     },
-    [act, volarMonedas],
+    [act, parpadearCaja],
   );
+
+  // el cartel APROBADO se cierra al primer toque en cualquier parte (aunque caiga sobre un botón del HUD o el dedo
+  // venga de la palanca). Antes solo escuchaba el pointerup del fondo y un toque sobre el HUD no lo cerraba.
+  useEffect(() => {
+    if (snap.panel !== "sello") return;
+    const desde = performance.now();
+    const cerrar = (e: PointerEvent) => {
+      if (performance.now() - desde < 300) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      cerrarSello(e.clientX, e.clientY);
+    };
+    window.addEventListener("pointerdown", cerrar, true);
+    return () => window.removeEventListener("pointerdown", cerrar, true);
+  }, [snap.panel, cerrarSello]);
 
   const colocarSello = useCallback(() => {
     const ancla = selloAncla.current;
@@ -453,9 +541,21 @@ export function Juego() {
     let ultimoT = performance.now();
     let acc = 0;
     let guardado = 0;
+    let archivada: Estado | null = null;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    let dibujoAviso = false;
+    let ultimoAmb = 0;
+    let ultimoOficio = 0;
+    let ultimoColmado = 0;
+    let prevLluvia = estado.current.lluviaOn;
+    let prevDia = estado.current.dia;
+    let prevBlock = 0;
+    let prevAcero = 0;
+    let prevVac = 0;
+    let galloDia = -1;
+    let congelado = false;
     if (import.meta.env.DEV) {
       window.__controlsTest = {
         getPos: () => ({ x: estado.current.jugador.x, y: estado.current.jugador.y }),
@@ -471,11 +571,16 @@ export function Juego() {
           vis.current.cam.y = y;
         },
         estado: () => estado.current,
+        audio: () => audio.current?.state ?? "sin",
+        congelar: (v: boolean) => {
+          congelado = v;
+        },
       };
     }
-
-    let dibujoAviso = false;
-    let ultimoAmb = 0;
+    sonidoUi.ping = (id) => {
+      const st = estado.current;
+      sonar(audio.current, id as Sonido, !ajustesRef.current.sonido || !st || st.pausa || !!st.panel);
+    };
     const frame = (now: number) => {
       if (muerto) return;
       const dt = Math.min(0.1, (now - ultimoT) / 1000);
@@ -485,7 +590,7 @@ export function Juego() {
       v.dt = dt;
       v.compas = v.t % 1;
       aplicarMando();
-      const callado = !ajustesRef.current.sonido || estado.current.pausa || !!estado.current.panel;
+      const callado = document.hidden || !ajustesRef.current.sonido || estado.current.pausa || !!estado.current.panel;
       if (!callado) {
         const amb = sonidoObra(estado.current);
         if (amb && v.t - ultimoAmb > 0.55) {
@@ -508,7 +613,7 @@ export function Juego() {
       if (v.pedidos < 0) v.pedidos = estado.current.pedidos.length;
       else if (estado.current.pedidos.length < v.pedidos) {
         v.camion = v.t;
-        sonar(audio.current, "motor", callado);
+        sonar(audio.current, "camion", callado);
       }
       v.pedidos = estado.current.pedidos.length;
       const pasoPlano = planoRef.current;
@@ -521,8 +626,48 @@ export function Juego() {
         v.marca = null;
       }
       v.contrato = estado.current.panel === "contrato";
-      if (v.hit > 0) v.hit -= dt;
-      else tick(estado.current, Math.min(0.1, dt), ajustesRef.current.vel);
+      if (document.hidden) {
+        // oculta no corre el reloj aunque el navegador siga dando cuadros.
+      } else if (v.hit > 0) v.hit -= dt;
+      else if (!congelado) tick(estado.current, Math.min(0.1, dt), ajustesRef.current.vel);
+      if (!prevLluvia && estado.current.lluviaOn) sonar(audio.current, "trueno", callado);
+      prevLluvia = estado.current.lluviaOn;
+      if (estado.current.dia !== prevDia) sonar(audio.current, "silbato", callado);
+      prevDia = estado.current.dia;
+      if (
+        estado.current.firmado &&
+        !estado.current.entregada &&
+        estado.current.minuto >= 7 * 60 &&
+        estado.current.minuto < 7 * 60 + 10 &&
+        galloDia !== estado.current.dia &&
+        audio.current
+      ) {
+        galloDia = estado.current.dia;
+        sonar(audio.current, "gallo", callado);
+      }
+      const bloque = estado.current.etapa === 4 ? hechoDe(estado.current, 4, "block") : prevBlock;
+      const acero = hechoDe(estado.current, 2, "acero") + hechoDe(estado.current, 6, "acero");
+      const vaciado = hechoDe(estado.current, 3, "vaciar") + hechoDe(estado.current, 5, "vaciar") + hechoDe(estado.current, 6, "vaciar");
+      if (!callado && v.t - ultimoOficio > 0.85) {
+        if (bloque > prevBlock + 0.45) {
+          sonar(audio.current, "block", false);
+          ultimoOficio = v.t;
+        } else if (acero > prevAcero + 0.45) {
+          sonar(audio.current, "amarre", false);
+          ultimoOficio = v.t;
+        } else if (vaciado > prevVac + 0.35) {
+          sonar(audio.current, "vaciado", false);
+          ultimoOficio = v.t;
+        }
+      }
+      prevBlock = bloque;
+      prevAcero = acero;
+      prevVac = vaciado;
+      const deDia = estado.current.minuto >= 7 * 60 && estado.current.minuto < 17 * 60;
+      if (!callado && estado.current.firmado && !estado.current.entregada && deDia && v.t - ultimoColmado > 1.8) {
+        ultimoColmado = v.t;
+        sonar(audio.current, "colmado", false);
+      }
       if (
         dedo.current &&
         ajustesRef.current.control === "arrastre" &&
@@ -563,7 +708,14 @@ export function Juego() {
         setSnap(structuredClone(estado.current));
       }
       guardado += dt;
-      if (estado.current.panel === "perdida") borrar(estado.current);
+      // v27: la obra perdida se archiva una vez (y se borra la partida): «Continuar» ya no la abre.
+      if (obraPerdida(estado.current)) {
+        if (archivada !== estado.current) {
+          archivada = estado.current;
+          estado.current.perdida = true;
+          guardar(estado.current);
+        }
+      }
       else if (guardado >= 20) {
         guardado = 0;
         guardar(estado.current);
@@ -576,7 +728,7 @@ export function Juego() {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter"].includes(e.code)) e.preventDefault();
-      // v19: Espacio es la acción del juego; nunca «pulsa» el botón que quedó enfocado (Pausa, menú).
+      // Espacio es la acción del juego; nunca «pulsa» el botón que quedó enfocado (Pausa, menú).
       if (e.code === "Space" && (e.target as HTMLElement | null)?.tagName === "BUTTON") (e.target as HTMLElement).blur();
       keys.current.add(e.code);
       desbloquear();
@@ -610,17 +762,33 @@ export function Juego() {
     };
     const blur = () => {
       keys.current.clear();
-      // v23: con el dedo en la palanca (p. ej. llega una notificación) no se suelta; se suelta al levantar el dedo.
+      // con el dedo en la palanca (p. ej. llega una notificación) no se suelta; se suelta al levantar el dedo.
       if (palancaDedo.id == null) joy.current = { ax: 0, ay: 0 };
     };
+    // Safari iOS/iPadOS en segundo plano (visibilitychange o pagehide): se pausa el reloj, se calla el sonido y se guarda.
+    const aSegundoPlano = () => {
+      const st = estado.current;
+      if (st.firmado && !st.panel) {
+        st.panel = "pausa";
+        st.pausa = true;
+      }
+      keys.current.clear();
+      if (palancaDedo.id == null) joy.current = { ax: 0, ay: 0 };
+      if (audio.current && audio.current.state === "running") void audio.current.suspend();
+      guardar(st);
+      setSnap(structuredClone(st));
+    };
     const oculto = () => {
-      if (document.hidden) guardar(estado.current);
+      if (document.hidden) aSegundoPlano();
+      else if (audio.current && audio.current.state === "suspended") void audio.current.resume();
     };
     window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("keyup", onKeyUp, true);
     window.addEventListener("blur", blur);
     document.addEventListener("visibilitychange", oculto);
+    window.addEventListener("pagehide", aSegundoPlano);
     return () => {
+      window.removeEventListener("pagehide", aSegundoPlano);
       muerto = true;
       cancelAnimationFrame(raf);
       window.removeEventListener("keydown", onKeyDown, true);
@@ -660,7 +828,7 @@ export function Juego() {
   };
 
   return (
-    <main className="juego-root relative h-full w-full overflow-hidden bg-fondo text-papel select-none">
+    <main className="juego-root relative h-full w-full overflow-hidden bg-noche text-cemento-claro select-none">
       <canvas
         ref={canvasRef}
         className="absolute inset-0 h-full w-full"
@@ -746,6 +914,17 @@ export function Juego() {
           guardar(estado.current);
         }}
         onQuitar={(id) => act((s) => quitarAviso(s, id))}
+        onReporte={(abierto) => {
+          // v28: «Reportar» para el reloj mientras se escribe; al cerrar sigue solo si lo paró el reporte.
+          const st = estado.current;
+          if (abierto && !st.pausa) {
+            st.pausa = true;
+            pausaReporte.current = true;
+          } else if (!abierto && pausaReporte.current) {
+            pausaReporte.current = false;
+            if (st.panel !== "pausa") st.pausa = false;
+          }
+        }}
         onAdelanto={() =>
           act((s) => {
             const e = adelantar(s);
@@ -764,7 +943,6 @@ export function Juego() {
             }
           })
         }
-        vuelo={vuelo}
       />
 
       {movil && ajustes.control !== "arrastre" ? (
@@ -779,7 +957,7 @@ export function Juego() {
       {movil && !snap.panel ? (
         <button
           type="button"
-          className={"absolute right-3 bottom-3 z-20 touch-manipulation border-2 border-tinta bg-oro font-display text-tinta " + (bajo ? "min-h-11 min-w-16 px-2 text-xl" : "min-h-16 min-w-24 px-4 text-3xl")}
+          className={"absolute right-3 bottom-3 z-20 touch-manipulation rounded-md border-2 border-tinta bg-colmado-amarillo font-display text-tinta shadow-[3px_3px_0_#1B1F23] " + (bajo ? "min-h-11 min-w-16 px-2 text-xl" : "min-h-16 min-w-24 px-4 text-3xl")}
           style={{ touchAction: "manipulation" }}
           onClick={() => {
             desbloquear();
@@ -791,19 +969,19 @@ export function Juego() {
       ) : null}
       {firmadoSello ? (
         <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center">
-          <div className="sello-caer border-8 border-tinta bg-papel px-6 py-3 font-display text-6xl text-tinta">FIRMADO</div>
+          <div className="sello-caer max-w-[92vw] border-8 border-tinta bg-cemento-claro px-4 py-3 text-center font-display text-4xl text-tinta sm:text-6xl">FIRMADO</div>
         </div>
       ) : null}
       {plano != null && PUNTOS_PLANO[plano] ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <section className="pointer-events-auto papel-grano w-full max-w-md border-2 border-tinta px-4 py-3 text-tinta shadow-[6px_8px_0_#1d1712]">
+          <section className="pointer-events-auto plancha w-full max-w-md border-2 border-tinta px-4 py-3 text-tinta shadow-[3px_3px_0_#1B1F23]">
             <p className="font-hand text-sm">El plano · {plano + 1} de 4</p>
             <h2 className="font-display text-3xl leading-none">{PUNTOS_PLANO[plano]!.marca}</h2>
             <p className="mt-1 font-hand text-base leading-snug">{PUNTOS_PLANO[plano]!.texto}</p>
             <div className="mt-3 flex gap-2">
               <button
                 type="button"
-                className="min-h-11 flex-1 border-2 border-tinta bg-papel px-3 font-hand text-tinta"
+                className="min-h-11 flex-1 border-2 border-tinta bg-cemento-claro px-3 font-hand text-tinta"
                 onClick={() => {
                   marcarPlano();
                   setPlano(null);
@@ -813,7 +991,7 @@ export function Juego() {
               </button>
               <button
                 type="button"
-                className="min-h-11 flex-1 border-2 border-tinta bg-tinta px-3 font-hand text-papel"
+                className="min-h-11 flex-1 border-2 border-tinta bg-tinta px-3 font-hand text-cemento-claro"
                 onClick={() => {
                   marcarPlano();
                   setPlano((n) => (n == null || n >= 3 ? null : n + 1));
@@ -825,45 +1003,23 @@ export function Juego() {
           </section>
         </div>
       ) : null}
-      {vueloSello ? (
-        <div className="pointer-events-none fixed z-50" style={{ left: vueloSello.x, top: vueloSello.y }}>
-          {[0, 1, 2, 3, 4].map((i) => (
-            <span
-              key={vueloSello.id + "-" + i}
-              className="moneda-vuelo absolute h-10 w-10 rounded-full border-4 border-tinta bg-oro"
-              style={{
-                left: (i - 2) * 18,
-                top: (i % 2) * 12 - 8,
-                animationDelay: `${i * 40}ms`,
-                ["--tx" as string]: `${vueloSello.tx - (i - 2) * 10}px`,
-                ["--ty" as string]: `${vueloSello.ty}px`,
-              }}
-            />
-          ))}
-          <span
-            className="moneda-vuelo absolute font-display text-5xl whitespace-nowrap text-oro"
-            style={{
-              left: 0,
-              top: -8,
-              textShadow: "0 2px 0 #1d1712, 2px 0 0 #1d1712, -2px 0 0 #1d1712, 0 -2px 0 #1d1712",
-              animationDelay: "30ms",
-              ["--tx" as string]: `${vueloSello.tx}px`,
-              ["--ty" as string]: `${vueloSello.ty}px`,
-            }}
-          >
-            {vueloSello.texto}
-          </span>
-        </div>
-      ) : null}
       <Paneles
         s={snap}
         seguir={seguir}
         act={(fn) => {
+          // v28: «Libre mañana» se guarda al instante aunque la Cuadrilla siga abierta (al recargar se perdía).
+          const libres = () => [...estado.current.gente, ...estado.current.reserva].map((g) => (g.libre ? 1 : 0)).join("");
+          const antes = libres();
           act(fn);
-          if (estado.current.panel === null && estado.current.firmado) guardar(estado.current);
+          if (estado.current.firmado && (estado.current.panel === null || libres() !== antes)) guardar(estado.current);
         }}
         onNueva={nuevaObra}
-        onContinuar={() =>
+        onContinuar={() => {
+          // v27: una obra perdida no se continúa: se empieza otra.
+          if (obraPerdida(estado.current)) {
+            nuevaObra();
+            return;
+          }
           act((s) => {
             s.pausa = false;
             if (!s.firmado) s.panel = null;
@@ -872,8 +1028,8 @@ export function Juego() {
               s.sita.fase = "nota";
               s.panel = "sita";
             } else s.panel = null;
-          })
-        }
+          });
+        }}
         ajustes={ajustes}
         onAjustes={(a) => {
           ajustesRef.current = a;

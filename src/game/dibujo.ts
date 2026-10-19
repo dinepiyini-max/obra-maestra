@@ -60,16 +60,18 @@ export interface Vis {
   contrato: boolean;
 }
 
-const TINTA = "#1d1712";
-const PAPEL = "#e8dcc2";
-const ORO = "#d4a73c";
-const ORO2 = "#f2d27a";
-const AGUA = "#8fb3ad";
-const TIERRA = "#e8dcc2";
-const TIERRA2 = "#efe6d4";
-const TIERRA3 = "#e2d4b8";
-const ACERA = "#d9d0c0";
-const CALLE = "#cbbda8";
+const TINTA = "#1B1F23";
+const PAPEL = "#E9E5DC";
+const ORO = "#F6C928";
+const ORO2 = "#B5652F";
+const AGUA = "#9FD6F2";
+const CIELO = "#2E9BD6";
+const CIELO_LLUVIA = "#5E6163";
+const TIERRA = "#C4A07A";
+const TIERRA2 = "#D7C4A8";
+const TIERRA3 = "#E6D3B0";
+const ACERA = "#C9C4BA";
+const CALLE = "#5E6163";
 
 export function zoomDe(w: number, h = 800): number {
   if (h > 0 && h <= 430) return Math.min(0.58, Math.max(0.42, h / 680));
@@ -285,7 +287,7 @@ function asegurarTerreno(z: number, seed: number) {
   poly([P(27.55, 19.7), P(33.15, 19.7), P(33.15, 23.15), P(27.55, 23.15)], "#e4d8c0");
   poly(
     [P(SOLAR.x0, SOLAR.y0), P(SOLAR.x1, SOLAR.y0), P(SOLAR.x1, SOLAR.y1), P(SOLAR.x0, SOLAR.y1)],
-    "#e4d5b8",
+    "#8B5E3C",
   );
   ctx.save();
   ctx.beginPath();
@@ -457,7 +459,7 @@ function pintarZanja(
     const z1 = -Math.min(prof, (i + 1) * 0.1);
     const a = P(rx, ry, z0);
     const b = P(rx, ry, z1);
-    ctx.strokeStyle = i % 2 === 0 ? "#b8432f" : "#f7f3ea";
+    ctx.strokeStyle = i % 2 === 0 ? "#D7322B" : "#f7f3ea";
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
@@ -469,8 +471,8 @@ function pintarZanja(
   ctx.font = "14px 'Patrick Hand', cursive";
   ctx.textAlign = "left";
   ctx.lineWidth = 3;
-  ctx.strokeStyle = "#14100c";
-  ctx.fillStyle = "#e8dcc2";
+  ctx.strokeStyle = "#12171C";
+  ctx.fillStyle = "#E9E5DC";
   const texto = `Fondo ${prof.toFixed(2)} m`;
   ctx.strokeText(texto, lab.x, lab.y);
   ctx.fillText(texto, lab.x, lab.y);
@@ -589,7 +591,7 @@ function drawObraEn(ctx: CanvasRenderingContext2D, s: Estado, z: number, ox: num
   if (acero > 0.02 && zap < 0.98) {
     const per = perimetro();
     const n = Math.max(1, Math.round(per.length * acero));
-    ctx.strokeStyle = "#3e4a55";
+    ctx.strokeStyle = "#7A3E22";
     ctx.lineWidth = 1.25;
     for (const alt of [0.1, 0.22]) {
       ctx.beginPath();
@@ -665,7 +667,7 @@ function drawObraEn(ctx: CanvasRenderingContext2D, s: Estado, z: number, ox: num
     );
     if (llano > 0.2 || firme > 0.45) {
       ctx.save();
-      ctx.strokeStyle = "rgba(29,23,18,0.22)";
+      ctx.strokeStyle = "rgba(27,31,35,0.22)";
       ctx.lineWidth = 0.8;
       for (let i = 0; i < 5; i++) {
         const y = SOLAR.y0 + inset + 0.35 + i * 0.42;
@@ -747,7 +749,7 @@ function drawObraEn(ctx: CanvasRenderingContext2D, s: Estado, z: number, ox: num
       { x: 20.8, y: 15.8 },
     ];
     ctx.save();
-    ctx.strokeStyle = "#3e4a55";
+    ctx.strokeStyle = "#7A3E22";
     ctx.lineWidth = 1.2;
     for (const c of dowels) {
       for (const [ox, oy] of [
@@ -784,7 +786,7 @@ function drawObraEn(ctx: CanvasRenderingContext2D, s: Estado, z: number, ox: num
         return;
       }
       const cage = 0.09;
-      ctx.strokeStyle = "#3e4a55";
+      ctx.strokeStyle = "#7A3E22";
       ctx.lineWidth = 1.1;
       const offs = [
         [-cage, -cage],
@@ -872,7 +874,7 @@ function drawObraEn(ctx: CanvasRenderingContext2D, s: Estado, z: number, ox: num
     const madera = s.etapa === 6 && vigaV < 0.98 && vigaF > 0.04;
     if (madera) anilloCajas(h, 0.32, Math.max(vigaF, vigaA), "#c4a574", "#8d6b3e", "#e6d2a8", seed + 500);
     if (s.etapa === 6 && vigaA > 0.08 && vigaV < 0.92) {
-      ctx.strokeStyle = "#3e4a55";
+      ctx.strokeStyle = "#7A3E22";
       ctx.lineWidth = 1.15;
       const yb = 13.2;
       const a = P(17.2, yb, h + 0.16);
@@ -956,7 +958,7 @@ function drawObraEn(ctx: CanvasRenderingContext2D, s: Estado, z: number, ox: num
       amp: 0.04,
     });
     ctx.save();
-    ctx.strokeStyle = "#b8432f";
+    ctx.strokeStyle = "#D7322B";
     ctx.lineWidth = 2.2;
     const pa = P(17.15, y, 0.62);
     const pb = P(20.85, y, 0.62);
@@ -993,7 +995,7 @@ function vetaTabla(
   n = 3,
 ) {
   ctx.save();
-  ctx.strokeStyle = "rgba(29,23,18,0.32)";
+  ctx.strokeStyle = "rgba(27,31,35,0.32)";
   ctx.lineWidth = 0.8;
   for (let i = 1; i <= n; i++) {
     const t = i / (n + 1);
@@ -1065,7 +1067,7 @@ function sombraIso(ctx: CanvasRenderingContext2D, P: Proy, x: number, y: number,
   const ey = Math.max(5, Math.hypot(b.x - c.x, b.y - c.y) * 0.72);
   const largo = 0.55 + Math.abs(solDx) * 0.85;
   ctx.save();
-  ctx.fillStyle = "rgba(29,23,18,0.18)";
+  ctx.fillStyle = "rgba(27,31,35,0.18)";
   ctx.beginPath();
   ctx.ellipse(c.x + solDx * ex * 0.8, c.y + 2 + Math.abs(solDx) * 3, ex * largo, ey * (0.62 + Math.abs(solDx) * 0.22), solDx * 0.22, 0, Math.PI * 2);
   ctx.fill();
@@ -1673,7 +1675,7 @@ function varillasSobre(ctx: CanvasRenderingContext2D, P: Proy, x: number, y: num
   if (q <= 0.2) return;
   const n = q < 6 ? 3 : q < 16 ? 5 : 8;
   ctx.save();
-  ctx.strokeStyle = "#3e4a55";
+  ctx.strokeStyle = "#7A3E22";
   ctx.lineWidth = 1.7;
   for (let i = 0; i < n; i++) {
     const yy = y - 0.16 + (i % 4) * 0.1;
@@ -1690,7 +1692,7 @@ function varillasSobre(ctx: CanvasRenderingContext2D, P: Proy, x: number, y: num
 
 function paletaBlock(ctx: CanvasRenderingContext2D, P: Proy, x: number, y: number, q: number, seed: number) {
   sombraIso(ctx, P, x + 0.55, y + 0.38, 0.7, 0.42);
-  isoBox(ctx, P, x, y, 0, 1.2, 0.82, 0.12, "#a8845c", "#6a4e32", "#c4a574", seed);
+  isoBox(ctx, P, x, y, 0, 1.2, 0.82, 0.12, "#8A8D8F", "#5E6163", "#A7B0B6", seed);
   ctx.save();
   ctx.strokeStyle = TINTA;
   ctx.globalAlpha = 0.35;
@@ -1845,7 +1847,7 @@ function pintarFerreteriaM(ctx: CanvasRenderingContext2D, P: Proy, cx: number, c
   ink(
     ctx,
     [P(x - 0.05, y + dy, h - 0.15), P(x + dx + 0.2, y + dy + 0.55, h - 0.35), P(x + dx + 0.2, y + dy + 0.55, h - 0.05), P(x - 0.05, y + dy, h + 0.15)],
-    { fill: "#6a4e32", lw: 1, seed: seed + 7, amp: 0.08 },
+    { fill: "#F6C928", lw: 1, seed: seed + 7, amp: 0.08 },
   );
   const m = P(x + dx / 2, y + dy + 0.15, h + 0.28);
   const k = metro(P, cx, cy);
@@ -1880,7 +1882,7 @@ function pintarCamion(ctx: CanvasRenderingContext2D, x: number, y: number, z: nu
   const z0 = 0.86;
   const z1 = 1.72;
   ctx.save();
-  ctx.fillStyle = "rgba(29,23,18,0.2)";
+  ctx.fillStyle = "rgba(27,31,35,0.2)";
   const sc = pt(-1.7, 0.2, 0.02);
   ctx.beginPath();
   ctx.ellipse(sc.x, sc.y + 6, V * 2.35, V * 0.7, -0.4, 0, Math.PI * 2);
@@ -1902,7 +1904,7 @@ function pintarCamion(ctx: CanvasRenderingContext2D, x: number, y: number, z: nu
   const rueda = (ix: number, iy: number, r: number) => {
     const w = pt(ix, iy, r * 0.92);
     ctx.beginPath();
-    ctx.fillStyle = "#1d1712";
+    ctx.fillStyle = "#1B1F23";
     ctx.arc(w.x, w.y, r * V, 0, Math.PI * 2);
     ctx.fill();
     ctx.lineWidth = 1.4;
@@ -1916,8 +1918,8 @@ function pintarCamion(ctx: CanvasRenderingContext2D, x: number, y: number, z: nu
   rueda(-4.35, 0.72, 0.38);
   rueda(-3.45, 0.72, 0.38);
   const cab = (ix: number, iy: number, iz = 0) => pt(ix, iy, iz);
-  isoBox(ctx, cab, 0.05, -0.62, 0.48, 1.15, 1.24, 0.55, "#c9962e", "#a67c24", "#e0b44a", seed + 3);
-  isoBox(ctx, cab, -1.05, -0.7, 0.48, 1.1, 1.4, 1.22, "#e0b44a", "#c9962e", "#f2d27a", seed + 4);
+  isoBox(ctx, cab, 0.05, -0.62, 0.48, 1.15, 1.24, 0.55, "#D7322B", "#9C2418", "#F6C928", seed + 3);
+  isoBox(ctx, cab, -1.05, -0.7, 0.48, 1.1, 1.4, 1.22, "#F6C928", "#D7322B", "#F6C928", seed + 4);
   ink(ctx, [cab(-0.15, 0.72, 0.95), cab(0.85, 0.72, 0.95), cab(0.85, 0.72, 1.48), cab(-0.15, 0.72, 1.48)], {
     fill: "#1a242c",
     lw: 1,
@@ -1988,7 +1990,7 @@ function pintarCamion(ctx: CanvasRenderingContext2D, x: number, y: number, z: nu
       isoBox(ctx, (x, y, a = 0) => cama(x, y, a), ix, iy, z0, 0.72, 0.4, alto, i % 2 ? "#c4b49a" : "#e4d8c4", "#8a8680", "#f4efe4", seed + 20 + i);
     }
     ctx.save();
-    ctx.strokeStyle = "#3e4a55";
+    ctx.strokeStyle = "#7A3E22";
     ctx.lineWidth = 1.7;
     for (let i = 0; i < 3; i++) {
       const a = cama(x0 + 0.3, -0.05 + i * 0.08, z0 + 0.22 + 0.28 * carga);
@@ -2011,7 +2013,7 @@ function pintarMango(ctx: CanvasRenderingContext2D, P: Proy, x: number, y: numbe
   }
   ctx.save();
   trazo(ctx, sombra, true);
-  ctx.fillStyle = "rgba(29,23,18,0.2)";
+  ctx.fillStyle = "rgba(27,31,35,0.2)";
   ctx.fill();
   ctx.restore();
   hatch(ctx, sombra, 5);
@@ -2072,7 +2074,7 @@ function monton(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, 
 
 function sombraPie(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number) {
   ctx.save();
-  ctx.fillStyle = "rgba(29,23,18,0.34)";
+  ctx.fillStyle = "rgba(27,31,35,0.34)";
   ctx.beginPath();
   ctx.ellipse(x, y + 5, rx, ry, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -2116,7 +2118,7 @@ function pintarFerreteria(ctx: CanvasRenderingContext2D, x: number, y: number, s
     { fill: "#3d5f8a", lw: 3.1, seed: seed + 1, amp: 1 },
   );
   ctx.save();
-  ctx.strokeStyle = "#e8dcc2";
+  ctx.strokeStyle = "#E9E5DC";
   ctx.lineWidth = 5;
   ctx.lineCap = "round";
   for (let i = 0; i < 7; i++) {
@@ -2270,7 +2272,7 @@ function pintarOficina(ctx: CanvasRenderingContext2D, x: number, y: number, seed
       { x: x + 22, y: y - 34 },
       { x: x + 22, y: y - 14 },
     ],
-    { fill: "#f2d27a", lw: 2.6, seed: seed + 2 },
+    { fill: "#F6C928", lw: 2.6, seed: seed + 2 },
   );
   ctx.strokeStyle = TINTA;
   ctx.lineWidth = 2.6;
@@ -2407,6 +2409,14 @@ function polvoLocal(ctx: CanvasRenderingContext2D, x: number, y: number, t: numb
   ctx.restore();
 }
 
+function movimientoReducido(): boolean {
+  try {
+    return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    return false;
+  }
+}
+
 function figura(
   ctx: CanvasRenderingContext2D,
   sx: number,
@@ -2426,30 +2436,41 @@ function figura(
     duena?: boolean;
     pose?: string;
     cargada?: boolean;
+    mania?: string;
+    rol?: "obrero" | "maestro" | "dona" | "nico" | "guarda" | "despacho";
   },
 ) {
-  const k = 30 * p.z;
+  const reducir = movimientoReducido();
+  const movil = p.z < 1;
+  let meta = movil ? (p.duena || p.rol === "dona" ? 44 : 40) : p.duena || p.rol === "dona" ? 58 : 52;
+  if (p.oficio === "maestro" || p.rol === "maestro") meta *= 1.1;
+  if (p.z <= 0.62) meta = Math.max(24, meta * (p.z / 0.75));
+  meta = Math.max(24, meta);
+  const natural = 1.75 * 30 * p.z;
+  const k = natural < 24 || Math.abs(natural - meta) > 2 ? meta / 1.75 : 30 * p.z;
   const pose = p.pose || "";
   const lento = p.cansancio >= 70 ? 0.42 : 1;
-  const walk = p.caminando ? Math.sin(p.t * 7 * lento + p.semilla) * lento : 0;
-  const bob = Math.abs(walk) * k * 0.035;
+  const paso = reducir ? 0 : Math.floor(p.t * 8 + p.semilla) % 4;
+  const ciclo = [0, 1, 0, -1][paso] ?? 0;
+  const walk = p.caminando && !reducir ? ciclo * lento : 0;
+  const bob = reducir ? 0 : Math.abs(walk) * k * 0.035;
   const trabajaPose = p.trabaja && pose !== "espera" && pose !== "sentado";
-  const cuadro = Math.abs(Math.floor(p.t * (trabajaPose ? 2.35 : 1.2) * lento + p.semilla)) % 4;
+  const cuadro = reducir ? 0 : trabajaPose ? Math.floor(p.t * 8 + p.semilla) % 3 : paso;
   const quieto = pose === "espera" || sentadoQuieto(pose, p.trabaja, p.caminando);
   const sentado = pose === "sentado";
   const caido = p.cansancio >= 70 ? 0.08 * k : 0;
-  const lw = Math.max(1, k * 0.03);
+  const lw = movil ? 2 : Math.max(2, k * 0.05);
   const mano = manoDe(pose, cuadro);
   ctx.save();
   ctx.translate(sx, sy - bob);
   const sombraL = 0.55 + Math.abs(solDx) * 0.85;
-  ctx.fillStyle = "rgba(29,23,18,0.28)";
+  ctx.fillStyle = "rgba(27,31,35,0.28)";
   ctx.beginPath();
   ctx.ellipse(
     solDx * k * 0.45,
     k * 0.02 + Math.abs(solDx) * 2,
-    k * 0.18 * sombraL,
-    k * 0.055 * (0.65 + Math.abs(solDx) * 0.3),
+    k * 0.22 * sombraL,
+    k * 0.07 * (0.65 + Math.abs(solDx) * 0.3),
     solDx * 0.12,
     0,
     Math.PI * 2,
@@ -2458,9 +2479,11 @@ function figura(
   ctx.strokeStyle = TINTA;
   ctx.fillStyle = "#2a261f";
   ctx.lineWidth = lw;
-  ctx.lineJoin = "bevel";
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
   if (caido && !sentado) ctx.rotate(0.09);
-  const hip = sentado ? -0.58 * k : -0.92 * k;
+  let hip = sentado ? -0.58 * k : -0.92 * k;
+  if (p.mania === "patas" && !sentado) hip -= 0.14 * k;
   const sho = (sentado ? -1.05 * k : -1.44 * k) + caido;
   const pierna = (x0: number, x1: number) => {
     ctx.beginPath();
@@ -2493,6 +2516,7 @@ function figura(
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
+  if (p.mania === "piedra") ctx.lineWidth = lw * 1.85;
   ctx.beginPath();
   if (sentado || quieto) {
     ctx.moveTo(-0.16 * k, sho + 0.06 * k);
@@ -2511,6 +2535,7 @@ function figura(
     ctx.lineTo(mano.x * k, mano.y * k);
   }
   ctx.stroke();
+  ctx.lineWidth = lw;
   ctx.fillStyle = "#c49a78";
   ctx.beginPath();
   ctx.moveTo(-0.09 * k, sho + 0.02 * k);
@@ -2540,7 +2565,7 @@ function figura(
     ctx.stroke();
   } else {
     ctx.lineWidth = p.oficio === "maestro" ? Math.max(2.4, lw * 2.6) : lw;
-    ctx.strokeStyle = "#1d1712";
+    ctx.strokeStyle = "#1B1F23";
     ctx.moveTo(-0.11 * k, sho - 0.12 * k);
     ctx.lineTo(0.12 * k, sho - 0.12 * k);
     ctx.lineTo(0.1 * k, sho - 0.28 * k);
@@ -2700,7 +2725,7 @@ function figura(
       ctx.beginPath();
       ctx.arc(hx - 0.06 * k, hy + 0.08 * k, 0.045 * k, 0, Math.PI * 1.5);
       ctx.stroke();
-      ctx.strokeStyle = "#3e4a55";
+      ctx.strokeStyle = "#7A3E22";
       ctx.beginPath();
       ctx.moveTo(hx + 0.02 * k, hy + 0.18 * k);
       ctx.lineTo(hx + 0.2 * k, hy + 0.1 * k + (cuadro % 2) * 3);
@@ -2756,6 +2781,68 @@ function figura(
       gotaTinta(ctx, x, y, alto);
     }
   }
+  if (p.mania === "tranquilo" || p.rol === "nico") {
+    ctx.fillStyle = "#0F5C8C";
+    ctx.fillRect(-0.16 * k, sho - 0.11 * k, 0.32 * k, 0.045 * k);
+  }
+  if (p.mania === "madrugador") {
+    ctx.fillStyle = "#7A3E22";
+    ctx.fillRect(0.18 * k, hip, 0.055 * k, 0.12 * k);
+    ctx.strokeRect(0.18 * k, hip, 0.055 * k, 0.12 * k);
+    ctx.fillStyle = "#F6C928";
+    ctx.fillRect(0.17 * k, hip - 0.03 * k, 0.075 * k, 0.04 * k);
+  }
+  if (p.mania === "domino") {
+    ctx.fillStyle = PAPEL;
+    ctx.strokeStyle = TINTA;
+    ctx.fillRect(-0.02 * k, hip + 0.06 * k, 0.07 * k, 0.1 * k);
+    ctx.strokeRect(-0.02 * k, hip + 0.06 * k, 0.07 * k, 0.1 * k);
+    ctx.fillStyle = TINTA;
+    ctx.fillRect(0.0 * k, hip + 0.08 * k, 0.016 * k, 0.016 * k);
+    ctx.fillRect(0.03 * k, hip + 0.12 * k, 0.016 * k, 0.016 * k);
+  }
+  if (p.mania === "cantor" && p.trabaja && !reducir) {
+    ctx.fillStyle = TINTA;
+    ctx.font = `${Math.max(11, Math.round(k * 0.32))}px 'Patrick Hand', cursive`;
+    ctx.textAlign = "left";
+    ctx.fillText("♪", 0.26 * k, sho - 0.05 * k);
+  }
+  if (p.rol === "guarda") {
+    ctx.fillStyle = "#8A8D8F";
+    ctx.strokeStyle = TINTA;
+    ctx.fillRect(-0.14 * k, hip + 0.02 * k, 0.28 * k, 0.24 * k);
+    ctx.strokeRect(-0.14 * k, hip + 0.02 * k, 0.28 * k, 0.24 * k);
+    ctx.strokeStyle = "#F6C928";
+    ctx.beginPath();
+    ctx.moveTo(0.1 * k, sho - 0.16 * k);
+    ctx.lineTo(0.18 * k, sho - 0.32 * k);
+    ctx.stroke();
+  }
+  if (p.duena || p.rol === "dona") {
+    ctx.fillStyle = "#E8569B";
+    ctx.beginPath();
+    ctx.arc(-0.08 * k, sho - 0.3 * k, 0.045 * k, 0, Math.PI * 2);
+    ctx.arc(0.07 * k, sho - 0.34 * k, 0.045 * k, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#E8569B";
+    ctx.lineWidth = lw;
+    ctx.beginPath();
+    ctx.arc(0.34 * k, sho + 0.02 * k, 0.09 * k, Math.PI * 0.15, Math.PI * 0.85);
+    ctx.stroke();
+  }
+  if (p.rol === "nico") {
+    ctx.fillStyle = PAPEL;
+    ctx.strokeStyle = TINTA;
+    ctx.fillRect(0.18 * k, sho + 0.02 * k, 0.12 * k, 0.16 * k);
+    ctx.strokeRect(0.18 * k, sho + 0.02 * k, 0.12 * k, 0.16 * k);
+  }
+  if (p.oficio === "maestro" || p.rol === "maestro") {
+    ctx.fillStyle = PAPEL;
+    ctx.strokeStyle = TINTA;
+    ctx.lineWidth = lw;
+    ctx.fillRect(-0.3 * k, sho + 0.04 * k, 0.12 * k, 0.16 * k);
+    ctx.strokeRect(-0.3 * k, sho + 0.04 * k, 0.12 * k, 0.16 * k);
+  }
   ctx.restore();
 }
 
@@ -2778,6 +2865,8 @@ function persona(
     duena?: boolean;
     pose?: string;
     cargada?: boolean;
+    mania?: string;
+    rol?: "obrero" | "maestro" | "dona" | "nico" | "guarda" | "despacho";
   },
 ) {
   if (p.z) {
@@ -2794,7 +2883,7 @@ function persona(
   ctx.translate(sx, sy - bob);
   ctx.rotate(lean);
   ctx.scale(1.04 - (squash - 1) * 0.4, squash);
-  ctx.fillStyle = "rgba(20,16,12,0.35)";
+  ctx.fillStyle = "rgba(18,23,28,0.35)";
   ctx.beginPath();
   ctx.ellipse(0, 2, 11, 4, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -2984,11 +3073,10 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
   vis.shake = Math.max(0, vis.shake - vis.dt * 18);
 
   ctx.setTransform(dpr, 0, 0, dpr, shake, 0);
-  ctx.fillStyle = PAPEL;
-  ctx.fillRect(-20, 0, w + 40, h);
-
   const hoyLl = s.lluvias.find((r) => r.dia === s.dia && r.cae !== false);
   const llueve = s.lluviaOn || (hoyLl != null && s.minuto >= hoyLl.ini && s.minuto < hoyLl.fin);
+  ctx.fillStyle = llueve ? CIELO_LLUVIA : CIELO;
+  ctx.fillRect(-20, 0, w + 40, h);
   aplicarSol(s.minuto, llueve);
 
   const ter = asegurarTerreno(z, s.seed);
@@ -3057,7 +3145,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
     const alto = s.etapa >= 4 ? 1.4 : 0.7;
     const c = to(19 + solDx * 0.9, 14.7, 0.02);
     ctx.save();
-    ctx.fillStyle = "rgba(29,23,18,0.16)";
+    ctx.fillStyle = "rgba(27,31,35,0.16)";
     ctx.beginPath();
     ctx.ellipse(c.x, c.y, (70 + Math.abs(solDx) * 36) * z * alto, (26 + Math.abs(solDx) * 10) * z, solDx * 0.2, 0, Math.PI * 2);
     ctx.fill();
@@ -3186,9 +3274,9 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
         const c = to(SITIOS.oficina.x, SITIOS.oficina.y, 1.1);
         ctx.save();
         const g = ctx.createRadialGradient(c.x, c.y, 10, c.x, c.y, 86 * z);
-        g.addColorStop(0, "rgba(232,220,194,0)");
-        g.addColorStop(0.55, "rgba(212,167,60,0.22)");
-        g.addColorStop(1, "rgba(212,167,60,0)");
+        g.addColorStop(0, "rgba(233,229,220,0)");
+        g.addColorStop(0.55, "rgba(246,201,40,0.22)");
+        g.addColorStop(1, "rgba(246,201,40,0)");
         ctx.fillStyle = g;
         ctx.beginPath();
         ctx.ellipse(c.x, c.y, 86 * z, 40 * z, 0, 0, Math.PI * 2);
@@ -3212,8 +3300,8 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
       draw: () => {
         if (s.entregada) return;
         persona(ctx, a.x, a.y, {
-          camisa: "#d9d3c7",
-          casco: "#d4a73c",
+          camisa: "#E9E5DC",
+          casco: "#0F5C8C",
           letra: "N",
           t: vis.t,
           trabaja: false,
@@ -3222,7 +3310,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
           anim: "nada",
           semilla: 3,
           z,
-          oficio: "maestro",
+          rol: "nico",
         });
         const lab = to(nx, ny, 2.05);
         etiqueta(ctx, lab.x, lab.y, LISTERO.nombre, alfa(SITIOS.oficina.x, SITIOS.oficina.y), PAPEL, true);
@@ -3238,8 +3326,8 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
       draw: () => {
         if (s.entregada) return;
         persona(ctx, a.x, a.y, {
-          camisa: "#c4a574",
-          casco: "#3d342a",
+          camisa: "#E8569B",
+          casco: "#E8569B",
           t: vis.t,
           trabaja: false,
           cansancio: 0,
@@ -3248,6 +3336,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
           semilla: 11,
           z,
           duena: true,
+          rol: "dona",
         });
         const lab = to(cx, cy, 2.15);
         etiqueta(ctx, lab.x, lab.y, "Doña Carmen", 1, PAPEL, true);
@@ -3267,9 +3356,9 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
       draw: () => {
         if (s.entregada) return;
         persona(ctx, p.x, p.y, {
-          camisa: "#6e8f62",
-          casco: "#3d5f8a",
-          letra: "S",
+          camisa: "#C9C4BA",
+          casco: "#8A8D8F",
+          letra: "G",
           t: vis.t,
           trabaja: false,
           cansancio: 0,
@@ -3277,6 +3366,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
           anim: conPapel ? "papel" : "nada",
           semilla: 9,
           z,
+          rol: "guarda",
           pose: conPapel ? "papel" : camina ? "" : "espera",
         });
         const lab = to(sx, sy, 2.05);
@@ -3328,6 +3418,20 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
         pintarFerreteriaM(ctx, to, SITIOS.ferreteria.x, SITIOS.ferreteria.y, 70);
         const lab = to(SITIOS.ferreteria.x, SITIOS.ferreteria.y, 3.4);
         etiqueta(ctx, lab.x, lab.y, "Ferretería", alfa(SITIOS.ferreteria.x, SITIOS.ferreteria.y));
+        const dp = to(SITIOS.ferreteria.x + 1.15, SITIOS.ferreteria.y + 0.85);
+        persona(ctx, dp.x, dp.y, {
+          camisa: "#D7322B",
+          casco: "#F6C928",
+          t: vis.t,
+          trabaja: false,
+          cansancio: 0,
+          caminando: false,
+          anim: "nada",
+          semilla: 21,
+          z,
+          rol: "despacho",
+          pose: "espera",
+        });
       },
     });
   }
@@ -3391,6 +3495,8 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
           semilla: g.nombre.length * 9,
           z,
           oficio: g.oficio,
+          mania: g.mania,
+          rol: "obrero",
           pose: pose.pose,
           cargada: pose.cargada,
         });
@@ -3404,7 +3510,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
   if (s.destino && !s.panel && !s.pausa) {
     const d = to(s.destino.x, s.destino.y);
     ctx.save();
-    ctx.strokeStyle = "#d4a73c";
+    ctx.strokeStyle = "#F6C928";
     ctx.lineWidth = Math.max(2, w / 420);
     ctx.beginPath();
     ctx.arc(d.x, d.y, Math.max(8, w / 90), 0, Math.PI * 2);
@@ -3447,25 +3553,12 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
   sprites.push({
     d: dMaestro,
     draw: () => {
-      ctx.beginPath();
-      const rad = 0.55 * 30 * z;
-      const halo = ctx.createRadialGradient(mp.x, mp.y + 2, rad * 0.15, mp.x, mp.y + 2, rad);
-      halo.addColorStop(0, "rgba(247,243,234,0.08)");
-      halo.addColorStop(0.62, "rgba(247,243,234,0.38)");
-      halo.addColorStop(1, "rgba(247,243,234,0)");
-      ctx.fillStyle = halo;
-      ctx.ellipse(mp.x, mp.y + 2, rad, rad * 0.42, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(29,23,18,0.55)";
-      ctx.lineWidth = 1.4;
-      ctx.stroke();
-      ctx.globalAlpha = 1;
       const mov = s.vel > 0.2;
       persona(ctx, mp.x, mp.y, {
-        camisa: "#d7c4a3",
-        casco: "#f7f3ea",
+        camisa: "#2E9BD6",
+        casco: "#FFFFFF",
         letra: "M",
-        // v19: el paso va con lo caminado (una zancada cada ~1.1 casillas), no con el reloj de pantalla.
+        // el paso va con lo caminado (una zancada cada ~1.1 casillas), no con el reloj de pantalla.
         t: mov ? ((s.pasoFase ?? 0) * Math.PI * 2) / (7 * 1.1) : vis.t,
         trabaja: trabajaM && !mov,
         cansancio: 0,
@@ -3474,6 +3567,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
         semilla: 4,
         z,
         oficio: "maestro",
+        rol: "maestro",
         pose: mov ? "" : poseM,
       });
     },
@@ -3555,7 +3649,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
       ctx.font = "14px 'Patrick Hand', cursive";
       ctx.textAlign = "center";
       const tw = ctx.measureText(f.texto).width;
-      ctx.fillStyle = "rgba(232,220,194,0.94)";
+      ctx.fillStyle = "rgba(233,229,220,0.94)";
       ctx.strokeStyle = TINTA;
       ctx.lineWidth = 1.4;
       ctx.fillRect(p.x - tw / 2 - 6, p.y - 16, tw + 12, 20);
@@ -3571,7 +3665,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
     ctx.globalAlpha = k;
     ctx.fillStyle = f.oro ? ORO2 : PAPEL;
     ctx.strokeStyle = TINTA;
-    ctx.font = "20px 'Jolly Lodger', cursive";
+    ctx.font = "20px 'Bungee', cursive";
     ctx.textAlign = "center";
     ctx.lineWidth = 3;
     const y = p.y - (1 - k) * 40;
@@ -3586,7 +3680,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
   if (nubes >= 0) pintarNubes(ctx, w, h, nubes, hv);
 
   if (llueve) {
-    ctx.strokeStyle = "rgba(29,23,18,0.55)";
+    ctx.strokeStyle = "rgba(27,31,35,0.55)";
     ctx.lineWidth = 1.2;
     for (let i = 0; i < 40; i++) {
       const x = ((hash2(s.seed, i) * w + vis.t * 180) % (w + 40)) - 20;
@@ -3629,7 +3723,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
       ctx.save();
       ctx.translate(x, y + (dentro ? bob : 0));
       ctx.rotate(rot);
-      ctx.fillStyle = "#b8432f";
+      ctx.fillStyle = "#D7322B";
       ctx.strokeStyle = TINTA;
       ctx.lineWidth = 1.6;
       ctx.beginPath();
@@ -3651,7 +3745,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
   if (vis.marca) {
     const p = to(vis.marca.x, vis.marca.y, 0.15);
     ctx.save();
-    ctx.strokeStyle = "#b8432f";
+    ctx.strokeStyle = "#D7322B";
     ctx.setLineDash([7, 5]);
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -3665,7 +3759,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
   const m = s.minuto;
   const tSol = Math.min(1, Math.max(0, (m - 7 * 60) / (8 * 60)));
   let luz: string | null = null;
-  if (llueve) luz = "rgba(72,78,86,0.26)";
+  if (llueve) luz = "rgba(94,97,99,0.55)";
   else if (tSol < 0.32) luz = "rgba(148,176,190,0.13)";
   else if (tSol > 0.62) luz = "rgba(196,122,42,0.15)";
   if (luz) {
@@ -3674,6 +3768,116 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
     ctx.fillRect(-30, -30, w + 60, h + 60);
     ctx.restore();
   }
+  pintarVoces(ctx, s, vis, to);
+}
+
+const VOZ: Record<string, readonly string[]> = {
+  dona: [
+    "Mijo, ¿y eso va a quedar derecho?",
+    "Yo pagué por block, no por cuento.",
+    "¡Ay, qué lindo me está quedando!",
+    "Con esa lluvia no me eche cemento.",
+    "El dinero no crece en las matas.",
+  ],
+  maestro: ["¡Dale, que se va el día!", "Eso no está a plomo, bájalo.", "Primero el acero, después el vaciado."],
+  nico: ["Apunté a todo el mundo, maestro.", "Hoy faltó uno, ojo.", "La nómina es el sábado."],
+  guarda: ["Lo que sale de aquí, lo anoto.", "Eso se mojó, maestro.", "Quedan pocas fundas."],
+  ferre: ["¡Llegó el pedido, firme aquí!", "Si es urgente, el flete sube.", "Le fío, pero no se me pierda."],
+  peon: ["Diga, maestro, ¿pa' dónde?", "Esa carretilla pesa."],
+  ayudante: ["Le paso la mezcla."],
+  albanil: ["Esa hilada quedó fina."],
+  varillero: ["El amarre está apretao."],
+  carpintero: ["Ese encofrado no se mueve."],
+  cantor: ["La-la-lá…"],
+  domino: ["¡Capicúa!"],
+  madrugador: ["Yo llegué primero"],
+};
+
+const vozI: Record<string, number> = {};
+let boca: { texto: string; hasta: number; x: number; y: number } | null = null;
+
+function dibujarBurbuja(ctx: CanvasRenderingContext2D, x: number, y: number, texto: string) {
+  ctx.save();
+  ctx.font = "16px 'Patrick Hand', cursive";
+  ctx.textAlign = "left";
+  const dpr = ctx.getTransform().a || 1;
+  const W = ctx.canvas.width / dpr;
+  const maxW = Math.min(220, Math.max(96, W - 24));
+  const palabras = texto.split(" ");
+  const lineas: string[] = [];
+  let linea = "";
+  for (const p of palabras) {
+    const prueba = linea ? `${linea} ${p}` : p;
+    if (linea && ctx.measureText(prueba).width > maxW) {
+      lineas.push(linea);
+      linea = p;
+    } else linea = prueba;
+  }
+  if (linea) lineas.push(linea);
+  const tw = Math.max(1, ...lineas.map((l) => ctx.measureText(l).width));
+  const bw = tw + 16;
+  const bh = lineas.length * 18 + 8;
+  let bx = x - bw / 2;
+  let by = y - bh - 6;
+  if (bx < 8) bx = 8;
+  if (bx + bw > W - 8) bx = Math.max(8, W - 8 - bw);
+  if (by < 8) by = 8;
+  ctx.fillStyle = "#E9E5DC";
+  ctx.strokeStyle = "#1B1F23";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(bx, by, bw, bh, 6);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#1B1F23";
+  lineas.forEach((l, i) => ctx.fillText(l, bx + 8, by + 18 + i * 18));
+  ctx.restore();
+}
+
+function pintarVoces(
+  ctx: CanvasRenderingContext2D,
+  s: Estado,
+  vis: Vis,
+  to: (x: number, y: number, a?: number) => { x: number; y: number },
+) {
+  if (s.panel || s.pausa || !s.firmado || s.entregada) return;
+  if (boca && vis.t < boca.hasta) {
+    const q = to(boca.x, boca.y, 2.35);
+    dibujarBurbuja(ctx, q.x, q.y, boca.texto);
+    return;
+  }
+  if (boca && vis.t < boca.hasta + 4) return;
+  const cerca: { id: string; d: number; x: number; y: number; frases: readonly string[] }[] = [];
+  const empuja = (id: string, x: number, y: number, frases: readonly string[]) => {
+    const d = Math.hypot(s.jugador.x - x, s.jugador.y - y);
+    if (d < 2.4) cerca.push({ id, d, x, y, frases });
+  };
+  empuja("dona", SITIOS.oficina.x - 0.15, SITIOS.oficina.y + 0.72, VOZ.dona!);
+  empuja("nico", SITIOS.oficina.x + 0.45, SITIOS.oficina.y + 0.62, VOZ.nico!);
+  empuja("ferre", SITIOS.ferreteria.x + 1.15, SITIOS.ferreteria.y + 0.85, VOZ.ferre!);
+  if (s.sita) {
+    const g = puntoSita(s);
+    empuja("guarda", g.x, g.y, VOZ.guarda!);
+  }
+  if (s.vel < 0.2 && Math.hypot(s.jugador.x - SITIOS.obra.x, s.jugador.y - SITIOS.obra.y) < 2.2) {
+    empuja("maestro", s.jugador.x, s.jugador.y, VOZ.maestro!);
+  }
+  for (const pe of s.gente) {
+    if (!pe.activo || pe.fuera || pe.falto) continue;
+    let frases = VOZ[pe.oficio];
+    if (pe.mania === "cantor" && pe.trabajando) frases = VOZ.cantor;
+    if (pe.mania === "domino" && pe.puesto === "sombra") frases = VOZ.domino;
+    if (pe.mania === "madrugador" && s.minuto < 8 * 60) frases = VOZ.madrugador;
+    if (frases) empuja(pe.id, pe.x, pe.y, frases);
+  }
+  cerca.sort((a, b) => a.d - b.d);
+  const el = cerca[0];
+  if (!el) return;
+  const i = vozI[el.id] ?? 0;
+  vozI[el.id] = i + 1;
+  boca = { texto: el.frases[i % el.frases.length]!, hasta: vis.t + 2.5, x: el.x, y: el.y };
+  const q = to(boca.x, boca.y, 2.35);
+  dibujarBurbuja(ctx, q.x, q.y, boca.texto);
 }
 
 function toWorldCorner(x: number, y: number, z: number) {
@@ -3720,7 +3924,7 @@ function pintarEtiqueta(ctx: CanvasRenderingContext2D, x: number, y: number, tex
     yy -= 18;
   }
   ctx.lineWidth = 3;
-  ctx.strokeStyle = "#14100c";
+  ctx.strokeStyle = "#12171C";
   ctx.strokeText(texto, x, yy);
   ctx.fillStyle = fill;
   ctx.fillText(texto, x, yy);

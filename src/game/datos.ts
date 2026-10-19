@@ -229,11 +229,11 @@ export const OFICIO_NOMBRE: Record<Oficio, string> = {
 };
 
 export const OFICIO_COLOR: Record<Oficio, { camisa: string; casco: string }> = {
-  peon: { camisa: "#6e8cae", casco: "#e2b43a" },
-  ayudante: { camisa: "#6e8f62", casco: "#d07a3a" },
-  albanil: { camisa: "#d9d3c7", casco: "#b8432f" },
-  varillero: { camisa: "#a85a3a", casco: "#3d5f8a" },
-  carpintero: { camisa: "#8a623c", casco: "#3f6b45" },
+  peon: { camisa: "#2E9BD6", casco: "#F6C928" },
+  ayudante: { camisa: "#1FA463", casco: "#F6C928" },
+  albanil: { camisa: "#E9E5DC", casco: "#D7322B" },
+  varillero: { camisa: "#7A3E22", casco: "#0F5C8C" },
+  carpintero: { camisa: "#8B5E3C", casco: "#1FA463" },
 };
 
 export const MANIA_INFO: Record<Mania, { nombre: string; bueno: string; malo: string }> = {

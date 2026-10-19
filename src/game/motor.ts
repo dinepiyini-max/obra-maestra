@@ -353,6 +353,8 @@ export interface Estado {
   rescateUsado: boolean;
   /** v20: material fiado por el guardalmacén; se descuenta solo del próximo cobro. */
   fiado?: number;
+  /** v27: la obra se perdió. Una obra perdida no se guarda ni se puede «Continuar». */
+  perdida?: boolean;
   /** v19: bono cobrado al entregar antes del plazo. */
   bono?: number;
   /** v22: cuenta de la caja al entregar. */
@@ -440,6 +442,8 @@ export interface Sita {
   x: number;
   y: number;
   fase: "casa" | "yendo" | "nota" | "vuelta";
+  /** v28: segundos (reales en juego, o de simulación) que lleva caminando hacia el maestro. */
+  andando?: number;
   oferta: OfertaSita | null;
   ultima: OfertaSita | null;
   rechazoDia: number;
@@ -1670,6 +1674,7 @@ function consumoPorMin(s: Estado, tipo: "H" | "M"): number {
   for (const w of listos(s)) {
     if (w.mezcla !== tipo || !w.mezclaQ || w.q <= 0) continue;
     if (!alguienHara(s, w)) continue;
+    if (mezclaPorMaterial(s, w) <= 1e-6) continue;
     const per = w.mezclaQ / w.q;
     for (const g of s.gente) {
       if (!g.activo || g.fuera || g.falto || g.puesto !== "obra") continue;
@@ -1699,9 +1704,62 @@ function faltaMezclaUtil(s: Estado, tipo: "H" | "M"): number {
   for (const w of listos(s)) {
     if (w.mezcla !== tipo) continue;
     if (!alguienHara(s, w)) continue;
-    falta += mezclaQueFalta(w);
+    // v27: sin el material de la tarea en el almacén (p. ej. el block sigue en la entrada o en el camión) nadie gasta
+    // la mezcla: se batía igual y se vencía tanda tras tanda con el peón en el Trompo.
+    const util = w.id === "block" ? morteroHastaPlomo(s, w) : mezclaQueFalta(w);
+    falta += Math.min(util, mezclaPorMaterial(s, w));
   }
   return falta;
+}
+
+/** v27: la mezcla que se puede gastar con el material (sin contar la mezcla) que hay hoy en el almacén. */
+function mezclaPorMaterial(s: Estado, w: W): number {
+  if (!w.mezcla || !w.mezclaQ || w.q <= 0) return 0;
+  if (w.usaIni && !w.ini && !tieneMapa(s, w.usaIni)) return 0;
+  let unidades = Math.max(0, w.q - w.hecho);
+  if (w.usa) {
+    for (const [k, total] of Object.entries(w.usa) as [Mat, number][]) {
+      const per = total / Math.max(w.q, 1e-9);
+      if (per <= 1e-9) continue;
+      unidades = Math.min(unidades, Math.max(0, s.inv[k].q) / per);
+    }
+  }
+  return unidades * (w.mezclaQ / w.q);
+}
+
+/** El mortero que sirve antes del próximo plomo (y del tope de block del día), más una tanda. Lo demás esperaría y se vencería. */
+function morteroHastaPlomo(s: Estado, w: W): number {
+  if (!w.mezclaQ || w.q <= 0) return 0;
+  if (s.plomo) return 0;
+  let hasta = w.q;
+  for (const u of UMBRALES) {
+    const ya = s.plumbed.some((p) => Math.abs(p - u) < 1e-3);
+    if (!ya && u > w.hecho + 1e-6) {
+      hasta = Math.min(hasta, u);
+      break;
+    }
+  }
+  const porTope = TOPE_BLOCK_DIA - s.blocksHoy;
+  const bloques = Math.max(0, Math.min(hasta - w.hecho, porTope));
+  // Una tanda de margen: el albañil no se queda esperando mezcla justo antes del plomo.
+  // v27: el margen no va cuando lo que frena es el tope de hiladas del día: esa tanda sobraba y se vencía.
+  const margen = bloques > 1e-6 && porTope > hasta - w.hecho ? 1 : 0;
+  return Math.min(mezclaQueFalta(w), bloques * (w.mezclaQ / w.q) + margen);
+}
+
+/** v28: el muro de block de hoy lo frena el tope de hiladas del día (y no el plomo ni el final de la etapa). */
+function topeDelDiaManda(s: Estado): boolean {
+  const w = listos(s).find((x) => x.id === "block");
+  if (!w || s.plomo) return false;
+  let hasta = w.q;
+  for (const u of UMBRALES) {
+    const ya = s.plumbed.some((p) => Math.abs(p - u) < 1e-3);
+    if (!ya && u > w.hecho + 1e-6) {
+      hasta = Math.min(hasta, u);
+      break;
+    }
+  }
+  return TOPE_BLOCK_DIA - s.blocksHoy < hasta - w.hecho;
 }
 
 /** No arranca una tanda que nadie va a usar antes de que se venza. */
@@ -1709,8 +1767,13 @@ function tandaCabe(s: Estado, tipo: "H" | "M"): boolean {
   if (tipo === "H" && !albanilLibreParaVaciar(s)) return false;
   const falta = faltaMezclaUtil(s, tipo);
   const have = stockMezcla(s, tipo) + tandasEnCurso(s, tipo);
-  if (falta <= have + 0.02) return false;
+  // v24: el último pedacito (p. ej. 7.98 de 8 en el firme) también pide su tanda. Antes, con menos de 0.02 tanda
+  // pendiente, no se batía nunca y la obra quedaba trabada sin que el guardalmacén pidiera nada.
+  if (falta <= have + 1e-3) return false;
   const porMin = consumoPorMin(s, tipo);
+  // v28: pero si lo que frena es el tope de hiladas del día (no el final de la etapa), una tanda para menos de dos
+  // tercios se vencería: mañana sigue.
+  if (have < 1e-3 && porMin > 0 && falta < 1) return !(tipo === "M" && falta < 0.65 && topeDelDiaManda(s));
   const vida = tipo === "H" ? RECETA_H.vida : RECETA_M.vida;
   const hastaFaena = Math.max(0, 15 * 60 - s.minuto);
   const minutosBatir = tipo === "H" ? 60 : 22;
@@ -1718,6 +1781,13 @@ function tandaCabe(s: Estado, tipo: "H" | "M"): boolean {
   const uso = porMin * Math.min(vida, ventana);
   if (uso < 0.9) return false;
   if (have + 0.05 >= Math.min(falta, uso)) return false;
+  // v27: la tanda nueva se gasta después de las que ya hay (la más vieja primero). Si lo batido más esta tanda no se
+  // alcanza a gastar dentro de su vida, la última se vence: con un solo albañil y el peón en el Trompo se vencían
+  // varias al día. Se deja un 15 % de margen por cansancio y plomeos.
+  if (tipo === "M" && have > 1e-3 && have + 1 > uso * 0.85) return false;
+  // v28: con lo batido más esta tanda no se puede pasar de lo que se va a gastar hoy (con el peón en el Trompo, al
+  // llegar al tope de hiladas del día sobraba media tanda y se vencía a las 15:2x).
+  if (tipo === "M" && have > 1e-3 && have + 1 > falta + 0.35 && topeDelDiaManda(s)) return false;
   return true;
 }
 
@@ -1836,6 +1906,15 @@ function notarMezclaTarde(s: Estado) {
 
 function esAyuda(of: Oficio): boolean {
   return of === "peon" || of === "ayudante";
+}
+
+/** Sin peón ni ayudante trabajando hoy, el albañil hace de ayuda: bate en el trompo, busca agua y acarrea. Siempre hay salida. */
+export function sinAyuda(s: Estado): boolean {
+  return !s.gente.some((g) => esAyuda(g.oficio) && g.activo && !g.fuera && !g.falto);
+}
+
+function haceDeAyuda(s: Estado, g: Persona): boolean {
+  return esAyuda(g.oficio) || (g.oficio === "albanil" && sinAyuda(s));
 }
 
 function puedeTarea(of: Oficio, k: Tarea): boolean {
@@ -2080,8 +2159,14 @@ function trabajarPersona(s: Estado, g: Persona) {
   g.anim = got > 0 ? herramientaDe(w.k) : "nada";
 }
 
+/** Con el plomo pendiente no se bate mortero: lo batido se quedaría esperando y se vence después del plomeo. */
+function morteroEnPausa(s: Estado, tipo: "H" | "M" | null | undefined): boolean {
+  return !!s.plomo && tipo === "M";
+}
+
 function trabajarBatea(s: Estado, g: Persona): boolean {
   let curso = s.mezclas.find((m) => !m.lista);
+  if (morteroEnPausa(s, curso ? curso.tipo : tipoQueFalta(s))) return false;
   if (!curso) {
     const tipo = tipoQueFalta(s);
     if (!tipo) return false;
@@ -2426,7 +2511,7 @@ function laborEnZona(puesto: Puesto, labor: Labor): boolean {
 
 function elegirAuto(s: Estado, g: Persona, batiendo: number): Labor {
   const ops = opcionesAuto(s, g, batiendo);
-  const ayuda = esAyuda(g.oficio);
+  const ayuda = haceDeAyuda(s, g);
   const puestoIlegal = !ayuda && (g.puesto === "batea" || g.puesto === "agua" || g.puesto === "acarreo");
   const propio =
     !puestoIlegal && (g.puesto === "batea" || g.puesto === "agua" || g.puesto === "acarreo" || g.puesto === "obra")
@@ -2439,12 +2524,12 @@ function elegirAuto(s: Estado, g: Persona, batiendo: number): Labor {
 }
 
 function opcionesAuto(s: Estado, g: Persona, batiendo: number): { labor: Labor; prio: number }[] {
-  const ayuda = esAyuda(g.oficio);
+  const ayuda = haceDeAyuda(s, g);
   const out: { labor: Labor; prio: number }[] = [];
   const ayudarBatea =
     ayuda &&
     bateaTieneTrabajo(s) &&
-    batiendo < 2 &&
+    batiendo < (esAyuda(g.oficio) ? 2 : 1) &&
     (batiendo === 0 || (g.puesto === "obra" && obraEsperaMezcla(s)));
   if (ayudarBatea) out.push({ labor: "batea", prio: 1 });
   if (ayuda && s.inv.agua.q < 1.1 - 1e-9) out.push({ labor: "agua", prio: 2 });
@@ -2476,7 +2561,7 @@ function planLabores(s: Estado): Map<string, Labor | null> {
       continue;
     }
     const puestoAjeno =
-      (g.puesto === "batea" || g.puesto === "agua" || g.puesto === "acarreo") && !esAyuda(g.oficio);
+      (g.puesto === "batea" || g.puesto === "agua" || g.puesto === "acarreo") && !haceDeAyuda(s, g);
     if (!puestoAjeno && puestoTieneTrabajo(s, g, g.puesto)) {
       out.set(g.id, g.puesto);
       if (g.puesto === "batea") batiendo += 1;
@@ -2498,7 +2583,7 @@ function planLabores(s: Estado): Map<string, Labor | null> {
   const hayAcarreo = s.gente.some((g) => g.activo && !g.fuera && !g.falto && (g.puesto === "acarreo" || out.get(g.id) === "acarreo"));
   if (frenaEntrada && !hayAcarreo) {
     const libre = s.gente.find((g) => {
-      if (!g.activo || g.fuera || g.falto || !esAyuda(g.oficio)) return false;
+      if (!g.activo || g.fuera || g.falto || !haceDeAyuda(s, g)) return false;
       if (g.puesto === "acarreo" || out.get(g.id) === "acarreo") return false;
       if ((g.puesto === "batea" || g.puesto === "agua") && g.puesto && puestoTieneTrabajo(s, g, g.puesto)) return false;
       return true;
@@ -2650,11 +2735,45 @@ export function puedeFiar(s: Estado): boolean {
 export function fiar(s: Estado): string | null {
   const c = cuentaFiado(s);
   if (!c) return "El guardalmacén solo fía lo que falta para sellar la etapa, cuando la caja y el adelanto no alcanzan.";
+  return fiarItems(s, c.items, false, c.total);
+}
+
+/** v24: el pedido suelto de la Ferretería también se puede fiar, con las mismas reglas: la caja (y el adelanto) no lo
+ * pagan y todo lo fiado cabe en lo que queda por cobrar. Antes solo se fiaba lo que faltaba para sellar la etapa. */
+export function cuentaFiadoPedido(s: Estado, items: Cantidades, urgente = false): { items: Cantidades; total: number } | null {
+  if (!s.firmado || s.entregada || s.sello) return null;
+  if (proximoTramo(s) < 0) return null;
+  const limpio: Cantidades = {};
+  for (const [k, n] of Object.entries(items) as [Mat, number][]) if ((n ?? 0) > 1e-6 && MATERIALES[k]?.compra) limpio[k] = n;
+  if (!tieneItems(limpio)) return null;
+  const total = costoMats(limpio) + fleteDe(s, urgente);
+  if (s.caja >= total - 0.5) return null;
+  if (puedeAdelantar(s, total) && cajaLibre(s) + montoAdelanto(s) >= total - 0.5) return null;
+  // v28: lo que esta etapa necesita y este pedido no trae queda reservado en el fiado. Antes se podía fiar la etapa
+  // siguiente entera y ya no quedaba fiado para el cemento de hoy: la obra se paraba.
+  const falta = loQueFalta(s);
+  const reserva: Cantidades = {};
+  for (const [k, n] of Object.entries(falta) as [Mat, number][]) {
+    const resto = (n ?? 0) - (limpio[k] ?? 0);
+    if (resto > 1e-6) reserva[k] = resto;
+  }
+  const guardar = tieneItems(reserva) ? costoMats(reserva) + FLETE : 0;
+  if (total + guardar > limiteFiado(s) + 0.5) return null;
+  return { items: limpio, total };
+}
+
+export function fiarPedido(s: Estado, items: Cantidades, urgente = false): string | null {
+  const c = cuentaFiadoPedido(s, items, urgente);
+  if (!c) return "El guardalmacén no fía este pedido: la caja lo paga o ya no cabe en lo que queda por cobrar.";
+  return fiarItems(s, c.items, urgente, c.total);
+}
+
+function fiarItems(s: Estado, items: Cantidades, urgente: boolean, total: number): string | null {
   const caja = s.caja;
   // Caja de paso para que el pedido salga aunque la caja esté en cero o negativa; luego vuelve a su valor.
-  const paso = c.total + 1e6;
+  const paso = total + 1e6;
   s.caja = paso;
-  const err = pedir(s, c.items, false, true);
+  const err = pedir(s, items, urgente, true);
   const pagado = paso - s.caja;
   s.caja = caja;
   if (err) return err;
@@ -2836,11 +2955,23 @@ export function quienSeVa(s: Estado): Persona | null {
   return lista[0]!;
 }
 
+/** v27: la obra se pierde (no quedó nadie). Queda marcada para que el guardado la archive y no se pueda continuar. */
+function perderObra(s: Estado) {
+  s.panel = "perdida";
+  s.perdida = true;
+  if (!s.diario.some((d) => d.texto === "No quedó nadie trabajando. La obra se perdió.")) diario(s, "No quedó nadie trabajando. La obra se perdió.");
+}
+
+/** v27: true si la obra se perdió (marca nueva o, en guardados de la v26 o antes, el panel «Obra perdida»). */
+export function obraPerdida(s: Estado | null | undefined): boolean {
+  if (!s) return false;
+  return s.perdida === true || s.panel === "perdida";
+}
+
 function seVaObrero(s: Estado) {
   const lista = [...s.gente, ...s.reserva];
   if (!lista.length) {
-    s.panel = "perdida";
-    diario(s, "No quedó nadie trabajando. La obra se perdió.");
+    perderObra(s);
     return;
   }
   const g = quienSeVa(s)!;
@@ -2854,10 +2985,7 @@ function seVaObrero(s: Estado) {
   const frase = `${g.nombre} se fue: dos días seguidos sin cobrar completo.`;
   diario(s, frase);
   aviso(s, frase);
-  if (s.gente.length + s.reserva.length === 0) {
-    s.panel = "perdida";
-    diario(s, "No quedó nadie trabajando. La obra se perdió.");
-  }
+  if (s.gente.length + s.reserva.length === 0) perderObra(s);
 }
 
 function pagarNomina(s: Estado) {
@@ -2914,7 +3042,7 @@ function pagarNomina(s: Estado) {
     diario(s, frase);
     aviso(s, frase);
     if (s.rachaCorta >= 2) {
-      const espera = esperaAlCobro(s);
+      const espera = esperaAlCobro(s) || esperaUltimo(s);
       if (espera) {
         // v22: «te pago al cobrar»: con la etapa casi lista y un cobro que cubre la deuda, nadie se va.
         s.rachaCorta = 1;
@@ -3021,24 +3149,39 @@ export function accionesNomina(s: Estado): string[] {
 export function esperaAlCobro(s: Estado): string {
   if (!s.firmado || s.entregada) return "";
   const i = proximoTramo(s);
-  if (i !== s.etapa) return "";
+  if (i < 0) return "";
   const def = ETAPAS[i]!;
-  let hecho = 0;
-  let total = 0;
-  for (const t of def.trabajos) {
-    hecho += Math.min(t.q, runDe(s, i, t.id).hecho) / t.q;
-    total += 1;
-  }
-  if (!total || hecho / total < 0.75) return "";
+  // v27: margen. Antes solo se esperaba con la etapa que cobra al 75 % o más (por trabajos), y el Revisor perdió la obra
+  // con los muros al 85 % del block: el promedio con los huecos no llegaba. Ahora la cuadrilla espera mientras lo neto
+  // del próximo cobro pague la deuda de nómina, vaya la obra por donde vaya. La deuda crece cada día corto, así que el
+  // margen se acaba solo si el cobro ya no alcanza.
   const neto = cobroDe(s, i).neto;
   const deuda = (s.deudaNomina ?? 0) + desgloseNomina(s).total;
   if (neto + Math.max(0, s.caja) < deuda - 0.5) return "";
-  return `Nadie se va: «te pago al cobrar». ${def.nombre} ya casi sella y su cobro (${peso(neto)}) cubre la deuda de nómina (${peso(s.deudaNomina ?? 0)}).`;
+  return `Nadie se va: «te pago al cobrar». El cobro de ${def.nombre} (${peso(neto)}) cubre la deuda de nómina (${peso(s.deudaNomina ?? 0)}).`;
+}
+
+/** v27: el último que queda no se va mientras lo que falta por cobrar (todos los tramos, menos adelanto y fiado) pague
+ * la deuda: la obra no se pierde por la nómina mientras haya cobro por delante. */
+export function esperaUltimo(s: Estado): string {
+  if (!s.firmado || s.entregada) return "";
+  if (s.gente.length + s.reserva.length !== 1) return "";
+  if (proximoTramo(s) < 0) return "";
+  // Con la obra parada (más de 18 días sin sellar nada) no hay cobro a la vista: el último también se va.
+  if (obraParada(s)) return "";
+  const deuda = (s.deudaNomina ?? 0) + desgloseNomina(s).total;
+  if (limiteFiado(s) + Math.max(0, s.caja) < deuda - 0.5) return "";
+  const g = [...s.gente, ...s.reserva][0]!;
+  return `${g.nombre} se queda: es el último y espera el cobro («te pago al cobrar»). Quedan ${peso(s.deudaNomina ?? 0)} de deuda de nómina.`;
 }
 
 export function textoSeVaManana(s: Estado): string {
   if ((s.rachaCorta ?? 0) < 1) return "";
-  if (esperaAlCobro(s)) return ` Si vuelve a quedar corta, nadie se va: ${ETAPAS[s.etapa]?.nombre ?? "la etapa"} casi sella y su cobro paga la deuda («te pago al cobrar»).`;
+  if (esperaAlCobro(s)) {
+    const i = proximoTramo(s);
+    return ` Si vuelve a quedar corta, nadie se va: el cobro de ${ETAPAS[i]?.nombre ?? "la próxima etapa"} paga la deuda («te pago al cobrar»).`;
+  }
+  if (esperaUltimo(s)) return ` Si vuelve a quedar corta, ${[...s.gente, ...s.reserva][0]!.nombre} se queda: es el último y espera el cobro.`;
   const g = quienSeVa(s);
   return g ? ` Si vuelve a quedar corta, mañana se va ${g.nombre}.` : "";
 }
@@ -3083,8 +3226,7 @@ function abrirFinde(s: Estado) {
     }
   }
   if (!s.entregada && s.gente.length + s.reserva.length === 0) {
-    s.panel = "perdida";
-    diario(s, "No quedó nadie trabajando. La obra se perdió.");
+    perderObra(s);
     return;
   }
   s.panel = s.entregada ? "informe" : "finde";
@@ -3159,8 +3301,15 @@ export function tick(s: Estado, dtReal: number, ritmo = 1) {
     return;
   }
   const sim = dtReal >= 0.15;
+  if (s.sita && s.sita.fase !== "yendo") s.sita.andando = 0;
   if (!sim && s.sita?.fase === "yendo" && !s.panel) {
-    moverSita(s, clamp(dtReal, 0, 0.1), 11);
+    // v28: mientras el guardalmacén camina hacia el maestro el reloj espera. Si se trababa contra un muro o el maestro
+    // estaba donde no llegaba (p. ej. detrás del almacén), el reloj quedaba parado a las 14:01 para siempre y había que
+    // recargar. Ahora, si en SITA_MAX_SEG no llegó, la nota llega igual (la trae corriendo).
+    const dt = clamp(dtReal, 0, 0.1);
+    s.sita.andando = (s.sita.andando ?? 0) + dt;
+    moverSita(s, dt, 11);
+    if (s.sita.fase === "yendo" && s.sita.andando >= SITA_MAX_SEG) llegaSita(s);
     if (s.sita.fase === "yendo") return;
     if (!s.panel) s.panel = "sita";
     return;
@@ -3186,7 +3335,14 @@ export function tick(s: Estado, dtReal: number, ritmo = 1) {
     s.frac -= 1;
     n += 1;
   }
-  if (s.sita?.fase === "yendo" && !s.panel) moverSita(s, sim ? 1 : dt, sim ? 240 : 11);
+  if (s.sita?.fase === "yendo" && !s.panel) {
+    moverSita(s, sim ? 1 : dt, sim ? 240 : 11);
+    // v28: en simulación tampoco se queda trabado para siempre (después de ~1 h de juego, la nota llega igual).
+    if (sim && s.sita.fase === "yendo") {
+      s.sita.andando = (s.sita.andando ?? 0) + 1;
+      if (s.sita.andando >= 60) llegaSita(s);
+    }
+  }
   else if (s.sita?.fase === "vuelta") moverSita(s, sim ? 1 : dt, sim ? 240 : 11);
 }
 
@@ -3665,7 +3821,7 @@ export function ancla(s: Estado, g: Persona): { x: number; y: number } | null {
     const u = t < 0.5 ? t * 2 : (1 - t) * 2;
     const puerta = puertaAlmacen();
     const vias = [SITIOS.entrada, { x: 11.4, y: 18.95 }, { x: 6.3, y: 18.15 }, puerta];
-    let rest = u * (vias.length - 1);
+    const rest = u * (vias.length - 1);
     const i = Math.min(vias.length - 2, Math.floor(rest));
     const f = rest - i;
     const a = vias[i]!;
@@ -4032,6 +4188,17 @@ export function faltaEnPedido(s: Estado, items: Cantidades | undefined): string[
   return out;
 }
 
+/** v28: texto para frenar un pedido de más adelante mientras a esta etapa le falte material; "" si no falta nada. */
+export function primeroEstaEtapa(s: Estado): string {
+  const falta = loQueFalta(s);
+  if (!tieneItems(falta)) return "";
+  const lista = (Object.entries(falta) as [Mat, number][])
+    .filter(([, n]) => (n ?? 0) > 1e-6)
+    .map(([k]) => MATERIALES[k].nombre.toLowerCase())
+    .join(", ");
+  return `Primero lo de esta etapa: falta ${lista}. Pídelo (o fíalo) y después la siguiente.`;
+}
+
 export function loQueFaltaSiguiente(s: Estado): Cantidades {
   return cuerpoNota(s).siguiente;
 }
@@ -4159,6 +4326,28 @@ export function pedidoQueAlcanza(s: Estado, items: Cantidades, urgente: boolean,
   return pedidoQueCabe(s, items, urgente, comerNomina ? s.caja : cajaLibre(s));
 }
 
+export const NOTA_FIADO_FERRETERIA = "La caja no alcanza. El guardalmacén te lo fía: toca «Fiado». Sale solo del próximo cobro.";
+
+/** v27: lo que la Ferretería ofrece fiar ahora: el pedido armado (si la caja no lo paga) o, si no hay pedido,
+ * lo que falta para esta etapa o para la próxima que compra. null si la caja alcanza o ya no cabe más fiado. */
+export function fiadoFerreteria(s: Estado, carrito?: Cantidades, urgente = false): { items: Cantidades; total: number; texto: string } | null {
+  const prox = ETAPAS[proximoTramo(s)]?.nombre ?? "la próxima etapa";
+  const texto = (total: number) => `Fiado: ${peso(total)}, sale del cobro de ${prox}`;
+  if (carrito && tieneItems(carrito)) {
+    const c = cuentaFiadoPedido(s, carrito, urgente);
+    return c ? { ...c, texto: texto(c.total) } : null;
+  }
+  const falta = loQueFalta(s);
+  if (tieneItems(falta)) {
+    const c = cuentaFiadoPedido(s, falta, urgente);
+    return c ? { ...c, texto: texto(c.total) } : null;
+  }
+  const sig = siguienteConCompra(s);
+  if (!sig) return null;
+  const c = cuentaFiadoPedido(s, sig.items, urgente);
+  return c ? { ...c, texto: texto(c.total) } : null;
+}
+
 const AVISO_LIBRE_MANANA =
   "No alcanza para la nómina de hoy. Da libre a alguien mañana: abre Cuadrilla y toca Libre mañana.";
 
@@ -4181,7 +4370,11 @@ export function ajusteLoQueFalta(s: Estado): { items: Cantidades; nota: string }
   const of = ofertaDe(s, full, false, "Lo que falta");
   if (!of) return { items: {}, nota: viene ? "Ya viene en el camión. No se vuelve a pedir ni se cobra el flete otra vez." : "Por ahora no falta nada." };
   if (of.recorte) {
-    if (!tieneItems(of.cabe ?? {})) return { items: {}, nota: AVISO_LIBRE_MANANA };
+    if (!tieneItems(of.cabe ?? {})) {
+      // v27: con la caja en P$0 «Lo que falta» llena el pedido igual y ofrece el fiado (antes quedaba vacío).
+      if (cuentaFiadoPedido(s, full, false)) return { items: { ...full }, nota: NOTA_FIADO_FERRETERIA };
+      return { items: {}, nota: AVISO_LIBRE_MANANA };
+    }
     let nota = of.comeNomina
       ? "Pedir lo que alcanza. La caja paga esto aunque la nómina quede corta."
       : "No cabe el pedido completo. Esto entra sin tocar la nómina de hoy.";
@@ -4374,13 +4567,57 @@ function ofrecerManual(s: Estado, items: Cantidades, urgente: boolean) {
   s.sita.editando = false;
 }
 
+/** v27: la primera etapa después de la actual a la que todavía le falta comprar algo. Salta las que no compran
+ * (Excavación) y las que ya tienen todo en el almacén o en camino. */
+export function siguienteConCompra(s: Estado): { idx: number; items: Cantidades; lineas: string } | null {
+  const base = stockBase(s);
+  const ahora = renglonesDe(s, necesidadActual(s), base.hay, base.vienen);
+  let hay = ahora.haySobra;
+  let vienen = ahora.vienenSobra;
+  for (let i = s.etapa + 1; i < ETAPAS.length; i++) {
+    const r = renglonesDe(s, sumaNecesidad(s, i, false), hay, vienen);
+    const items = itemsDe(r.renglones);
+    if (tieneItems(items)) return { idx: i, items, lineas: lineasCuenta(r.renglones) };
+    hay = r.haySobra;
+    vienen = r.vienenSobra;
+  }
+  return null;
+}
+
+/** La etapa actual no compra nada, pero otra más adelante sí: el guardalmacén deja pedirla de una vez.
+ * v27: también cuando la etapa que sigue ya está cubierta (busca la próxima que compra) y aunque la caja no alcance
+ * (entonces la hoja lo dice y el pedido se puede fiar). */
+export function ofertaSiguiente(s: Estado, urgente = false): OfertaSita | null {
+  const cuerpo = cuerpoNota(s);
+  if (tieneItems(cuerpo.items)) return null;
+  const prox = siguienteConCompra(s);
+  if (!prox) return null;
+  const sig = { ...prox.items };
+  const flete = fleteDe(s, urgente);
+  const mats = costoMats(sig);
+  const total = mats + flete;
+  const cuando = fraseCuando(s, urgente, llegadaPedido(s, urgente, s.minuto + 1));
+  const estaCompra = pideCompra(sumaNecesidad(s, s.etapa, true));
+  let texto = estaCompra ? "Lo de esta etapa ya está en el almacén o en camino." : "Esta etapa no necesita material.";
+  texto += prox.idx === s.etapa + 1 ? `\nPara la siguiente etapa:\n${prox.lineas}` : `\nPara ${ETAPAS[prox.idx]!.nombre} (la próxima que compra):\n${prox.lineas}`;
+  texto += `\n¿Pido la siguiente? ${urgente ? "Urgente" : "Normal"} ${peso(total)}, ${cuando}.`;
+  const cuenta = cuentaPedido(s, total);
+  if (!cuenta.alcanza) {
+    texto += ` ${textoCajaLibre(s)}.`;
+    if (cuentaFiadoPedido(s, sig, urgente)) texto += " Si la caja no alcanza, te lo fío: sale del próximo cobro.";
+  }
+  return { items: {}, urgente, mats: 0, flete, total: 0, texto, siguiente: sig };
+}
+
 export function hablarSita(s: Estado) {
   if (!s.firmado || !s.sita || s.entregada) return;
   const items = loQueFalta(s);
   if (tieneItems(items)) ofrecerManual(s, items, false);
   else {
-    s.sita.oferta = null;
-    s.sita.ultima = null;
+    const sig = ofertaSiguiente(s);
+    s.sita.oferta = sig;
+    s.sita.ultima = sig ? { ...sig, items: {}, siguiente: { ...sig.siguiente } } : null;
+    s.sita.editando = false;
   }
   s.panel = "sita";
 }
@@ -4390,6 +4627,27 @@ export function editarSita(s: Estado) {
   s.sita.editando = true;
   s.sita.fase = "nota";
   s.panel = "ferreteria";
+}
+
+/** v28: segundos reales como mucho que el reloj espera al guardalmacén. */
+export const SITA_MAX_SEG = 4;
+
+/** v28: el guardalmacén llega con la nota aunque no haya podido caminar hasta el maestro. */
+function llegaSita(s: Estado) {
+  if (!s.sita) return;
+  const j = s.jugador;
+  const cerca = [
+    { x: j.x + 0.9, y: j.y },
+    { x: j.x - 0.9, y: j.y },
+    { x: j.x, y: j.y + 0.9 },
+    { x: j.x, y: j.y - 0.9 },
+  ].find((p) => !choca(p.x, p.y));
+  if (cerca) {
+    s.sita.x = cerca.x;
+    s.sita.y = cerca.y;
+  }
+  s.sita.fase = "nota";
+  s.sita.andando = 0;
 }
 
 function moverSita(s: Estado, dt: number, vel: number) {
@@ -4444,7 +4702,7 @@ export function pedir(s: Estado, items: Cantidades, urgente: boolean, mantener =
   const flete = fleteDe(s, urgente);
   const total = mats + flete;
   if (total > s.caja + 0.5) return `No alcanza la caja. Tienes ${pesoCaja(s.caja)} y el pedido es ${peso(total)}.`;
-  let cementoNuevo = limpio.cemento ?? 0;
+  const cementoNuevo = limpio.cemento ?? 0;
   if (cementoNuevo > 0) {
     const bajoTecho = s.inv.cemento.q;
     const ya = (s.entrada.cemento?.q ?? 0) + enCamino(s, "cemento");
@@ -4506,9 +4764,22 @@ export function pedirTambien(s: Estado): string | null {
   const of = s.sita?.oferta;
   const sig = of?.siguiente;
   if (!of || !sig || !tieneItems(sig)) return "La etapa siguiente no pide material.";
+  // v28: el Revisor pidió con la hoja mostrando cemento, arena y grava, tocó el botón de la siguiente etapa y solo le
+  // llegó pino y abeto: al otro día la cuadrilla quedó parada. Mientras a esta etapa le falte material, la siguiente
+  // no sale sola: primero lo de esta etapa.
+  const antes = primeroEstaEtapa(s);
+  if (antes) return antes;
   const quedaMain = tieneItems(of.items);
   const err = pedir(s, sig, !!of.urgente, quedaMain);
   if (!err && quedaMain && s.sita?.oferta) s.sita.oferta.siguiente = undefined;
+  else if (!err && s.sita?.oferta) {
+    // Solo se pidió la siguiente: la hoja queda como pedida, sin botón para repetir el pedido.
+    const hoja = hojaGuardalmacen(s, textoLlegada(s, !!of.urgente));
+    s.sita.oferta.siguiente = undefined;
+    s.sita.oferta.hecho = true;
+    s.sita.oferta.texto = hoja.texto;
+    s.sita.ultima = null;
+  }
   return err;
 }
 
@@ -4552,6 +4823,24 @@ export function asignar(s: Estado, id: string, puesto: Puesto | null) {
   chequearTutorial(s);
 }
 
+/** v27: lo que cuesta despedir a alguien ahora (el día completo y la herramienta, si hoy vino y aún no se pagó la
+ * nómina), para mostrarlo y pedir confirmación antes. */
+export function costoDespedir(s: Estado, id: string): { total: number; jornal: number; herramienta: number; texto: string; ultimo: boolean } | null {
+  const g = s.gente.find((x) => x.id === id) ?? s.reserva.find((x) => x.id === id);
+  if (!g) return null;
+  const ultimo = s.gente.length + s.reserva.length === 1;
+  const cobra = s.gente.includes(g) && g.activo && !g.falto && !s.nominaPagada;
+  const jornal = cobra ? jornalDe(g.oficio, g.rinde) : 0;
+  const herramienta = cobra ? Math.round(jornal * HERRAMIENTA) : 0;
+  const total = jornal + herramienta;
+  let texto = total > 0
+    ? `Despedir a ${g.nombre} cuesta ${peso(total)}: el día completo (${peso(jornal)}) y la herramienta (${peso(herramienta)}).`
+    : `Despedir a ${g.nombre} no cuesta nada: hoy no cobra.`;
+  if (total > 0 && s.caja < total - 0.5) texto += ` La caja tiene ${pesoCaja(s.caja)}: lo que falte queda como deuda de nómina.`;
+  if (ultimo) texto += " Es el último de la cuadrilla: sin nadie, la obra se pierde.";
+  return { total, jornal, herramienta, texto, ultimo };
+}
+
 export function despedir(s: Estado, id: string) {
   const gi = s.gente.findIndex((g) => g.id === id);
   if (gi >= 0) {
@@ -4562,10 +4851,16 @@ export function despedir(s: Estado, id: string) {
       s.costos.muerto.mo += diff;
       anotarMuerto(s, g, diff, j > 0 ? (diff * 480) / j : 0, "resto");
       const herr = Math.round(j * HERRAMIENTA);
-      s.caja -= j + herr;
+      // v27: la caja no baja de P$0; lo que no alcanza queda como deuda de nómina (se paga con la nómina de mañana).
+      const paga = Math.min(Math.max(0, s.caja), j + herr);
+      s.caja -= paga;
+      const resta = j + herr - paga;
+      if (resta > 0.5) s.deudaNomina = (s.deudaNomina ?? 0) + resta;
       s.costos.herramienta.mo += herr;
-      aviso(s, `Despediste a ${g.nombre}. Le pagaste el día (${peso(j)}) y la herramienta (${peso(herr)}).`);
-      diario(s, `Despediste a ${g.nombre} ${g.apellido}: −${peso(j + herr)}.`);
+      aviso(s, resta > 0.5
+        ? `Despediste a ${g.nombre}. Le pagaste ${peso(paga)} de ${peso(j + herr)} (día y herramienta). Quedan ${peso(resta)} de deuda de nómina.`
+        : `Despediste a ${g.nombre}. Le pagaste el día (${peso(j)}) y la herramienta (${peso(herr)}).`);
+      diario(s, `Despediste a ${g.nombre} ${g.apellido}: −${peso(paga)}${resta > 0.5 ? ` (debes ${peso(resta)})` : ""}.`);
     } else {
       aviso(s, `Despediste a ${g.nombre}. Hoy no cobró.`);
       diario(s, `Despediste a ${g.nombre} ${g.apellido}.`);
@@ -4582,9 +4877,20 @@ export function despedir(s: Estado, id: string) {
 }
 
 export function marcarLibre(s: Estado, id: string, valor: boolean) {
-  const g = s.gente.find((x) => x.id === id);
+  const g = s.gente.find((x) => x.id === id) ?? s.reserva.find((x) => x.id === id);
   if (!g) return;
   g.libre = valor;
+}
+
+/** v28: «Libre mañana» cambia sobre el estado vivo (no sobre la foto de la pantalla, que podía estar 0,2 s atrasada y
+ * dejar el botón como estaba) y lo dice claro. Devuelve cómo quedó. */
+export function alternarLibre(s: Estado, id: string): boolean | null {
+  const g = s.gente.find((x) => x.id === id) ?? s.reserva.find((x) => x.id === id);
+  if (!g) return null;
+  g.libre = !g.libre;
+  const otroDia = esDomingo(s.dia + 1) ? "el lunes" : "mañana";
+  aviso(s, g.libre ? `${g.nombre} libre ${otroDia}: no viene ni cobra.` : `${g.nombre} sí viene ${otroDia}.`);
+  return g.libre;
 }
 
 function pideCompra(need: Cantidades): boolean {
@@ -4850,7 +5156,7 @@ export function siguienteDia(s: Estado) {
       return;
     }
   }
-  let dia = s.dia + 1;
+  const dia = s.dia + 1;
   s.dia = dia;
   s.minuto = 7 * 60;
   s.frac = 0;
@@ -4920,10 +5226,8 @@ export function siguienteDia(s: Estado) {
     diario(s, caja);
     aviso(s, caja);
   }
-  if (s.gente.length + s.reserva.length === 0) {
-    s.panel = "perdida";
-    diario(s, "No quedó nadie trabajando. La obra se perdió.");
-  } else s.panel = null;
+  if (s.gente.length + s.reserva.length === 0) perderObra(s);
+  else s.panel = null;
 }
 
 function generarCandidatos(s: Estado): Persona[] {

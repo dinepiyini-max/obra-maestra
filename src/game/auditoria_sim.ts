@@ -582,6 +582,8 @@ export interface Cfg {
   torpe?: boolean;
   /** v23: tiempo de reacción relativo (1 = humano normal; 3 = un tercio de la velocidad). Revisa la obra, pide y plomea más tarde. */
   reaccion?: number;
+  /** v26: juega sin peón ni ayudante (solo oficiales) y empieza con la caja en P$0. Tiene que entregar igual. */
+  sinAyuda?: boolean;
 }
 export const BOTS: Record<string, Cfg> = {
   principiante: { nombre: "principiante", cupo: 3, orden: "azar", horaPedido: 11 * 60, siguiente: false, olvido: 0.3, errorPuesto: 0.25, golpeCada: 20, fallaPlomo: 0.35, urgente: true, soloSita: false, cortarTemprano: false },
@@ -589,6 +591,9 @@ export const BOTS: Record<string, Cfg> = {
   // v19: con bono por entrega temprana, el experto apuesta a 4 con 2 albañiles para entregar antes.
   experto: { nombre: "experto", cupo: 4, orden: "albaniles", horaPedido: 7 * 60, siguiente: true, olvido: 0, errorPuesto: 0, golpeCada: 5, fallaPlomo: 0, urgente: false, soloSita: false, cortarTemprano: true },
 };
+/** v26: el caso del Revisor en la v25: solo albañiles (y otros oficiales), sin peón ni ayudante, y la caja en P$0. */
+export const BOT_SIN_AYUDA: Cfg = { nombre: "sinAyuda", cupo: 3, orden: "albaniles", horaPedido: 7 * 60, siguiente: false, olvido: 0, errorPuesto: 0, golpeCada: 10, fallaPlomo: 0, urgente: false, soloSita: false, cortarTemprano: false, torpe: true, sinAyuda: true };
+const esAyudaOf = (of: string) => of === "peon" || of === "ayudante";
 export const ESTRATEGIAS: Record<string, Cfg> = {
   A_dos_albaniles_c4: { ...BOTS.experto!, nombre: "A 2 albañiles, cuadrilla 4", cupo: 4 },
   B_grande_c7: { ...BOTS.experto!, nombre: "B cuadrilla 7", cupo: 7 },
@@ -609,6 +614,12 @@ export function correr(seed: number, cfg0: Cfg, clima: Clima = "normal", precios
   firmar(s);
   chequeo?.(s, "firmar");
   let cand = [...s.candidatos];
+  if (cfg.sinAyuda) {
+    cand = cand.filter((c) => !esAyudaOf(c.oficio));
+    // La caja se vacía a mano: lo quitado se anota aparte para que el cuadre lo descuente.
+    (s as Estado & { quitadoBot?: number }).quitadoBot = s.caja;
+    s.caja = 0;
+  }
   if (cfg.orden === "albaniles") { const a = cand.filter((c) => c.oficio === "albanil").slice(0, 2); cand = [...a, ...cand.filter((c) => !a.includes(c))]; }
   if (cfg.orden === "baratos") cand.sort((a, b) => jornalDe(a.oficio, a.rinde) - jornalDe(b.oficio, b.rinde));
   if (cfg.orden === "azar") cand.sort(() => r() - 0.5);
@@ -713,7 +724,7 @@ function gestionarCfg(s: Estado, cfg: Cfg, r: () => number, conPedido: boolean) 
       if (c) contratar(s, c.id);
     }
   }
-  for (const c of [...s.candidatos]) { if (s.gente.length + s.reserva.length >= cfg.cupo) break; if (contratar(s, c.id)) break; }
+  for (const c of [...s.candidatos]) { if (cfg.sinAyuda && esAyudaOf(c.oficio)) continue; if (s.gente.length + s.reserva.length >= cfg.cupo) break; if (contratar(s, c.id)) break; }
   if (r() < cfg.errorPuesto / 4) { for (const g of s.gente) asignar(s, g.id, "obra"); }
   else {
     const vivos = s.gente.filter((g) => g.activo && !g.falto && !g.fuera);

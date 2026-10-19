@@ -146,7 +146,7 @@ import {
   textoSinTarea,
   type Cierre,
 } from "./motor.ts";
-import { correr, BOTS } from "./auditoria_sim.ts";
+import { correr, BOTS, BOT_SIN_AYUDA } from "./auditoria_sim.ts";
 
 describe("regresión v23", () => {
   it("1. la Entrega muestra pago, adelanto, fiado, bono, nómina y deuda, y cuadra con montos fijos", () => {
@@ -346,5 +346,105 @@ describe("regresión v23", () => {
     assert.equal(JSON.parse(mem.get("obra-maestra-v2")!).rev, 2);
     void pesoTxt;
     delete (globalThis as any).localStorage;
+  });
+});
+
+// ===================== v24: obras que se trababan hasta el día 61 =====================
+import { PERFILES, cuadreCaja } from "./sim_v18.ts";
+
+describe("regresión v24: siempre hay salida", () => {
+  // Causa: en Relleno y piso el firme quedaba en 7.98 de 8 (falta 0.02 tanda de hormigón). tandaCabe pedía más de
+  // 0.02 tanda pendiente para batir, así que el trompo nunca batía y el guardalmacén (que ve 0.02 cubierto) no pedía nada.
+  const casos = [
+    ["principiante", 2, "mucha"],
+    ["principiante", 7, "normal"],
+    ["principiante", 40, "normal"],
+    ["humano", 32, "mucha"],
+    ["torpe", 38, "mucha"],
+  ] as const;
+  for (const [perfil, seed, clima] of casos) {
+    it(`${perfil} semilla ${seed} (${clima}) entrega y no se traba`, () => {
+      const r = correr(seed, PERFILES[perfil]!, clima, 0.15);
+      assert.equal(r.s.entregada, true, `día ${r.s.dia} etapa ${r.s.etapa}`);
+      assert.equal(r.s.etapa, 9);
+      assert.ok(r.s.dia <= 30, `entregó el día ${r.s.dia}`);
+    });
+  }
+  // v26: el caso del Revisor en la v25: sin peón ni ayudante y con la caja en P$0 nadie batía y la obra quedaba
+  // trabada en Cimientos hasta el día 61. Ahora el albañil hace de ayuda (trompo, agua, acarreo) y el fiado paga.
+  // v27: entrega antes (34/30/30 → 31/29/29): el mortero ya no se bate sin block en el almacén ni se vence en el trompo.
+  for (const [seed, dia] of [[1, 31], [2, 29], [4, 29]] as const) {
+    it(`sin peón ni ayudante y caja P$0, semilla ${seed}: entrega el día ${dia}`, () => {
+      const r = correr(seed, BOT_SIN_AYUDA, "normal", 0.15);
+      assert.equal(r.perdida, false);
+      assert.equal(r.sinSalida, 0);
+      assert.equal(r.s.entregada, true, `día ${r.s.dia} etapa ${r.s.etapa}`);
+      assert.equal(r.s.etapa, 9);
+      assert.equal(r.s.dia, dia);
+      assert.equal(r.s.gente.some((g) => g.oficio === "peon" || g.oficio === "ayudante"), false);
+      assert.equal(Math.round(cuadreCaja(r.s)) + 0, 0, "descuadre 0 (descontando la caja que el bot vació a mano)");
+      assert.equal(Math.round(descuadre(r.s)), -89400, "lo único fuera de cuadre es la caja vaciada a mano");
+    });
+  }
+});
+
+// ===================== v24: bot tramposo =====================
+import { jugarTramposo, patrimonio, avance } from "./tramposo.ts";
+
+describe("v24: el tramposo no fabrica dinero", () => {
+  it("el detector sí ve un truco plantado (dinero sin avance)", () => {
+    const s = nueva(3);
+    firmar(s);
+    const p0 = patrimonio(s);
+    const a0 = avance(s);
+    s.caja += 100;
+    assert.equal(Math.round(patrimonio(s) - p0), 100);
+    assert.equal(avance(s), a0);
+    // Pedir material no sube el patrimonio (paga material y flete).
+    const p1 = patrimonio(s);
+    pedir(s, { cemento: 5 }, false);
+    assert.ok(patrimonio(s) <= p1 + 0.5);
+  });
+  for (const seed of [1, 2, 3, 4, 5]) {
+    it(`semilla ${seed}: ningún truco sube el dinero sin avanzar la obra`, () => {
+      const r = jugarTramposo(seed, (["poca", "normal", "mucha"] as const)[seed % 3]!, 0.15);
+      assert.deepEqual(r.encontrados, []);
+      assert.equal(r.s.entregada, true, `día ${r.s.dia}`);
+    });
+  }
+});
+
+// ===================== v24: hallazgos del Revisor en la 1.0 =====================
+import { cuentaFiadoPedido, fiarPedido, limiteFiado } from "./motor.ts";
+import { FLETE as FLETE_NORMAL, MATERIALES as MAT } from "./datos.ts";
+
+describe("v24: Revisor 1.0", () => {
+  it("1. con la caja en P$0, el pedido suelto también se puede fiar (monto fijo)", () => {
+    const s = nueva(5);
+    firmar(s);
+    s.panel = null;
+    s.caja = 0;
+    s.adelantoDia = 1; // ya no hay adelanto
+    const items = { cemento: 5 };
+    const c = cuentaFiadoPedido(s, items, false);
+    assert.ok(c, "ofrece fiado");
+    assert.equal(c!.total, 5 * MAT.cemento.precio + FLETE_NORMAL); // 5 × 550 + 1,500 = 4,250
+    assert.equal(c!.total, 4250);
+    const lim = limiteFiado(s);
+    const d0 = descuadre(s);
+    assert.equal(fiarPedido(s, items, false), null);
+    assert.equal(s.caja, 0, "la caja no se toca");
+    assert.equal(s.fiado, 4250);
+    assert.equal(limiteFiado(s), lim - 4250);
+    assert.equal(s.pedidos.length, 1);
+    assert.equal(Math.round(descuadre(s) - d0), 0, "el fiado cuadra: entra material y deuda por igual");
+    // Con caja que lo paga, no se fía.
+    const r = nueva(5);
+    firmar(r);
+    r.caja = 50000;
+    assert.equal(cuentaFiadoPedido(r, items, false), null);
+    // Nunca más de lo que queda por cobrar.
+    s.fiado = limiteFiado(s) + (s.fiado ?? 0);
+    assert.equal(cuentaFiadoPedido(s, items, false), null);
   });
 });

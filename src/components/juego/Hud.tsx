@@ -99,13 +99,13 @@ export function Retrato({ oficio, letra }: { oficio: Oficio; letra: string }) {
   const c = OFICIO_COLOR[oficio];
   return (
     <svg viewBox="0 0 48 48" className="h-11 w-11 shrink-0" aria-hidden="true">
-      <ellipse cx="24" cy="44" rx="12" ry="3" fill="#1d1712" opacity="0.25" />
-      <path d="M14 40 C12 28 14 22 24 20 C34 22 36 28 34 40 Z" fill={c.camisa} stroke="#1d1712" strokeWidth="1.4" />
-      <circle cx="24" cy="16" r="8" fill="#e6c2a4" stroke="#1d1712" strokeWidth="1.3" />
-      <path d="M14 16 C14 8 18 5 24 5 C32 6 35 10 34 16 Z" fill={c.casco} stroke="#1d1712" strokeWidth="1.3" />
-      <circle cx="21" cy="16" r="1.2" fill="#1d1712" />
-      <circle cx="27.5" cy="15.4" r="1" fill="#1d1712" />
-      <text x="24" y="11.5" textAnchor="middle" fontSize="7" fontFamily="Patrick Hand, cursive" fill="#1d1712">
+      <ellipse cx="24" cy="44" rx="12" ry="3" fill="#1B1F23" opacity="0.25" />
+      <path d="M14 40 C12 28 14 22 24 20 C34 22 36 28 34 40 Z" fill={c.camisa} stroke="#1B1F23" strokeWidth="1.4" />
+      <circle cx="24" cy="16" r="8" fill="#e6c2a4" stroke="#1B1F23" strokeWidth="1.3" />
+      <path d="M14 16 C14 8 18 5 24 5 C32 6 35 10 34 16 Z" fill={c.casco} stroke="#1B1F23" strokeWidth="1.3" />
+      <circle cx="21" cy="16" r="1.2" fill="#1B1F23" />
+      <circle cx="27.5" cy="15.4" r="1" fill="#1B1F23" />
+      <text x="24" y="11.5" textAnchor="middle" fontSize="7" fontFamily="Patrick Hand, cursive" fill="#1B1F23">
         {letra}
       </text>
     </svg>
@@ -180,14 +180,14 @@ export function LineaGuia({ paso, mostrar }: { paso: number; mostrar: boolean })
     <p
       ref={ref}
       data-guia={paso}
-      className="pointer-events-auto mx-auto mt-1 flex w-full max-w-full items-start justify-center gap-2 border border-tinta/80 bg-papel/90 px-2 py-1 text-center font-hand text-sm leading-snug text-tinta"
+      className="pointer-events-auto mx-auto mt-1 flex w-full max-w-full items-start justify-center gap-2 border border-tinta/80 bg-cemento-claro/90 px-2 py-1 text-center font-hand text-sm leading-snug text-tinta"
     >
       <span className="min-w-0 flex-1 text-pretty">
         Guía {paso + 1}/8 · {TUTORIAL[paso]}
       </span>
       <button
         type="button"
-        className="min-h-11 min-w-11 shrink-0 border border-tinta/50 bg-papel/80 font-hand text-base leading-none text-tinta"
+        className="min-h-11 min-w-11 shrink-0 border border-tinta/50 bg-cemento-claro/80 font-hand text-base leading-none text-tinta"
         aria-label="Cerrar guía"
         onClick={() => cerrarGuia(paso)}
       >
@@ -208,7 +208,7 @@ export function Hud({
   onQuitar,
   onAdelanto,
   onFiar,
-  vuelo,
+  onReporte,
 }: {
   s: Estado;
   movil: boolean;
@@ -220,7 +220,8 @@ export function Hud({
   onQuitar: (id: number) => void;
   onAdelanto: () => void;
   onFiar: () => void;
-  vuelo?: "entra" | "sale" | null;
+  /** v28: con «Reportar» abierto el reloj se para (antes seguía y al cerrar la cuadrilla ya se había ido). */
+  onReporte?: (abierto: boolean) => void;
 }) {
   const [chico, setChico] = useState(false);
   const [bajo, setBajo] = useState(false);
@@ -229,6 +230,11 @@ export function Hud({
   const [versionReporte, setVersionReporte] = useState(VERSION_REPORTE);
   const [avisoReporte, setAvisoReporte] = useState<string | null>(null);
   const [reporteOk, setReporteOk] = useState(false);
+  const reporteAbierto = useRef(onReporte);
+  reporteAbierto.current = onReporte;
+  useEffect(() => {
+    reporteAbierto.current?.(reporte);
+  }, [reporte]);
   const [enviandoReporte, setEnviandoReporte] = useState(false);
   const [, setGuiaTick] = useState(0);
   useEffect(() => alCambioGuia(() => setGuiaTick((n) => n + 1)), []);
@@ -241,7 +247,6 @@ export function Hud({
     window.addEventListener("resize", mq);
     return () => window.removeEventListener("resize", mq);
   }, []);
-  const [nomAbierta, setNomAbierta] = useState(false);
   const quitar = useRef(onQuitar);
   quitar.current = onQuitar;
   const born = useRef(new Map<number, number>());
@@ -275,7 +280,7 @@ export function Hud({
     const acc0 = accion(s);
     const pista0 = !s.panel && acc0.verbo !== "Camina" && acc0.verbo !== "Firma primero";
     const pistaCls =
-      "absolute mx-auto truncate bg-papel/85 px-3 text-center font-hand text-tinta " +
+      "absolute mx-auto truncate bg-cemento-claro/85 px-3 text-center font-hand text-tinta " +
       (bajo
         ? "bottom-1 left-[5.25rem] right-[5.5rem] py-0.5 text-[11px] leading-tight"
         : movil
@@ -284,7 +289,7 @@ export function Hud({
     return (
       <div className="pointer-events-none absolute inset-0 z-10">
         <div className="flex items-start justify-end px-2 pt-1.5 min-[900px]:pt-[52px]">
-          <button type="button" onClick={onPausa} className={"pointer-events-auto border border-papel/40 bg-fondo/90 px-3 font-hand text-papel " + (chico ? "min-h-11 min-w-11 text-base" : "min-h-11 text-xl")}>
+          <button type="button" onClick={onPausa} className={"pointer-events-auto border border-cemento-claro/40 bg-noche/90 px-3 font-hand text-cemento-claro " + (chico ? "min-h-11 min-w-11 text-base" : "min-h-11 text-xl")}>
             Pausa
           </button>
         </div>
@@ -293,7 +298,7 @@ export function Hud({
             {guia0 ? (
               <LineaGuia paso={0} mostrar />
             ) : (
-              <p className="bg-papel/85 px-3 py-2 text-center font-hand text-base leading-tight text-tinta">{espera}</p>
+              <p className="bg-cemento-claro/85 px-3 py-2 text-center font-hand text-base leading-tight text-tinta">{espera}</p>
             )}
           </div>
         )}
@@ -309,14 +314,12 @@ export function Hud({
   const enAlcance = acc.verbo !== "Camina" && acc.verbo !== "Firma primero";
   const avisos = s.avisos.filter((a) => !a.texto.includes("dañado") && !avisoRepite(a.texto, cartel)).slice(-1);
   const btn =
-    "pointer-events-auto border border-papel/40 bg-fondo/90 font-hand text-papel " +
-    // v19: todo botón tocable mide al menos 44 px.
-    (bajo ? "min-h-11 min-w-11 px-1.5 text-xs" : chico ? "min-h-11 min-w-11 px-1.5 text-xs" : movil ? "min-h-11 min-w-11 px-2 text-base" : "min-h-11 min-w-11 px-2 text-sm");
+    "pointer-events-auto min-h-11 min-w-11 rounded-md border-2 border-block-sombra bg-cemento px-2 font-ui text-base font-bold text-tinta";
   const mundo = !s.panel;
   const adelanto = puedeAdelantar(s) && !s.entregada;
   const faltaNomina = mundo ? textoFaltaNomina(s) : null;
   const quiereGuia = mundo && paso >= 0 && paso < TUTORIAL.length && !repiteCartel(TUTORIAL[paso] ?? "", cartel);
-  // v18: los avisos de caja y adelanto pasan delante de la guía, para que el principiante los vea.
+  // los avisos de caja y adelanto pasan delante de la guía, para que el principiante los vea.
   const urgente = avisos.length > 0 && /^(Te quedan|Ojo con el adelanto|Pasaron 18 días)/.test(avisos[0]!.texto);
   const guiaOn = quiereGuia && !urgente && guiaVisible(paso, true);
   const avisoOn = mundo && !guiaOn && avisos.length > 0;
@@ -351,110 +354,100 @@ export function Hud({
   }
 
   return (
-    <div className={"pointer-events-none absolute inset-0 text-papel " + (reporte ? "z-50" : "z-10")}>
+    <div className={"pointer-events-none absolute inset-0 text-cemento-claro " + (reporte ? "z-50" : "z-10")}>
       {bajo ? (
-        <div className="flex items-center gap-2 bg-fondo/90 px-2 py-1 min-[900px]:mt-[52px]">
-          <div className="font-hand text-sm leading-none whitespace-nowrap">
+        <div className="flex flex-wrap items-center gap-1 px-2 py-1 min-[900px]:mt-[52px]">
+          <div className={"max-w-[70%] rounded-md px-2 py-1 font-ui text-sm font-bold leading-tight " + (s.lluviaOn ? "bg-block-sombra text-cemento-claro" : "bg-cielo text-tinta")}>
             {r.hora} {cortoDia(s.dia)} {s.dia}
-            {relojParado(s) && s.firmado && !s.entregada ? <span data-reloj-parado> · ⏸ reloj parado</span> : null}
+            {relojParado(s) && s.firmado && !s.entregada ? <span data-reloj-parado> · reloj parado</span> : null}
           </div>
-          <div className="truncate font-hand text-[11px] leading-none text-papel/80" data-clima>
+          <div className="min-w-[7rem] flex-1 font-ui text-sm leading-tight break-words text-cemento-claro" data-clima>
             {r.clima}
           </div>
-          <div data-caja className={"font-hand text-sm leading-none text-[#f3e6c4] " + (late ? "caja-latido" : "")}>
+          <div data-caja className={"rounded-md bg-colmado-amarillo px-2 py-1 font-ui text-sm font-bold leading-none text-tinta " + (late ? "caja-latido" : "")}>
             {pesoCaja(s.caja)}
           </div>
           {adelanto ? (
-            <button type="button" onClick={onAdelanto} className="pointer-events-auto font-hand text-[11px] text-oro underline">
+            <button type="button" onClick={onAdelanto} className="pointer-events-auto min-h-11 rounded-md bg-colmado-amarillo px-2 font-ui text-sm font-bold text-tinta">
               Adelanto
             </button>
           ) : null}
-          <div className="ml-auto flex gap-1">
+          <button type="button" onClick={onLibreta} className={btn}>
+            Libreta
+          </button>
+          <button type="button" onClick={onCuadrilla} className={btn + (faltaPuesto ? " ring-2 ring-colmado-amarillo" : "")}>
+            Cuadrilla
+          </button>
+          {!s.entregada ? (
+            <button type="button" {...alToque(onTerminar)} className={btn}>
+              Terminar
+            </button>
+          ) : null}
+          <button type="button" onClick={abrirReporte} className={btn}>
+            Reportar
+          </button>
+          <button type="button" onClick={onPausa} className={btn}>
+            Pausa
+          </button>
+        </div>
+      ) : (
+        <div className="px-2 pt-1.5 min-[900px]:pt-[52px]">
+          <div className="flex items-start justify-between gap-2">
+            <div className={"max-w-full rounded-md px-2.5 py-1.5 " + (s.lluviaOn ? "bg-block-sombra text-cemento-claro" : "bg-cielo text-tinta")}>
+              <div className="flex items-end gap-1">
+                <svg viewBox="0 0 54 24" className={"mb-0.5 h-6 w-14 shrink-0 " + (chico ? "hidden" : "")} aria-hidden="true">
+                  <path d="M4 20 A23 16 0 0 0 50 20" fill="none" stroke="#1B1F23" strokeWidth="1.2" />
+                  {(() => {
+                    const t = Math.min(1, Math.max(0, (s.minuto - 7 * 60) / (8 * 60)));
+                    const a = Math.PI + t * Math.PI;
+                    const cx = 27 + Math.cos(a) * 23;
+                    const cy = 20 + Math.sin(a) * 16;
+                    if (s.lluviaOn) {
+                      return <ellipse cx={cx} cy={cy} rx="5.5" ry="3.2" fill="#5E6163" stroke="#1B1F23" strokeWidth="0.8" />;
+                    }
+                    return <circle cx={cx} cy={cy} r="2.6" fill="#F6C928" stroke="#1B1F23" strokeWidth="0.6" />;
+                  })()}
+                </svg>
+                <div className={"min-w-0 font-ui font-bold leading-tight " + (chico ? "text-base" : "text-xl")}>
+                  {r.hora} {cortoDia(s.dia)} {s.dia}
+                  {relojParado(s) && s.firmado && !s.entregada ? <span data-reloj-parado> · reloj parado</span> : null}
+                </div>
+              </div>
+              <div className="truncate font-ui text-sm font-bold leading-tight" data-clima>
+                {r.clima}
+              </div>
+              <div className="mt-1 h-1.5 w-full rounded-sm bg-noche/30">
+                <div className="h-full rounded-sm bg-tinta" style={{ width: `${r.progreso * 100}%` }} />
+              </div>
+            </div>
+            <div data-caja className={"pointer-events-auto shrink-0 rounded-md bg-colmado-amarillo px-2.5 py-1.5 text-right text-tinta " + (late ? "caja-latido" : "")}>
+              <div className={"flex items-center justify-end gap-1 font-ui font-bold leading-none " + (chico ? "text-base" : "text-xl")}><Icono nombre="peso" />{pesoCaja(s.caja)}</div>
+              {adelanto ? (
+                <div className="text-right leading-none">
+                  <button type="button" onClick={onAdelanto} className="min-h-11 font-ui text-sm font-bold text-tinta underline">
+                    Pedir adelanto
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </div>
+          <div className="mt-1 flex flex-wrap justify-end gap-1">
             <button type="button" onClick={onLibreta} className={btn}>
               Libreta
             </button>
-            <button type="button" onClick={onCuadrilla} className={btn + (faltaPuesto ? " ring-2 ring-oro" : "")}>
-              Cuadrilla
-            </button>
-            {!s.entregada ? (
-              <button type="button" {...alToque(onTerminar)} className={btn}>
-                Terminar
-              </button>
-            ) : null}
             <button type="button" onClick={abrirReporte} className={btn}>
               Reportar
+            </button>
+            <button
+              type="button"
+              onClick={onCuadrilla}
+              className={btn + (faltaPuesto ? " ring-2 ring-colmado-amarillo ring-offset-2 ring-offset-noche" : "")}
+            >
+              Cuadrilla
             </button>
             <button type="button" onClick={onPausa} className={btn}>
               Pausa
             </button>
-          </div>
-        </div>
-      ) : (
-        <div className="flex items-start justify-between gap-2 px-2 pt-1.5 min-[900px]:pt-[52px]">
-          <div className={"shrink-0 bg-fondo/90 px-2.5 py-1.5 " + (chico ? "max-w-[46%]" : "")}>
-            <div className="flex items-end gap-1">
-              <svg viewBox="0 0 54 24" className="mb-0.5 h-6 w-14 shrink-0" aria-hidden="true">
-                <path d="M4 20 A23 16 0 0 0 50 20" fill="none" stroke="#e8dcc2" strokeWidth="1.2" />
-                {(() => {
-                  const t = Math.min(1, Math.max(0, (s.minuto - 7 * 60) / (8 * 60)));
-                  const a = Math.PI + t * Math.PI;
-                  const cx = 27 + Math.cos(a) * 23;
-                  const cy = 20 + Math.sin(a) * 16;
-                  if (s.lluviaOn) {
-                    return <ellipse cx={cx} cy={cy} rx="5.5" ry="3.2" fill="#c5c0b6" stroke="#e8dcc2" strokeWidth="0.8" />;
-                  }
-                  return <circle cx={cx} cy={cy} r="2.6" fill="#f2d27a" stroke="#e8dcc2" strokeWidth="0.6" />;
-                })()}
-              </svg>
-              <div className={"font-hand leading-none text-papel " + (chico ? "text-base" : "text-xl")}>
-                {r.hora} {cortoDia(s.dia)} {s.dia}
-                {relojParado(s) && s.firmado && !s.entregada ? <span data-reloj-parado> · ⏸ reloj parado</span> : null}
-              </div>
-            </div>
-            <div className={"truncate font-hand leading-tight text-papel/80 " + (chico ? "text-[11px]" : "text-xs")} data-clima>
-              {r.clima}
-            </div>
-            <div className="mt-1 h-0.5 w-full bg-tierra">
-              <div className="h-full bg-oro" style={{ width: `${r.progreso * 100}%` }} />
-            </div>
-          </div>
-          <div className="hidden h-12 min-w-[320px] flex-1 min-[900px]:block" aria-hidden="true" />
-          <div data-caja className={"pointer-events-auto relative shrink-0 bg-fondo/90 px-2.5 py-1.5 text-right " + (late ? "caja-latido" : "") + (chico ? " max-w-[52%]" : "")}>
-            <div className={"font-hand leading-none text-[#f3e6c4] " + (chico ? "text-base" : "text-xl")}>{pesoCaja(s.caja)}</div>
-            <div className="h-4 text-right leading-none">
-              {adelanto ? (
-                <button type="button" onClick={onAdelanto} className="font-hand text-[11px] text-oro underline">
-                  Pedir adelanto
-                </button>
-              ) : null}
-            </div>
-            {vuelo
-              ? [0, 1, 2, 3, 4].map((i) => (
-                  <span
-                    key={i}
-                    className={"pointer-events-none absolute top-2 right-3 h-16 w-16 rounded-full border-[5px] border-tinta bg-oro " + (vuelo === "sale" ? "moneda-sale" : "moneda-entra")}
-                    style={{ animationDelay: `${i * 60}ms` }}
-                  />
-                ))
-              : null}
-            <div className="mt-0.5 flex justify-end gap-2">
-              <button type="button" onClick={onLibreta} className={btn}>
-                Libreta
-              </button>
-              <button type="button" onClick={abrirReporte} className={btn}>
-                Reportar
-              </button>
-              <button
-                type="button"
-                onClick={onCuadrilla}
-                className={btn + (faltaPuesto ? " ring-2 ring-oro ring-offset-2 ring-offset-fondo" : "")}
-              >
-                Cuadrilla
-              </button>
-              <button type="button" onClick={onPausa} className={btn}>
-                Pausa
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -468,13 +461,13 @@ export function Hud({
             <button
               type="button"
               onClick={() => onQuitar(avisos[0]!.id)}
-              className="max-w-xl border border-tinta/80 bg-papel/90 px-3 py-1 text-center font-hand text-sm text-tinta"
+              className="max-w-xl border border-tinta/80 bg-cemento-claro/90 px-3 py-1 text-center font-hand text-sm text-tinta"
             >
               {avisos[0]!.texto}
             </button>
           </div>
         ) : (
-          <p className={"bg-papel/90 px-3 py-1 text-center font-hand leading-tight text-tinta " + (bajo || chico ? "text-xs" : "text-sm")}>
+          <p className={"bg-cemento-claro/90 px-3 py-1 text-center font-hand leading-tight text-tinta " + (bajo || chico ? "text-xs" : "text-sm")}>
             {cartel}
           </p>
         )}
@@ -485,7 +478,7 @@ export function Hud({
               const mm = minutosMezcla(s);
               if (!mezcla) return null;
               const rojo = !!mm && mm.min <= 20;
-              return <p className={"mt-1 bg-papel/90 px-3 py-1 text-center font-hand text-xs " + (rojo ? "text-rojo" : "text-tinta")}>{mezcla}</p>;
+              return <p className={"mt-1 bg-cemento-claro/90 px-3 py-1 text-center font-hand text-xs " + (rojo ? "text-colmado-rojo" : "text-tinta")}>{mezcla}</p>;
             })()}
         {bajo || guiaOn ? null : (
           <div className="mt-1 flex justify-center gap-1.5">
@@ -496,7 +489,7 @@ export function Hud({
                 <span
                   key={e.id}
                   title={e.nombre}
-                  className={"h-1.5 w-1.5 rounded-full " + (lista ? "bg-oro" : ahora ? "border border-tinta bg-transparent" : "bg-tinta/25")}
+                  className={"h-1.5 w-1.5 rounded-full " + (lista ? "bg-colmado-amarillo" : ahora ? "border border-tinta bg-transparent" : "bg-tinta/25")}
                 />
               );
             })}
@@ -507,7 +500,7 @@ export function Hud({
 
       {reporte ? (
         <form
-          className="pointer-events-auto fixed inset-x-2 top-16 z-50 mx-auto max-w-md border border-tinta bg-papel p-3 text-tinta shadow-sm"
+          className="pointer-events-auto fixed inset-x-2 top-16 z-50 mx-auto max-w-md border border-tinta bg-cemento-claro p-3 text-tinta shadow-sm"
           onSubmit={(e) => {
             e.preventDefault();
             void enviarReporte();
@@ -522,7 +515,7 @@ export function Hud({
               maxLength={800}
               rows={3}
               required
-              className="mt-1 w-full border border-tinta bg-papel-2 px-2 py-1 font-hand text-base text-tinta"
+              className="mt-1 w-full border border-tinta bg-cemento px-2 py-1 font-hand text-base text-tinta"
             />
           </label>
           <div className="mt-2 grid grid-cols-3 gap-2 font-hand text-sm">
@@ -532,17 +525,17 @@ export function Hud({
                 value={versionReporte}
                 onChange={(e) => setVersionReporte(e.target.value)}
                 maxLength={40}
-                className="mt-0.5 w-full border border-tinta bg-papel-2 px-1 py-1"
+                className="mt-0.5 w-full border border-tinta bg-cemento px-1 py-1"
               />
             </label>
             <p className="pt-4">Día {s.dia}</p>
             <p className="pt-4">{etapaNombre}</p>
           </div>
           {avisoReporte ? (
-            <p className={"mt-2 font-hand " + (reporteOk ? "text-tinta" : "text-rojo")}>{avisoReporte}</p>
+            <p className={"mt-2 font-hand " + (reporteOk ? "text-tinta" : "text-colmado-rojo")}>{avisoReporte}</p>
           ) : null}
           <div className="mt-2 flex gap-2">
-            <button type="submit" disabled={enviandoReporte} className="min-h-11 border-2 border-tinta bg-oro px-3 font-hand text-tinta">
+            <button type="submit" disabled={enviandoReporte} className="min-h-11 border-2 border-tinta bg-colmado-amarillo px-3 font-hand text-tinta">
               {enviandoReporte ? "Enviando…" : "Enviar"}
             </button>
             <button type="button" className="min-h-11 border border-tinta px-3 font-hand" onClick={() => setReporte(false)}>
@@ -551,38 +544,30 @@ export function Hud({
           </div>
         </form>
       ) : avisoReporte ? (
-        <p className="pointer-events-auto mx-auto mt-2 max-w-md bg-papel px-3 py-1 text-center font-hand text-tinta">{avisoReporte}</p>
+        <p className="pointer-events-auto mx-auto mt-2 max-w-md bg-cemento-claro px-3 py-1 text-center font-hand text-tinta">{avisoReporte}</p>
       ) : null}
 
       {mundo && avisoSello(s) ? (
-        <p className="pointer-events-none mx-auto mt-1 max-w-md bg-papel/95 px-3 py-1 text-center font-hand text-sm text-tinta" data-falta-sello>
+        <p className="pointer-events-none mx-auto mt-1 max-w-md bg-cemento-claro/95 px-3 py-1 text-center font-hand text-sm text-tinta" data-falta-sello>
           {avisoSello(s)}
         </p>
       ) : null}
 
       {mundo && cuentaFiado(s) ? (
-        <div className="pointer-events-auto mx-auto mt-1 w-full max-w-md border-2 border-rojo bg-papel/95 px-3 py-1 font-hand text-sm text-tinta" data-salida>
+        <div className="pointer-events-auto mx-auto mt-1 w-full max-w-md border-2 border-colmado-rojo bg-cemento-claro/95 px-3 py-1 font-hand text-sm text-tinta" data-salida>
           <p>Sin caja ni adelanto para lo que falta. Salida: el guardalmacén fía {peso(cuentaFiado(s)!.total)} y se cobra solo del próximo tramo.</p>
-          <button type="button" onClick={onFiar} className="mt-1 min-h-11 border-2 border-tinta bg-papel-2 px-3 text-tinta">
+          <button type="button" onClick={onFiar} className="mt-1 min-h-11 border-2 border-tinta bg-cemento px-3 text-tinta">
             Pedir fiado lo de esta etapa
           </button>
         </div>
       ) : null}
 
       {faltaNomina ? (
-        // v19: una línea compacta que se abre al tocarla, no una tarjeta fija en el centro.
-        <div className="pointer-events-auto mx-auto mt-1 w-full max-w-md bg-papel/95 font-hand text-tinta" data-nomina-linea>
-          <button
-            type="button"
-            aria-expanded={nomAbierta}
-            onClick={() => setNomAbierta((v) => !v)}
-            className="flex min-h-11 w-full items-center gap-2 border border-tinta px-3 text-left text-sm"
-          >
-            <span aria-hidden="true">{nomAbierta ? "▾" : "▸"}</span>
-            <span className="min-w-0 flex-1 truncate">{faltaNomina}</span>
-          </button>
-          {nomAbierta ? (
-            <div className="border border-t-0 border-tinta px-3 py-2 text-sm">
+        // el aviso de la nómina de las 3 siempre se ve completo.
+        <div className="pointer-events-auto mx-auto mt-1 w-full max-w-md border-2 border-colmado-rojo bg-cemento-claro/95 font-hand text-tinta" data-nomina-linea data-nomina-visible>
+          <p className="px-3 pt-1 text-sm font-bold" role="alert">{faltaNomina}</p>
+          {faltaNomina ? (
+            <div className="px-3 pb-2 text-sm">
               {(() => {
                 const d = desgloseNomina(s);
                 return (
@@ -593,7 +578,7 @@ export function Hud({
               })()}
               <p>{textoTopeAdelanto(s)}</p>
               {puedeAdelantar(s) ? (
-                <button type="button" onClick={onAdelanto} className="mt-2 min-h-11 border-2 border-tinta bg-papel-2 px-3 text-tinta">
+                <button type="button" onClick={onAdelanto} className="mt-2 min-h-11 border-2 border-tinta bg-cemento px-3 text-tinta">
                   Pedir adelanto a Doña Carmen
                 </button>
               ) : (
@@ -607,7 +592,7 @@ export function Hud({
       {mundo && enAlcance ? (
         <p
           className={
-            "absolute mx-auto truncate bg-papel/85 px-3 text-center font-hand text-tinta " +
+            "absolute mx-auto truncate bg-cemento-claro/85 px-3 text-center font-hand text-tinta " +
             (bajo
               ? "bottom-1 left-[5.25rem] right-[5.5rem] py-0.5 text-[11px] leading-tight"
               : movil
@@ -635,7 +620,7 @@ export function Hud({
           type="button"
           {...alToque(onTerminar)}
           className={
-            "pointer-events-auto absolute z-20 border border-papel/40 bg-fondo font-hand text-papel " +
+            "pointer-events-auto absolute z-20 border border-cemento-claro/40 bg-noche font-hand text-cemento-claro " +
             (movil ? "right-[8.6rem] bottom-4 min-h-11 min-w-11 px-3 text-base" : "right-2 bottom-2 min-h-11 min-w-11 px-3 text-xl")
           }
         >
@@ -643,10 +628,30 @@ export function Hud({
         </button>
       ) : null}
       {s.pausa ? (
-        <div className="absolute left-1/2 top-14 z-30 -translate-x-1/2 border-2 border-papel bg-fondo px-4 py-1 font-display text-2xl text-papel" role="status" data-pausado>
+        <div className="absolute left-1/2 top-14 z-30 -translate-x-1/2 border-2 border-cemento-claro bg-noche px-4 py-1 font-display text-2xl text-cemento-claro" role="status" data-pausado>
           Pausado · el reloj no corre
         </div>
       ) : null}
     </div>
+  );
+}
+
+export const sonidoUi: { ping: (id: string) => void } = { ping: () => {} };
+
+const TRAZO = { fill: "none" as const, stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+
+export function Icono({ nombre }: { nombre: "funda" | "varilla" | "block" | "carretilla" | "trompo" | "cubeta" | "zinc" | "casco" | "peso" }) {
+  return (
+    <svg viewBox="0 0 24 24" className="inline-block h-6 w-6 shrink-0" aria-hidden="true">
+      {nombre === "funda" ? <path {...TRAZO} d="M7 8h10l-1 12H8z M9 8V6h6v2" /> : null}
+      {nombre === "varilla" ? <path {...TRAZO} d="M5 19 L19 5 M8 16 L6 18 M16 8 L18 6" /> : null}
+      {nombre === "block" ? <path {...TRAZO} d="M4 6h16v12H4z M7 9h3v6H7z M14 9h3v6h-3z" /> : null}
+      {nombre === "carretilla" ? <path {...TRAZO} d="M4 16h10l3-7H8z M16 16a2 2 0 1 0 .1 0" /> : null}
+      {nombre === "trompo" ? <path {...TRAZO} d="M8 7h8l2 12H6z M12 7V4" /> : null}
+      {nombre === "cubeta" ? <path {...TRAZO} d="M8 8h8l-1 11H9z M7 8h10" /> : null}
+      {nombre === "zinc" ? <path {...TRAZO} d="M3 14 L7 9 L12 14 L17 9 L21 14" /> : null}
+      {nombre === "casco" ? <path {...TRAZO} d="M5 15c0-5 3-8 7-8s7 3 7 8z M4 15h16" /> : null}
+      {nombre === "peso" ? <path {...TRAZO} d="M8 6h8 M12 6v12 M9 10c0 4 6 2 6 6" /> : null}
+    </svg>
   );
 }
