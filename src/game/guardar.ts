@@ -176,6 +176,61 @@ export function _reiniciarPestana() {
   vieja = false;
 }
 
+/** Récord aparte de la partida. Una clave rota aquí no toca el guardado de la obra. */
+export const KEY_RECORD = "obra-maestra-record";
+
+export type RecordObra = { estrellas: number; dias: number; ganancia: number; t: number };
+
+export function leerRecord(): RecordObra | null {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(KEY_RECORD);
+    if (!raw) return null;
+    const j = JSON.parse(raw) as Partial<RecordObra>;
+    if (!j || typeof j !== "object") return null;
+    const estrellas = Number(j.estrellas);
+    const dias = Number(j.dias);
+    const ganancia = Number(j.ganancia);
+    const t = Number(j.t);
+    if (!Number.isInteger(estrellas) || estrellas < 0 || estrellas > 3) return null;
+    if (!Number.isFinite(dias) || dias < 1) return null;
+    if (!Number.isFinite(ganancia) || !Number.isFinite(t)) return null;
+    return { estrellas, dias, ganancia, t };
+  } catch {
+    return null;
+  }
+}
+
+/** Más estrellas gana. Si empatan, menos días. Si empatan, más ganancia. */
+export function mejorRecord(a: RecordObra, b: RecordObra): boolean {
+  if (a.estrellas !== b.estrellas) return a.estrellas > b.estrellas;
+  if (a.dias !== b.dias) return a.dias < b.dias;
+  return a.ganancia > b.ganancia;
+}
+
+let recordCelebrado: string | null = null;
+
+export function anotarRecord(r: { estrellas: number; dias: number; ganancia: number }, ahora = Date.now()): { record: RecordObra; esNuevo: boolean } {
+  const actual: RecordObra = {
+    estrellas: Math.max(0, Math.min(3, Math.round(r.estrellas))),
+    dias: r.dias,
+    ganancia: Math.round(r.ganancia),
+    t: ahora,
+  };
+  const clave = `${actual.estrellas}|${actual.dias}|${actual.ganancia}`;
+  const prev = leerRecord();
+  if (!prev || mejorRecord(actual, prev)) {
+    try {
+      localStorage.setItem(KEY_RECORD, JSON.stringify(actual));
+    } catch {
+      /* el récord es un extra: si no cabe, la partida sigue */
+    }
+    recordCelebrado = clave;
+    return { record: leerRecord() ?? actual, esNuevo: true };
+  }
+  return { record: prev, esNuevo: recordCelebrado === clave };
+}
+
 const AJUSTES_KEY = "obra-maestra-ajustes";
 
 export type Ajustes = { sonido: boolean; vel: 1 | 2; control: "circulo" | "arrastre" };

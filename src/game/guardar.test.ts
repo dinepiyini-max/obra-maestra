@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import { firmar, nueva } from "./motor.ts";
-import { KEY, KEY_VIEJA, _reiniciarPestana, cargar, guardar, hayGuardado } from "./guardar.ts";
+import { KEY, KEY_RECORD, KEY_VIEJA, _reiniciarPestana, anotarRecord, cargar, guardar, hayGuardado, leerRecord } from "./guardar.ts";
 
 class Caja {
   m = new Map<string, string>();
@@ -21,6 +21,42 @@ const g = globalThis as unknown as { localStorage?: Caja };
 afterEach(() => {
   delete g.localStorage;
   _reiniciarPestana();
+});
+
+describe("récord de la mejor obra", () => {
+  it("guarda la mejor y no deja que una peor la borre", () => {
+    g.localStorage = new Caja();
+    const primera = anotarRecord({ estrellas: 2, dias: 25, ganancia: 60_000 }, 1000);
+    assert.equal(primera.esNuevo, true);
+    assert.equal(leerRecord()?.estrellas, 2);
+    const peor = anotarRecord({ estrellas: 1, dias: 10, ganancia: 90_000 }, 2000);
+    assert.equal(peor.esNuevo, false);
+    assert.equal(leerRecord()?.estrellas, 2);
+    const mejor = anotarRecord({ estrellas: 3, dias: 19, ganancia: 78_000 }, 3000);
+    assert.equal(mejor.esNuevo, true);
+    assert.equal(leerRecord()?.dias, 19);
+    const mismoDiaMenosPlata = anotarRecord({ estrellas: 3, dias: 19, ganancia: 70_000 }, 4000);
+    assert.equal(mismoDiaMenosPlata.esNuevo, false);
+    assert.equal(leerRecord()?.ganancia, 78_000);
+    const mismoDiaMasPlata = anotarRecord({ estrellas: 3, dias: 19, ganancia: 81_000 }, 5000);
+    assert.equal(mismoDiaMasPlata.esNuevo, true);
+    const menosDias = anotarRecord({ estrellas: 3, dias: 18, ganancia: 70_000 }, 6000);
+    assert.equal(menosDias.esNuevo, true);
+    assert.equal(leerRecord()?.dias, 18);
+  });
+
+  it("un récord dañado no tumba la partida que ya estaba guardada", () => {
+    g.localStorage = new Caja();
+    const s = nueva(4);
+    firmar(s);
+    assert.equal(guardar(s), true);
+    g.localStorage.setItem(KEY_RECORD, "{esto no es un record");
+    assert.equal(leerRecord(), null);
+    const c = cargar();
+    assert.equal(c.roto, false);
+    assert.equal(c.s?.seed, 4);
+    assert.equal(hayGuardado(), true);
+  });
 });
 
 describe("guardado y continuar", () => {

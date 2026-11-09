@@ -22,6 +22,7 @@ import {
   minutosMezcla,
   textoTopeAdelanto,
   type Estado,
+  ahoraToca,
   avisoSello,
   cuentaFiado,
   desgloseNomina,
@@ -197,6 +198,70 @@ export function LineaGuia({ paso, mostrar }: { paso: number; mostrar: boolean })
   );
 }
 
+const CLAVE_MIN = "obra-maestra-ahora-min";
+
+function TarjetaAhora({ s, bajo, paso }: { s: Estado; bajo: boolean; paso: number }) {
+  const meta = ahoraToca(s);
+  const guia = paso >= 0 ? (TUTORIAL[paso] ?? "") : "";
+  const muestraGuia = guia.length > 0 && !repiteCartel(guia, meta.tarea);
+  const [min, setMin] = useState(() => {
+    try {
+      return localStorage.getItem(CLAVE_MIN) === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    if (paso >= 0 && guia && !muestraGuia) cerrarGuia(paso);
+  }, [paso, guia, muestraGuia]);
+  const guardarMin = (v: boolean) => {
+    setMin(v);
+    try {
+      localStorage.setItem(CLAVE_MIN, v ? "1" : "0");
+    } catch {
+      /* la tarjeta sigue; solo no recuerda si estaba chiquita */
+    }
+  };
+  return (
+    <section
+      data-ahora-toca
+      className="pointer-events-auto mx-auto mt-1 w-full max-w-xl"
+      style={{
+        paddingLeft: "max(0.5rem, env(safe-area-inset-left))",
+        paddingRight: "max(0.5rem, env(safe-area-inset-right))",
+      }}
+    >
+      <div className="border-2 border-tinta bg-cemento-claro/95 text-tinta shadow-[2px_2px_0_#1B1F23]">
+        <div className="flex items-center gap-2 px-2 py-1">
+          <p className={"min-w-0 flex-1 font-ui font-bold leading-tight " + (bajo ? "text-sm" : "text-base")}>
+            Ahora toca · {meta.etapa} de {meta.total} · {meta.nombre}
+          </p>
+          <button
+            type="button"
+            className="min-h-11 min-w-11 shrink-0 border border-tinta/50 bg-cemento px-2 font-ui text-sm font-bold text-tinta"
+            aria-expanded={!min}
+            onClick={() => guardarMin(!min)}
+          >
+            {min ? "Ver" : "Ocultar"}
+          </button>
+        </div>
+        {min ? null : (
+          <div className="px-2 pb-2">
+            <p className={"font-hand leading-snug " + (bajo ? "text-sm" : "text-base")}>
+              {meta.tarea}
+              {meta.hechoTexto ? ` · ${meta.hechoTexto}` : ""}
+            </p>
+            <div className="mt-1 h-2 w-full rounded-sm bg-noche/20" aria-hidden="true">
+              <div className="h-full rounded-sm bg-colmado-amarillo" style={{ width: `${Math.round(meta.progreso * 100)}%` }} />
+            </div>
+            {muestraGuia ? <LineaGuia paso={paso} mostrar /> : null}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export function Hud({
   s,
   movil,
@@ -294,15 +359,7 @@ export function Hud({
             Pausa
           </button>
         </div>
-        {s.panel ? null : (
-          <div className="mx-auto mt-2 w-full max-w-xl px-3">
-            {guia0 ? (
-              <LineaGuia paso={0} mostrar />
-            ) : (
-              <p className="bg-cemento-claro/85 px-3 py-2 text-center font-hand text-base leading-tight text-tinta">{espera}</p>
-            )}
-          </div>
-        )}
+        {s.panel ? null : <TarjetaAhora s={s} bajo={bajo} paso={guia0 ? 0 : -1} />}
         {pista0 ? <p className={pistaCls}>{[movil ? "¡Dale!" : acc0.tecla, acc0.verbo, acc0.detalle].filter(Boolean).join(" · ")}</p> : null}
         </div>
       </div>
@@ -460,6 +517,7 @@ export function Hud({
         </div>
       )}
 
+      {s.panel || s.entregada ? null : <TarjetaAhora s={s} bajo={bajo} paso={guiaOn ? paso : -1} />}
       {s.panel ? null : (
       <div className={"mx-auto w-full max-w-xl px-2 " + (bajo ? "mt-1" : "mt-1 px-3 min-[900px]:mt-2")}>
         {seFueron ? (
@@ -470,9 +528,7 @@ export function Hud({
           >
             {cartel} A las 3 se van solos y el día se paga. Para irte antes, pulsa Despachar.
           </p>
-        ) : guiaOn ? (
-          <LineaGuia paso={paso} mostrar />
-        ) : avisoOn ? (
+        ) : guiaOn ? null : avisoOn ? (
           <div className="pointer-events-auto flex justify-center">
             <button
               type="button"
@@ -482,7 +538,7 @@ export function Hud({
               {avisos[0]!.texto}
             </button>
           </div>
-        ) : (
+        ) : repiteCartel(cartel, ahoraToca(s).tarea) ? null : (
           <p className={"bg-cemento-claro/90 px-3 py-1 text-center font-hand leading-tight text-tinta " + (bajo || chico ? "text-xs" : "text-sm")}>
             {cartel}
           </p>

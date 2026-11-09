@@ -105,7 +105,8 @@ import {
   fiarPedido,
 } from "@/game/motor";
 import { Icono, Retrato, alToque, sonidoUi } from "./Hud";
-import { hayGuardado, type Ajustes } from "@/game/guardar";
+import { anotarRecord, hayGuardado, leerRecord, type Ajustes } from "@/game/guardar";
+import { calificar, fraseEstrellas } from "@/game/estrellas";
 
 const btn =
   "min-h-11 min-w-11 rounded-md border-2 border-block-sombra bg-cemento px-3 py-2 font-ui text-base font-bold text-tinta hover:bg-varilla-brillo disabled:opacity-40";
@@ -168,6 +169,44 @@ function decir(s: Estado, texto: string | null) {
   s.avisoSeq += 1;
   s.avisos.push({ id: s.avisoSeq, texto });
   if (s.avisos.length > 6) s.avisos.splice(0, s.avisos.length - 6);
+}
+
+function LineaRecord() {
+  const r = leerRecord();
+  if (!r) return <p className="mt-2 font-hand text-sm text-tinta" data-record="vacio">Todavía no hay récord. Entrega una caseta.</p>;
+  return (
+    <p className="mt-2 font-hand text-base text-tinta" data-record>
+      Récord: {"★".repeat(r.estrellas)}
+      {"☆".repeat(3 - r.estrellas)} · día {r.dias} · {peso(r.ganancia)}
+    </p>
+  );
+}
+
+function EstrellasEntrega({ s }: { s: Estado }) {
+  const cal = calificar(s);
+  const [nuevo, setNuevo] = useState(false);
+  useEffect(() => {
+    if (!s.entregada) return;
+    const r = anotarRecord({ estrellas: cal.estrellas, dias: s.dia, ganancia: informe(s).ganancia });
+    setNuevo(r.esNuevo);
+  }, [s, cal.estrellas]);
+  return (
+    <div className="mt-2 border-2 border-tinta bg-colmado-amarillo/40 p-2" data-estrellas={cal.estrellas}>
+      <p className="text-center font-display text-3xl leading-none text-tinta" aria-label={`${cal.estrellas} de 3 estrellas`}>
+        {"★".repeat(cal.estrellas)}
+        {"☆".repeat(Math.max(0, 3 - cal.estrellas))}
+      </p>
+      <p className="mt-1 text-center font-hand text-xl text-tinta">{fraseEstrellas(cal.estrellas)}</p>
+      {nuevo ? <p className="text-center font-ui text-sm font-bold text-tinta" data-nuevo-record>Nuevo récord.</p> : null}
+      <ul className="mt-2 space-y-1 font-hand text-base text-tinta">
+        {cal.detalle.map((e) => (
+          <li key={e.id} data-estrella={e.id} data-ganada={e.ganada ? "si" : "no"}>
+            <span className="font-bold">{e.ganada ? "★" : "☆"} {e.nombre}.</span> {e.texto}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 function AvisoRoto({ s }: { s: Estado }) {
@@ -823,6 +862,7 @@ export function Paneles({
       return (
         <HojaMenu onVolver={() => setHoja(null)}>
           <h2 className="font-display text-2xl leading-tight break-words sm:text-4xl">Obras</h2>
+          <LineaRecord />
           <ul className="mt-3 flex flex-col gap-2">
             {OBRAS_MENU.map((o) =>
               o.abierta ? (
@@ -909,6 +949,7 @@ export function Paneles({
             <button type="button" className={btn} onClick={() => setHoja("creditos")}>
               Créditos
             </button>
+            <LineaRecord />
           </div>
         </section>
         </div>
@@ -1935,6 +1976,7 @@ export function Paneles({
               </text>
             </svg>
             <h2 className="font-display text-2xl leading-tight break-words sm:text-4xl">Entrega</h2>
+            <EstrellasEntrega s={s} />
             {s.cierre ? (
               <div className="mt-2 border-2 border-tinta p-2 font-hand text-base" data-cierre>
                 <p className="font-display text-xl">Cuenta de la caja al entregar</p>
@@ -1976,7 +2018,7 @@ export function Paneles({
       <Marco titulo={perdida ? "Obra perdida" : "Informe final"} ancho="max-w-3xl">
         <p className="font-hand">
           {perdida
-            ? "No quedó nadie trabajando. La obra se perdió."
+            ? "No quedó nadie trabajando. La obra se perdió. Sin estrellas: no se entregó."
             : "Doña Carmen ya tiene su caseta."}
         </p>
         {perdida
