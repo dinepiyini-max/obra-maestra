@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import { pasoAudio } from "./audio.ts";
 import { TOQUE_CAMINAR_PX, esToqueDeCaminar } from "./toque.ts";
 
 const quieto = { dx: 0, dy: 0, panel: false, pausa: false, entregada: false, palanca: false };
@@ -24,6 +25,16 @@ describe("el primer toque para caminar", () => {
     assert.equal(esToqueDeCaminar({ ...quieto, pausa: true }), false);
     assert.equal(esToqueDeCaminar({ ...quieto, entregada: true }), false);
     assert.equal(esToqueDeCaminar({ ...quieto, palanca: true }), false);
+  });
+});
+
+describe("el audio despierta con el toque y vuelve después de bloquear", () => {
+  it("sin contexto se crea; suspendido o interrumpido se reanuda; andando no se toca", () => {
+    assert.equal(pasoAudio("sin"), "crear");
+    assert.equal(pasoAudio("closed"), "crear");
+    assert.equal(pasoAudio("suspended"), "reanudar");
+    assert.equal(pasoAudio("interrupted"), "reanudar");
+    assert.equal(pasoAudio("running"), "listo");
   });
 });
 

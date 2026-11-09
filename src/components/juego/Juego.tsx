@@ -26,6 +26,7 @@ function guardar(s: Estado) {
 }
 import { VEL_MAESTRO, CONTRATO, ETAPAS, MAPA, MATERIALES, SITIOS, peso } from "@/game/datos";
 import { backingSeguro, dibujar, mundoDesde, puntoEnPantalla, type Floater, type Vis } from "@/game/dibujo";
+import { pasoAudio } from "@/game/audio";
 import { TOQUE_CAMINAR_PX, esToqueDeCaminar } from "@/game/toque";
 import { reiniciarGuia } from "@/game/guia";
 import {
@@ -152,6 +153,14 @@ type Sonido =
 
 function sonar(ctx: AudioContext | null, tipo: Sonido, callado: boolean) {
   if (!ctx || callado || (typeof document !== "undefined" && document.hidden)) return;
+  try {
+  sonarCuerpo(ctx, tipo);
+  } catch {
+    /* un audio interrumpido no puede congelar el reloj */
+  }
+}
+
+function sonarCuerpo(ctx: AudioContext, tipo: Sonido) {
   const nota = (freq: number, t: number, dur: number, gain = 0.04, onda: OscillatorType = "triangle") => {
     const o = ctx.createOscillator();
     const g = ctx.createGain();
@@ -394,11 +403,11 @@ export function Juego() {
   );
 
   const desbloquear = useCallback(() => {
-    if (audio.current) return;
     const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctx) return;
-    audio.current = new Ctx();
-    void audio.current.resume();
+    const paso = pasoAudio(audio.current?.state ?? "sin");
+    if (paso === "crear") audio.current = new Ctx();
+    if (paso !== "listo") void audio.current?.resume().catch(() => {});
   }, []);
 
   const aplicarMando = useCallback(() => {
@@ -845,7 +854,10 @@ export function Juego() {
   };
 
   return (
-    <main className="juego-root relative h-full w-full overflow-hidden bg-noche text-cemento-claro select-none">
+    <main
+      className="juego-root relative h-full w-full overflow-hidden bg-noche text-cemento-claro select-none"
+      onPointerDown={() => desbloquear()}
+    >
       <canvas
         ref={canvasRef}
         className="absolute inset-0 h-full w-full"
