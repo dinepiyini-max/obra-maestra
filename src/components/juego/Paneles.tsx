@@ -909,7 +909,6 @@ export function Paneles({
             <button type="button" className={btn} onClick={() => setHoja("creditos")}>
               Créditos
             </button>
-            <p className="mt-1 font-hand text-base text-tinta">Próximamente: jugar como ingeniero.</p>
           </div>
         </section>
         </div>

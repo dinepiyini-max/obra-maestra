@@ -45,6 +45,7 @@ describe("el cierre se puede leer y volver a jugar", () => {
     assert.match(p, /Volver a jugar/);
     assert.match(p, /touch-pan-x/);
     assert.doesNotMatch(p, /Otra obra/);
+    assert.doesNotMatch(p, /Próximamente: jugar como ingeniero/);
   });
 });
 
