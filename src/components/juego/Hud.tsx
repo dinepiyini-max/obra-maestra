@@ -326,6 +326,7 @@ export function Hud({
   const guiaOn = quiereGuia && !urgente && guiaVisible(paso, true);
   const avisoOn = mundo && !guiaOn && avisos.length > 0;
   const etapaNombre = ETAPAS[s.etapa]?.nombre ?? "Entrega";
+  const seFueron = cartel.startsWith("Se fueron a las");
 
   function abrirReporte() {
     setAvisoReporte(null);
@@ -461,7 +462,15 @@ export function Hud({
 
       {s.panel ? null : (
       <div className={"mx-auto w-full max-w-xl px-2 " + (bajo ? "mt-1" : "mt-1 px-3 min-[900px]:mt-2")}>
-        {guiaOn ? (
+        {seFueron ? (
+          <p
+            data-se-fueron
+            role="status"
+            className="border-2 border-colmado-rojo bg-cemento-claro px-3 py-2 text-center font-hand text-base leading-snug text-tinta"
+          >
+            {cartel} A las 3 se van solos y el día se paga. Para irte antes, pulsa Despachar.
+          </p>
+        ) : guiaOn ? (
           <LineaGuia paso={paso} mostrar />
         ) : avisoOn ? (
           <div className="pointer-events-auto flex justify-center">
