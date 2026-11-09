@@ -18,7 +18,7 @@ function guardar(s: Estado) {
   }
 }
 import { VEL_MAESTRO, CONTRATO, ETAPAS, MAPA, MATERIALES, SITIOS, peso } from "@/game/datos";
-import { dibujar, mundoDesde, puntoEnPantalla, type Floater, type Vis } from "@/game/dibujo";
+import { backingSeguro, dibujar, mundoDesde, puntoEnPantalla, type Floater, type Vis } from "@/game/dibujo";
 import { reiniciarGuia } from "@/game/guia";
 import {
   abrirDespacho,
@@ -686,15 +686,14 @@ export function Juego() {
       v.floaters = v.floaters.filter((f) => f.vida > 0);
       const w = canvas.clientWidth || 1;
       const h = canvas.clientHeight || 1;
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const bw = Math.max(1, Math.floor(w * dpr));
-      const bh = Math.max(1, Math.floor(h * dpr));
-      if (canvas.width !== bw || canvas.height !== bh) {
-        canvas.width = bw;
-        canvas.height = bh;
+      // El suelo cacheado y este bitmap comparten el tope de Safari (4096 px de lado).
+      const pantalla = backingSeguro(w, h, window.devicePixelRatio || 1);
+      if (canvas.width !== pantalla.bw || canvas.height !== pantalla.bh) {
+        canvas.width = pantalla.bw;
+        canvas.height = pantalla.bh;
       }
       try {
-        pintar.current(ctx, w, h, estado.current, v, dpr);
+        pintar.current(ctx, w, h, estado.current, v, pantalla.dpr);
       } catch (err) {
         if (!dibujoAviso) {
           dibujoAviso = true;

@@ -78,6 +78,87 @@ export function zoomDe(w: number, h = 800): number {
   return w < 760 ? 0.75 : 1.35;
 }
 
+/**
+ * Tope del bitmap en Safari iOS: un lado mayor de 4096 se rechaza, y un área
+ * cerca de 16 megapíxeles puede cerrar la pestaña. El suelo del iPad (zoom 1.35)
+ * nacía en ~5533×2967. Estos topes lo bajan sin cambiar el zoom del juego.
+ */
+export const TOPE_LADO_CANVAS = 4096;
+export const TOPE_AREA_CANVAS = 12_000_000;
+
+export interface MedidaTerreno {
+  /** Lado del bitmap que sí se pide al navegador. */
+  W: number;
+  H: number;
+  /** 1 = el mismo tamaño de siempre. Menor que 1 = se dibuja más chico y al pegarlo se estira. */
+  escala: number;
+  naturalW: number;
+  naturalH: number;
+  minX: number;
+  minY: number;
+  pad: number;
+}
+
+/** Medida del suelo cacheado. No crea canvas: sirve para probar el tope sin navegador. */
+export function medidaTerreno(z: number, topeLado = TOPE_LADO_CANVAS, topeArea = TOPE_AREA_CANVAS): MedidaTerreno {
+  const pad = 200;
+  const corners = [
+    proyectar(-18, -16, 0, z),
+    proyectar(52, -16, 0, z),
+    proyectar(52, 46, 0, z),
+    proyectar(-18, 46, 0, z),
+  ];
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const c of corners) {
+    minX = Math.min(minX, c.sx);
+    minY = Math.min(minY, c.sy);
+    maxX = Math.max(maxX, c.sx);
+    maxY = Math.max(maxY, c.sy);
+  }
+  const naturalW = Math.max(1, Math.ceil(maxX - minX + pad * 2));
+  const naturalH = Math.max(1, Math.ceil(maxY - minY + pad * 2));
+  let escala = 1;
+  const lado = Math.max(naturalW, naturalH);
+  if (lado > topeLado) escala = topeLado / lado;
+  const area = naturalW * naturalH;
+  if (area * escala * escala > topeArea) escala = Math.min(escala, Math.sqrt(topeArea / area));
+  let W = Math.max(1, Math.floor(naturalW * escala));
+  let H = Math.max(1, Math.floor(naturalH * escala));
+  if (W > topeLado || H > topeLado || W * H > topeArea) {
+    const apriete = Math.min(topeLado / W, topeLado / H, Math.sqrt(topeArea / Math.max(1, W * H)));
+    escala *= apriete;
+    W = Math.max(1, Math.floor(naturalW * escala));
+    H = Math.max(1, Math.floor(naturalH * escala));
+  }
+  return { W, H, escala, naturalW, naturalH, minX, minY, pad };
+}
+
+/** Primer intento al tope de Safari; si lo rechaza, uno a la mitad. No hay un tercero. */
+export function intentosTerreno(z: number): MedidaTerreno[] {
+  return [
+    medidaTerreno(z),
+    medidaTerreno(z, Math.max(1, Math.floor(TOPE_LADO_CANVAS / 2)), Math.max(1, Math.floor(TOPE_AREA_CANVAS / 4))),
+  ];
+}
+
+/**
+ * Bitmap de la pantalla (el canvas visible). En el iPhone y en el iPad de hoy
+ * ya cabe: el tope solo baja un escritorio retina enorme, para no pasar de 4096.
+ */
+export function backingSeguro(cssW: number, cssH: number, dpr: number, topeLado = TOPE_LADO_CANVAS) {
+  const w = Math.max(1, cssW || 1);
+  const h = Math.max(1, cssH || 1);
+  let d = Math.min(2, dpr > 0 ? dpr : 1);
+  const lado = Math.max(w, h) * d;
+  if (lado > topeLado) d *= topeLado / lado;
+  const bw = Math.max(1, Math.floor(w * d));
+  const bh = Math.max(1, Math.floor(h * d));
+  return { bw, bh, dpr: d };
+}
+
 function sxu(z: number) {
   return 0.72 * 40 * z;
 }
@@ -163,7 +244,42 @@ function hatch(ctx: CanvasRenderingContext2D, pts: { x: number; y: number }[], g
   ctx.restore();
 }
 
-let terreno: { key: string; c: HTMLCanvasElement; ox: number; oy: number } | null = null;
+type Lienzo = {
+  width: number;
+  height: number;
+  getContext(kind: "2d"): CanvasRenderingContext2D | null;
+};
+
+type TerrenoListo = { key: string; c: Lienzo | null; ox: number; oy: number; escala: number };
+
+let terreno: TerrenoListo | null = null;
+
+function lienzoDelDocumento(w: number, h: number): Lienzo | null {
+  if (typeof document === "undefined") return null;
+  try {
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    if (c.width !== w || c.height !== h) return null;
+    return c;
+  } catch {
+    return null;
+  }
+}
+
+let crearLienzo: (w: number, h: number) => Lienzo | null = lienzoDelDocumento;
+
+/** Solo pruebas: sustituye la creación del bitmap y olvida el suelo cacheado. */
+export function _lienzoParaPrueba(f: ((w: number, h: number) => Lienzo | null) | null) {
+  crearLienzo = f ?? lienzoDelDocumento;
+  terreno = null;
+}
+
+/** Solo pruebas: pide el suelo (con caché) y dice qué bitmap quedó. */
+export function _leerTerrenoParaPrueba(z: number, seed: number) {
+  const t = asegurarTerreno(z, seed);
+  return { ancho: t.c?.width ?? 0, alto: t.c?.height ?? 0, escala: t.escala, listo: t.c != null };
+}
 let obraCache: { key: string; c: HTMLCanvasElement; ax: number; ay: number } | null = null;
 
 function anclaDe(vis: { ancla?: number }): number {
@@ -245,33 +361,13 @@ function pintarSenderos(
   tramo(w.oficina, w.almacen, 8);
 }
 
-function asegurarTerreno(z: number, seed: number) {
-  const key = `dia|${seed}|${z.toFixed(2)}|calle3`;
-  if (terreno?.key === key) return terreno;
-  const pad = 200;
-  const corners = [
-    proyectar(-18, -16, 0, z),
-    proyectar(52, -16, 0, z),
-    proyectar(52, 46, 0, z),
-    proyectar(-18, 46, 0, z),
-  ];
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const c of corners) {
-    minX = Math.min(minX, c.sx);
-    minY = Math.min(minY, c.sy);
-    maxX = Math.max(maxX, c.sx);
-    maxY = Math.max(maxY, c.sy);
-  }
-  const W = Math.ceil(maxX - minX + pad * 2);
-  const H = Math.ceil(maxY - minY + pad * 2);
-  const c = document.createElement("canvas");
-  c.width = W;
-  c.height = H;
-  const ctx = c.getContext("2d")!;
-  const P = (x: number, y: number) => ({ x: proyectar(x, y, 0, z).sx - minX + pad, y: proyectar(x, y, 0, z).sy - minY + pad });
+function trazarTerreno(ctx: CanvasRenderingContext2D, med: MedidaTerreno, z: number, seed: number) {
+  if (med.escala !== 1) ctx.setTransform(med.escala, 0, 0, med.escala, 0, 0);
+  const { minX, minY, pad, naturalW, naturalH } = med;
+  const P = (x: number, y: number) => ({
+    x: proyectar(x, y, 0, z).sx - minX + pad,
+    y: proyectar(x, y, 0, z).sy - minY + pad,
+  });
   const poly = (pts: { x: number; y: number }[], fill: string) => {
     ink(ctx, pts, { fill, lw: 1.15, seed, closed: true, amp: 0.2 });
   };
@@ -298,10 +394,10 @@ function asegurarTerreno(z: number, seed: number) {
   ctx.strokeStyle = TINTA;
   ctx.globalAlpha = 0.09;
   ctx.lineWidth = 1;
-  for (let x = -40; x < W + 80; x += 16) {
+  for (let x = -40; x < naturalW + 80; x += 16) {
     ctx.beginPath();
     ctx.moveTo(x, 0);
-    ctx.lineTo(x + H * 0.35, H);
+    ctx.lineTo(x + naturalH * 0.35, naturalH);
     ctx.stroke();
   }
   ctx.restore();
@@ -333,8 +429,52 @@ function asegurarTerreno(z: number, seed: number) {
     ctx.globalAlpha = 1;
   }
   pintarSenderos(ctx, P, seed);
-  terreno = { key, c, ox: minX - pad, oy: minY - pad };
-  return terreno;
+}
+
+function pintarTerreno(med: MedidaTerreno, z: number, seed: number): { c: Lienzo; escala: number } | null {
+  const c = crearLienzo(med.W, med.H);
+  if (!c) return null;
+  const ctx = c.getContext("2d");
+  if (!ctx) return null;
+  try {
+    trazarTerreno(ctx, med, z, seed);
+  } catch {
+    return null;
+  }
+  return { c, escala: med.escala };
+}
+
+function asegurarTerreno(z: number, seed: number): TerrenoListo {
+  const key = `dia|${seed}|${z.toFixed(2)}|calle3`;
+  if (terreno?.key === key) return terreno;
+  const intentos = intentosTerreno(z);
+  const origen = intentos[0]!;
+  const listo: TerrenoListo = {
+    key,
+    c: null,
+    ox: origen.minX - origen.pad,
+    oy: origen.minY - origen.pad,
+    escala: 1,
+  };
+  // Se guarda antes de pintar: si el bitmap explota, el cuadro siguiente no lo vuelve a pedir.
+  terreno = listo;
+  let pedidoW = -1;
+  let pedidoH = -1;
+  try {
+    for (const med of intentos) {
+      if (med.W === pedidoW && med.H === pedidoH) continue;
+      pedidoW = med.W;
+      pedidoH = med.H;
+      const pintado = pintarTerreno(med, z, seed);
+      if (!pintado) continue;
+      listo.c = pintado.c;
+      listo.escala = pintado.escala;
+      break;
+    }
+  } catch {
+    listo.c = null;
+  }
+  return listo;
 }
 
 const ANILLO = anillo();
@@ -3081,9 +3221,13 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
 
   const ter = asegurarTerreno(z, s.seed);
   const o = proyectar(vis.cam.x, vis.cam.y, 0, z);
-  const blitX = w / 2 - o.sx + ter.ox;
-  const blitY = h * fraccion - o.sy + ter.oy;
-  ctx.drawImage(ter.c, blitX, blitY);
+  if (ter.c) {
+    const blitX = w / 2 - o.sx + ter.ox;
+    const blitY = h * fraccion - o.sy + ter.oy;
+    // Escala 1 (teléfono vertical): el bitmap ya está en píxeles de pantalla, igual que antes.
+    if (ter.escala === 1) ctx.drawImage(ter.c as CanvasImageSource, blitX, blitY);
+    else ctx.drawImage(ter.c as CanvasImageSource, blitX, blitY, ter.c.width / ter.escala, ter.c.height / ter.escala);
+  }
   if (llueve) {
     const charcos: [number, number][] = [
       [12.4, 18.6],
