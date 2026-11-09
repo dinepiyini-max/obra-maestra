@@ -682,7 +682,7 @@ export function Hud({
             (bajo
               ? "bottom-1 left-[5.25rem] right-[5.5rem] py-0.5 text-[11px] leading-tight"
               : movil
-                ? "inset-x-0 bottom-[7.75rem] max-w-xl py-1 text-sm"
+                ? "inset-x-0 bottom-[11.5rem] max-w-xl py-1 text-sm"
                 : "inset-x-0 bottom-3 max-w-xl py-1.5 text-sm")
           }
         >
@@ -701,16 +701,13 @@ export function Hud({
         </p>
       ) : null}
 
-      {mundo && !s.entregada && !bajo ? (
+      {mundo && !s.entregada && !bajo && !movil ? (
         <button
           type="button"
           {...alToque(onTerminar)}
-          className={
-            "pointer-events-auto absolute z-20 border border-cemento-claro/40 bg-noche font-hand text-cemento-claro " +
-            (movil ? "right-[8.6rem] bottom-4 min-h-11 min-w-11 px-3 text-base" : "right-2 bottom-2 min-h-11 min-w-11 px-3 text-xl")
-          }
+          className="pointer-events-auto absolute right-2 bottom-2 z-20 min-h-11 min-w-11 border border-cemento-claro/40 bg-noche px-3 font-hand text-xl text-cemento-claro"
         >
-          Terminar{movil ? "" : " (T)"}
+          Terminar (T)
         </button>
       ) : null}
       {s.pausa ? (

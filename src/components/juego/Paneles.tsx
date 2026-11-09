@@ -171,13 +171,24 @@ function decir(s: Estado, texto: string | null) {
   if (s.avisos.length > 6) s.avisos.splice(0, s.avisos.length - 6);
 }
 
+function Pintas({ n, grande }: { n: number; grande?: boolean }) {
+  return (
+    <span className={grande ? "font-display text-4xl leading-none" : "font-display text-xl leading-none"} aria-hidden="true">
+      {[0, 1, 2].map((i) => (
+        <span key={i} className={i < n ? "text-[#E3B505] [text-shadow:0_1px_0_#1B1F23]" : "text-block"}>
+          ★
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function LineaRecord() {
   const r = leerRecord();
   if (!r) return <p className="mt-2 font-hand text-sm text-tinta" data-record="vacio">Todavía no hay récord. Entrega una caseta.</p>;
   return (
     <p className="mt-2 font-hand text-base text-tinta" data-record>
-      Récord: {"★".repeat(r.estrellas)}
-      {"☆".repeat(3 - r.estrellas)} · día {r.dias} · {peso(r.ganancia)}
+      Récord: <Pintas n={r.estrellas} /> · día {r.dias} · {peso(r.ganancia)}
     </p>
   );
 }
@@ -192,16 +203,18 @@ function EstrellasEntrega({ s }: { s: Estado }) {
   }, [s, cal.estrellas]);
   return (
     <div className="mt-2 border-2 border-tinta bg-colmado-amarillo/40 p-2" data-estrellas={cal.estrellas}>
-      <p className="text-center font-display text-3xl leading-none text-tinta" aria-label={`${cal.estrellas} de 3 estrellas`}>
-        {"★".repeat(cal.estrellas)}
-        {"☆".repeat(Math.max(0, 3 - cal.estrellas))}
+      <p className="text-center" aria-label={`${cal.estrellas} de 3 estrellas`}>
+        <Pintas n={cal.estrellas} grande />
       </p>
       <p className="mt-1 text-center font-hand text-xl text-tinta">{fraseEstrellas(cal.estrellas)}</p>
       {nuevo ? <p className="text-center font-ui text-sm font-bold text-tinta" data-nuevo-record>Nuevo récord.</p> : null}
       <ul className="mt-2 space-y-1 font-hand text-base text-tinta">
         {cal.detalle.map((e) => (
           <li key={e.id} data-estrella={e.id} data-ganada={e.ganada ? "si" : "no"}>
-            <span className="font-bold">{e.ganada ? "★" : "☆"} {e.nombre}.</span> {e.texto}
+            <span className="font-bold">
+              <span className={e.ganada ? "text-[#E3B505] [text-shadow:0_1px_0_#1B1F23]" : "text-block"} aria-hidden="true">★</span> {e.nombre}.
+            </span>{" "}
+            {e.texto}
           </li>
         ))}
       </ul>

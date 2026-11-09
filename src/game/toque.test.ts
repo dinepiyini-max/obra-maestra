@@ -49,6 +49,19 @@ describe("el cierre se puede leer y volver a jugar", () => {
   });
 });
 
+describe("Terminar no queda debajo de ¡Dale!", () => {
+  it("en el teléfono van en la misma columna, Terminar arriba", () => {
+    const juego = readFileSync(new URL("../components/juego/Juego.tsx", import.meta.url), "utf8");
+    const hud = readFileSync(new URL("../components/juego/Hud.tsx", import.meta.url), "utf8");
+    const i = juego.indexOf("data-controles-abajo");
+    const columna = juego.slice(i, i + 1800);
+    assert.ok(columna.includes("data-terminar"));
+    assert.ok(columna.includes("¡Dale!"));
+    assert.ok(columna.indexOf("data-terminar") < columna.indexOf("¡Dale!"));
+    assert.doesNotMatch(hud, /right-\[8\.6rem\]/);
+  });
+});
+
 describe("a las 3 se avisa, sin cambiar la nómina", () => {
   it("el cartel dice que se van solos y el motor sigue pagando a las 15:00", () => {
     const hud = readFileSync(new URL("../components/juego/Hud.tsx", import.meta.url), "utf8");
