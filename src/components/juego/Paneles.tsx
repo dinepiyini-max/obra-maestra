@@ -250,7 +250,7 @@ function Marco({
             </button>
           ) : null}
         </header>
-        <div className={`relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-3 [scrollbar-gutter:stable] sm:p-5 ${hoja ? "hoja-libreta pl-8" : ""}`}>
+        <div className={`relative min-h-0 flex-1 overflow-auto overscroll-contain p-3 [scrollbar-gutter:stable] sm:p-5 ${hoja ? "hoja-libreta pl-8" : ""}`}>
         {hoja ? (
           <span className="pointer-events-none absolute top-6 bottom-6 left-2 flex w-3 flex-col justify-between" aria-hidden="true">
             <i className="h-3 w-3 rounded-full border-2 border-tinta bg-noche" />
@@ -1960,12 +1960,12 @@ export function Paneles({
               <li>Desplomes <span className="font-ui font-medium tabular-nums" data-cifra>{s.desplomes}</span></li>
               <li>Ingeniera: {notaIng}</li>
             </ul>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button type="button" className={btnPri} onClick={() => act((st) => abrirPanel(st, "libreta"))}>
-                Ver Libreta
+            <div className="mt-4 flex flex-col gap-2">
+              <button type="button" className={`${btnPri} w-full`} data-volver-a-jugar onClick={quiereNueva}>
+                Volver a jugar
               </button>
-              <button type="button" className={btn} onClick={quiereNueva}>
-                Otra obra
+              <button type="button" className={`${btn} w-full`} onClick={() => act((st) => abrirPanel(st, "libreta"))}>
+                Ver Libreta
               </button>
             </div>
           </section>
@@ -2043,7 +2043,7 @@ export function Paneles({
           ) : null}
           <li>Fletes: {inf.fletes} contra 4 del presupuesto</li>
         </ul>
-        <div className="mt-3 overflow-x-auto">
+        <div className="mt-3 overflow-x-auto overscroll-x-contain touch-pan-x">
           <table className="w-full min-w-[28rem] border-collapse font-hand text-sm">
             <thead>
               <tr className="border-b border-tinta text-left">
@@ -2069,8 +2069,8 @@ export function Paneles({
           </table>
         </div>
         <p className="mt-4 font-hand text-mar">Próxima obra: Losa de concreto (bloqueada)</p>
-        <button type="button" className={`${btn} mt-3`} onClick={quiereNueva}>
-          {perdida ? "Obra nueva" : "Otra caseta"}
+        <button type="button" className={`${btnPri} mt-3 w-full`} data-volver-a-jugar onClick={quiereNueva}>
+          Volver a jugar
         </button>
       </Marco>
     );

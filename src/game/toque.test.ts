@@ -38,6 +38,16 @@ describe("el audio despierta con el toque y vuelve después de bloquear", () => 
   });
 });
 
+describe("el cierre se puede leer y volver a jugar", () => {
+  it("la entrega y la obra perdida dicen Volver a jugar y la tabla puede correrse", () => {
+    const p = readFileSync(new URL("../components/juego/Paneles.tsx", import.meta.url), "utf8");
+    assert.equal((p.match(/data-volver-a-jugar/g) ?? []).length, 2);
+    assert.match(p, /Volver a jugar/);
+    assert.match(p, /touch-pan-x/);
+    assert.doesNotMatch(p, /Otra obra/);
+  });
+});
+
 describe("a las 3 se avisa, sin cambiar la nómina", () => {
   it("el cartel dice que se van solos y el motor sigue pagando a las 15:00", () => {
     const hud = readFileSync(new URL("../components/juego/Hud.tsx", import.meta.url), "utf8");
