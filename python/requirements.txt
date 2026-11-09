@@ -1,0 +1,5 @@
+# Lo único que hace falta para el ejercicio 1 y las pruebas.
+pytest>=8.3
+
+# El centro de mando (Streamlit) llega en un paso posterior.
+# Cuando exista, aquí se agregan streamlit, pandas y plotly.
