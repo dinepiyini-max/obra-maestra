@@ -1,0 +1,299 @@
+{
+  "nota": "Generado por npm run exportar-datos desde src/game/datos.ts. No lo edites a mano.",
+  "contrato": 300000,
+  "anticipo": 90000,
+  "plazo_dias": 30,
+  "caja_inicial": 89400,
+  "kit_precio": 600,
+  "direccion_dia": 1750,
+  "bono_dia": 1500,
+  "flete": 1500,
+  "flete_urgente": 3000,
+  "presupuesto_total": 199708,
+  "presupuesto": [
+    {
+      "id": "replanteo",
+      "nombre": "Replanteo y limpieza",
+      "monto": 3700
+    },
+    {
+      "id": "excavacion",
+      "nombre": "Excavación",
+      "monto": 1680
+    },
+    {
+      "id": "acero",
+      "nombre": "Acero",
+      "monto": 19807
+    },
+    {
+      "id": "encofrado",
+      "nombre": "Encofrado",
+      "monto": 14474
+    },
+    {
+      "id": "hormigon",
+      "nombre": "Hormigón 1:2:3",
+      "monto": 49312
+    },
+    {
+      "id": "block",
+      "nombre": "Block y mortero",
+      "monto": 48096
+    },
+    {
+      "id": "techo",
+      "nombre": "Techo",
+      "monto": 23016
+    },
+    {
+      "id": "piso",
+      "nombre": "Piso y terminación",
+      "monto": 3014
+    },
+    {
+      "id": "direccion",
+      "nombre": "Dirección (tu jornal)",
+      "monto": 28000
+    },
+    {
+      "id": "herramienta",
+      "nombre": "Herramienta",
+      "monto": 2609
+    },
+    {
+      "id": "fletes",
+      "nombre": "Fletes",
+      "monto": 6000
+    },
+    {
+      "id": "farmeo",
+      "nombre": "Acarreo",
+      "monto": 0
+    },
+    {
+      "id": "muerto",
+      "nombre": "Tiempo muerto",
+      "monto": 0
+    }
+  ],
+  "presupuesto_por_nombre": {
+    "Replanteo y limpieza": 3700,
+    "Excavación": 1680,
+    "Acero": 19807,
+    "Encofrado": 14474,
+    "Hormigón 1:2:3": 49312,
+    "Block y mortero": 48096,
+    "Techo": 23016,
+    "Piso y terminación": 3014,
+    "Dirección (tu jornal)": 28000,
+    "Herramienta": 2609,
+    "Fletes": 6000,
+    "Acarreo": 0,
+    "Tiempo muerto": 0
+  },
+  "materiales": [
+    {
+      "id": "arena",
+      "nombre": "Arena gruesa",
+      "unidad": "m³",
+      "precio": 2883.33,
+      "paso": 0.5,
+      "compra": true
+    },
+    {
+      "id": "grava",
+      "nombre": "Grava",
+      "unidad": "m³",
+      "precio": 1773.33,
+      "paso": 0.5,
+      "compra": true
+    },
+    {
+      "id": "agua",
+      "nombre": "Agua",
+      "unidad": "m³",
+      "precio": 200,
+      "paso": 0.5,
+      "compra": false
+    },
+    {
+      "id": "cemento",
+      "nombre": "Cemento gris 42.5 kg",
+      "unidad": "funda",
+      "precio": 550,
+      "paso": 1,
+      "compra": true
+    },
+    {
+      "id": "v38",
+      "nombre": "Varilla 3/8\" × 20'",
+      "unidad": "barra",
+      "precio": 262.87,
+      "paso": 1,
+      "compra": true
+    },
+    {
+      "id": "v14",
+      "nombre": "Varilla 1/4\" × 20'",
+      "unidad": "barra",
+      "precio": 120.24,
+      "paso": 1,
+      "compra": true
+    },
+    {
+      "id": "alambre",
+      "nombre": "Alambre de amarre cal. 16",
+      "unidad": "lb",
+      "precio": 79.5,
+      "paso": 1,
+      "compra": true
+    },
+    {
+      "id": "block",
+      "nombre": "Block de 6\"",
+      "unidad": "ud",
+      "precio": 55.4,
+      "paso": 10,
+      "compra": true
+    },
+    {
+      "id": "plywood",
+      "nombre": "Plywood 3/4\" 4×8",
+      "unidad": "plancha",
+      "precio": 2200,
+      "paso": 1,
+      "compra": true
+    },
+    {
+      "id": "pino",
+      "nombre": "Pino 1×4×10'",
+      "unidad": "pieza",
+      "precio": 358.97,
+      "paso": 1,
+      "compra": true
+    },
+    {
+      "id": "abeto",
+      "nombre": "Abeto 2×4×12'",
+      "unidad": "pieza",
+      "precio": 586.46,
+      "paso": 1,
+      "compra": true
+    },
+    {
+      "id": "zinc",
+      "nombre": "Zinc acanalado cal. 29 3×6'",
+      "unidad": "lámina",
+      "precio": 384.86,
+      "paso": 1,
+      "compra": true
+    },
+    {
+      "id": "clavo",
+      "nombre": "Clavo 3\"",
+      "unidad": "lb",
+      "precio": 69.02,
+      "paso": 1,
+      "compra": true
+    },
+    {
+      "id": "clavoTecho",
+      "nombre": "Clavo de techo con arandela",
+      "unidad": "lb",
+      "precio": 81.83,
+      "paso": 1,
+      "compra": true
+    },
+    {
+      "id": "kit",
+      "nombre": "Kit de replanteo",
+      "unidad": "lote",
+      "precio": 600,
+      "paso": 1,
+      "compra": true
+    },
+    {
+      "id": "tierra",
+      "nombre": "Tierra de zanja",
+      "unidad": "m³",
+      "precio": 0,
+      "paso": 0.1,
+      "compra": false
+    }
+  ],
+  "jornales": [
+    {
+      "id": "peon",
+      "nombre": "Peón",
+      "jornal": 1200
+    },
+    {
+      "id": "ayudante",
+      "nombre": "Ayudante",
+      "jornal": 1200
+    },
+    {
+      "id": "albanil",
+      "nombre": "Albañil",
+      "jornal": 2800
+    },
+    {
+      "id": "varillero",
+      "nombre": "Varillero",
+      "jornal": 2800
+    },
+    {
+      "id": "carpintero",
+      "nombre": "Carpintero",
+      "jornal": 2800
+    }
+  ],
+  "etapas": [
+    {
+      "id": "replanteo",
+      "n": 1,
+      "nombre": "Replanteo"
+    },
+    {
+      "id": "excavacion",
+      "n": 2,
+      "nombre": "Excavación"
+    },
+    {
+      "id": "acero",
+      "n": 3,
+      "nombre": "Acero de zapata"
+    },
+    {
+      "id": "zapata",
+      "n": 4,
+      "nombre": "Vaciado de zapata"
+    },
+    {
+      "id": "muros",
+      "n": 5,
+      "nombre": "Muros de block"
+    },
+    {
+      "id": "columnas",
+      "n": 6,
+      "nombre": "Columnas de amarre"
+    },
+    {
+      "id": "viga",
+      "n": 7,
+      "nombre": "Viga de amarre"
+    },
+    {
+      "id": "piso",
+      "n": 8,
+      "nombre": "Relleno y piso"
+    },
+    {
+      "id": "techo",
+      "n": 9,
+      "nombre": "Techo y entrega"
+    }
+  ]
+}
