@@ -4,13 +4,28 @@ Lectura del código en `main` (1.0.1, commit `198b2af`, aprobada por el Revisor)
 
 El juego es uno solo: la caseta de block 3×4. No se revive HQ Office ni Obra Maestra Viva.
 
+## Hecho en este cambio
+
+La lista de abajo describe el juego **antes** de estos arreglos. En esta rama ya quedaron cerrados, sin mover precios ni jornales:
+
+1. El suelo del iPad ya no pide un canvas de más de 4096 px, y un fallo no se reintenta cada cuadro.
+2. El primer toque (aunque Safari lo cancele) camina. Palanca, ¡Dale! y reloj respetan el borde del sistema. El aviso rojo de la nómina no tapa la palanca. Los botones de puesto no cambian de ancho al elegirlos, y «Libre mañana» ya no empuja la fila.
+3. A las 3 la cuadrilla **sigue yéndose sola** (así está el motor y la nómina). Ahora un cartel rojo lo dice y recuerda que Despachar es para irse antes.
+4. Una clave v2 dañada no revive la v1. Tras perder o entregar, la obra nueva queda limpia y Continuar no abre la perdida. El día y la nómina se guardan en el acto. Si el teléfono no puede guardar, se avisa.
+5. El primer toque despierta el sonido, y al volver de bloquear el teléfono el toque siguiente lo reanuda. Un fallo de audio no para el reloj.
+6. El informe se puede recorrer de lado y cierra con «Volver a jugar».
+7. Oficina, Doña Carmen y Guardalmacén se separan si iban a montarse.
+8. Se quitó «Próximamente: jugar como ingeniero». No hay modo ingeniero.
+
+Sigue abierto (no estaba en la lista de este pase, o pide más juego del que cabe sin tocar el balance): ferretería apretada con el teléfono de lado, los dos segundos de menú invisible que igual reciben el toque, el sello desalineado en horizontal, y clonar la partida cinco veces por segundo.
+
 ## Qué existe hoy y funciona
 
 En escritorio se puede jugar de punta a punta. El Revisor ya entregó una partida en teléfono (día 26, las 9 etapas). El motor no está a medias.
 
 - **Abrir y empezar.** Menú con Jugar, Continuar (si hay partida y no está perdida), Cómo se juega, Obras, Ajustes y Créditos. Al firmar con Doña Carmen arranca la caseta 3×4: anticipo, kit de replanteo y caja. Hay guía en partida («Jugar con guía»).
 - **La obra.** Nueve etapas: replanteo, excavación, acero de zapata, vaciado, muros de block (con plomo), columnas, viga, piso, techo y entrega. Reloj de jornada, lluvia, cansancio, cuadrilla, acarreo, agua, ferretería, libreta, adelanto, fiado y nómina.
-- **Cierre.** Entrega con la cuenta línea por línea y botón «Otra obra». Si no queda nadie, «Obra perdida» explica por qué y ofrece «Obra nueva». La pérdida se archiva: Continuar no la reabre.
+- **Cierre.** Entrega con la cuenta línea por línea. Si no queda nadie, «Obra perdida» explica por qué. La pérdida se archiva: Continuar no la reabre. El botón del cierre ahora dice «Volver a jugar».
 - **Guardado.** Clave `obra-maestra-v2` en el navegador, con dueño de pestaña. Compras y pagos se guardan al momento. El reloj se guarda cada ~20 s y al pasar la app a segundo plano.
 - **Controles.** Teclado en escritorio. En pantalla, palanca o arrastre (se elige en Pausa) y botón ¡Dale!.
 - **Sonido.** Hay ambiente, golpes y monedas. El arreglo de hoy está en «Qué falta».
@@ -47,6 +62,8 @@ Para un juego terminado el anuncio tiene que quedar honesto. Recomendación: **q
 ## Pasos, en orden
 
 Cada paso se puede probar solo. Ninguno cambia precios, jornales, rendimientos ni la caja.
+
+Los pasos 1 y varios de los siguientes ya se hicieron en esta rama (ver «Hecho en este cambio»). El texto de cada paso se deja como estaba el día de la lectura, para no perder el porqué.
 
 ### Paso 1 — El solar no pide un canvas que Safari cierra
 
