@@ -1024,21 +1024,42 @@ export function Juego() {
         />
       ) : null}
       {movil && !snap.panel ? (
-        <button
-          type="button"
-          className={"absolute z-20 touch-manipulation rounded-md border-2 border-tinta bg-colmado-amarillo font-display text-tinta shadow-[3px_3px_0_#1B1F23] " + (bajo ? "min-h-11 min-w-16 px-2 text-xl" : "min-h-16 min-w-24 px-4 text-3xl")}
+        <div
+          data-controles-abajo
+          className="absolute z-20 flex flex-col items-stretch gap-2"
           style={{
-            touchAction: "manipulation",
             right: "max(0.75rem, env(safe-area-inset-right))",
             bottom: "max(0.75rem, env(safe-area-inset-bottom))",
           }}
-          onClick={() => {
-            desbloquear();
-            intentarGolpe(vis.current.t);
-          }}
         >
-          ¡Dale!
-        </button>
+          {snap.firmado && !snap.entregada && !bajo ? (
+            <button
+              type="button"
+              data-terminar
+              className="min-h-11 whitespace-nowrap border border-cemento-claro/40 bg-noche px-3 font-hand text-base text-cemento-claro"
+              onClick={() => {
+                desbloquear();
+                act((s) => abrirDespacho(s));
+                guardar(estado.current);
+              }}
+            >
+              Terminar
+            </button>
+          ) : null}
+          {ajustes.control !== "arrastre" ? (
+            <button
+              type="button"
+              className={"touch-manipulation rounded-md border-2 border-tinta bg-colmado-amarillo font-display text-tinta shadow-[3px_3px_0_#1B1F23] " + (bajo ? "min-h-11 min-w-16 px-2 text-xl" : "min-h-16 min-w-24 px-4 text-3xl")}
+              style={{ touchAction: "manipulation" }}
+              onClick={() => {
+                desbloquear();
+                intentarGolpe(vis.current.t);
+              }}
+            >
+              ¡Dale!
+            </button>
+          ) : null}
+        </div>
       ) : null}
       {firmadoSello ? (
         <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center">

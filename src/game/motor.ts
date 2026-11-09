@@ -5579,6 +5579,53 @@ export function lineaAhora(s: Estado): string {
   return `Ahora: ${w.nombre} · ${num(hecho, 1)} de ${num(w.q, 1)} ${unidadDe(w.k)}`;
 }
 
+/** Lo que la tarjeta «Ahora toca» dice. No cambia la obra: solo la lee. */
+export type PasoAhora = {
+  etapa: number;
+  total: number;
+  nombre: string;
+  tarea: string;
+  progreso: number;
+  hechoTexto: string;
+};
+
+export function ahoraToca(s: Estado): PasoAhora {
+  const total = ETAPAS.length;
+  if (!s.firmado) {
+    return {
+      etapa: 0,
+      total,
+      nombre: "Contrato",
+      tarea: "Firma con Doña Carmen en la oficina.",
+      progreso: 0,
+      hechoTexto: "Sin firmar",
+    };
+  }
+  if (s.entregada || s.etapa >= total) {
+    return {
+      etapa: total,
+      total,
+      nombre: "Entrega",
+      tarea: "Doña Carmen ya tiene su caseta.",
+      progreso: 1,
+      hechoTexto: `${total} de ${total}`,
+    };
+  }
+  const def = ETAPAS[s.etapa]!;
+  const abierto = def.trabajos.find((t) => runDe(s, s.etapa, t.id).hecho < t.q - 1e-4);
+  const w = abierto ?? def.trabajos[def.trabajos.length - 1];
+  const hecho = w ? runDe(s, s.etapa, w.id).hecho : 0;
+  const dec = w && w.q >= 10 ? 0 : 1;
+  return {
+    etapa: s.etapa + 1,
+    total,
+    nombre: def.nombre,
+    tarea: w?.nombre ?? def.nombre,
+    progreso: progresoEtapa(s),
+    hechoTexto: w ? `${num(hecho, dec)} de ${num(w.q, dec)} ${unidadDe(w.k)}` : def.nombre,
+  };
+}
+
 function corto(w: W): string {
   if (w.k === "block") return "block";
   if (w.k === "acero") return "acero";
