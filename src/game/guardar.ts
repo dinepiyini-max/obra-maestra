@@ -106,9 +106,11 @@ export function cargar(): { s: Estado | null; roto: boolean; perdida?: boolean }
   let clave = KEY;
   let data: unknown = null;
   if (!raw) {
-    // Migración: la partida de v22 o antes sigue en la clave vieja; se lee una vez y se pasa a la nueva.
-    raw = localStorage.getItem(KEY_VIEJA);
-    clave = KEY_VIEJA;
+    // Si la clave nueva se dio por dañada, no se revive la v1: si no, al borrar la rota vuelve la obra vieja.
+    if (localStorage.getItem(`${KEY}-roto`) == null) {
+      raw = localStorage.getItem(KEY_VIEJA);
+      clave = KEY_VIEJA;
+    }
   }
   if (!raw) return { s: null, roto: false };
   try {
@@ -127,7 +129,13 @@ export function cargar(): { s: Estado | null; roto: boolean; perdida?: boolean }
     }
     const s = sanear(data);
     tomarPartida(s);
-    if (clave === KEY_VIEJA) guardar(s);
+    if (clave === KEY_VIEJA && guardar(s)) {
+      try {
+        localStorage.removeItem(KEY_VIEJA);
+      } catch {
+        /* la copia nueva ya está; la vieja puede quedarse */
+      }
+    }
     return { s, roto: false };
   } catch {
     try {
@@ -157,7 +165,9 @@ export function borrar(s?: Estado) {
 
 export function hayGuardado(): boolean {
   if (typeof localStorage === "undefined") return false;
-  return localStorage.getItem(KEY) != null || localStorage.getItem(KEY_VIEJA) != null;
+  if (localStorage.getItem(KEY) != null) return true;
+  if (localStorage.getItem(`${KEY}-roto`) != null) return false;
+  return localStorage.getItem(KEY_VIEJA) != null;
 }
 
 /** Solo para pruebas. */

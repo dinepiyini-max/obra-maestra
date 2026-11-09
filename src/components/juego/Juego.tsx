@@ -8,13 +8,20 @@ function huellaDinero(s: Estado): string {
 
 // si otra pestaña tiene una partida más nueva, esta deja de guardar y lo dice una vez.
 let avisoVieja = false;
+let avisoNoGuarda = false;
 function guardar(s: Estado) {
   const ok = guardarCaja(s);
-  if (!ok && pestanaVieja() && !avisoVieja) {
+  if (ok) return;
+  if (pestanaVieja() && !avisoVieja) {
     avisoVieja = true;
     const id = (s.avisoSeq ?? 0) + 1;
     s.avisoSeq = id;
     s.avisos.push({ id, texto: "Otra pestaña guardó una partida más nueva. Esta ya no guarda: recarga para seguir aquella." });
+  } else if (!pestanaVieja() && !obraPerdida(s) && !avisoNoGuarda) {
+    avisoNoGuarda = true;
+    const id = (s.avisoSeq ?? 0) + 1;
+    s.avisoSeq = id;
+    s.avisos.push({ id, texto: "Esta partida no se está guardando en este teléfono." });
   }
 }
 import { VEL_MAESTRO, CONTRATO, ETAPAS, MAPA, MATERIALES, SITIOS, peso } from "@/game/datos";
@@ -558,6 +565,7 @@ export function Juego() {
     let ultimoColmado = 0;
     let prevLluvia = estado.current.lluviaOn;
     let prevDia = estado.current.dia;
+    let prevNomina = estado.current.nominaPagada;
     let prevBlock = 0;
     let prevAcero = 0;
     let prevVac = 0;
@@ -639,8 +647,11 @@ export function Juego() {
       else if (!congelado) tick(estado.current, Math.min(0.1, dt), ajustesRef.current.vel);
       if (!prevLluvia && estado.current.lluviaOn) sonar(audio.current, "trueno", callado);
       prevLluvia = estado.current.lluviaOn;
+      // El día y la nómina se escriben en el acto: si Safari cierra la pestaña, no se pierde esa hora.
+      if (estado.current.firmado && (estado.current.dia !== prevDia || estado.current.nominaPagada !== prevNomina)) guardado = 20;
       if (estado.current.dia !== prevDia) sonar(audio.current, "silbato", callado);
       prevDia = estado.current.dia;
+      prevNomina = estado.current.nominaPagada;
       if (
         estado.current.firmado &&
         !estado.current.entregada &&

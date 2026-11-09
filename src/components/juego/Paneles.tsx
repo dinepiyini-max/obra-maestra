@@ -105,7 +105,7 @@ import {
   fiarPedido,
 } from "@/game/motor";
 import { Icono, Retrato, alToque, sonidoUi } from "./Hud";
-import type { Ajustes } from "@/game/guardar";
+import { hayGuardado, type Ajustes } from "@/game/guardar";
 
 const btn =
   "min-h-11 min-w-11 rounded-md border-2 border-block-sombra bg-cemento px-3 py-2 font-ui text-base font-bold text-tinta hover:bg-varilla-brillo disabled:opacity-40";
@@ -757,10 +757,7 @@ export function Paneles({
       st.panel = "oficina";
     });
 
-  const hayPartida =
-    seguir ||
-    s.firmado ||
-    (typeof localStorage !== "undefined" && localStorage.getItem("obra-maestra-v1") != null);
+  const hayPartida = seguir || s.firmado || hayGuardado();
   const quiereNueva = () => {
     // v27: tras «Obra perdida» no hay nada que perder: se empieza otra sin preguntar.
     if (hayPartida && !obraPerdida(s)) setHoja("confirmar");
