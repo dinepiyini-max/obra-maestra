@@ -3456,7 +3456,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
           z,
           rol: "nico",
         });
-        const lab = to(nx, ny, 2.05);
+        const lab = to(nx, ny, 2.55);
         etiqueta(ctx, lab.x, lab.y, LISTERO.nombre, alfa(SITIOS.oficina.x, SITIOS.oficina.y), PAPEL, true);
       },
     });
@@ -3482,7 +3482,7 @@ export function dibujar(ctx: CanvasRenderingContext2D, w: number, h: number, s: 
           duena: true,
           rol: "dona",
         });
-        const lab = to(cx, cy, 2.15);
+        const lab = to(cx, cy, 2.85);
         etiqueta(ctx, lab.x, lab.y, "Doña Carmen", 1, PAPEL, true);
       },
     });
@@ -4053,26 +4053,37 @@ function etiqueta(ctx: CanvasRenderingContext2D, x: number, y: number, texto: st
   pintarEtiqueta(ctx, x, y, texto, alpha, fill);
 }
 
+export function subirEtiqueta(
+  box: { x: number; y: number; w: number; h: number },
+  ocupadas: { x: number; y: number; w: number; h: number }[],
+  paso = 18,
+  veces = 8,
+): number {
+  let y = box.y;
+  for (let i = 0; i < veces; i++) {
+    const ahora = { ...box, y };
+    const toca = ocupadas.some((m) => ahora.x < m.x + m.w && ahora.x + ahora.w > m.x && ahora.y < m.y + m.h && ahora.y + ahora.h > m.y);
+    if (!toca) return y;
+    y -= paso;
+  }
+  return y;
+}
+
 function pintarEtiqueta(ctx: CanvasRenderingContext2D, x: number, y: number, texto: string, alpha: number, fill: string) {
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.font = "15px 'Patrick Hand', cursive";
   ctx.textAlign = "center";
   const tw = ctx.measureText(texto).width;
-  let yy = y;
-  const boxDe = (py: number) => ({ x: x - tw / 2 - 4, y: py - 16, w: tw + 8, h: 20 });
-  for (let i = 0; i < 6; i++) {
-    const box = boxDe(yy);
-    const toca = etiquetasVivas.some((m) => box.x < m.x + m.w && box.x + box.w > m.x && box.y < m.y + m.h && box.y + box.h > m.y);
-    if (!toca) break;
-    yy -= 18;
-  }
+  const base = { x: x - tw / 2 - 6, y: y - 16, w: tw + 12, h: 22 };
+  const top = subirEtiqueta(base, etiquetasVivas);
+  const yy = top + 16;
   ctx.lineWidth = 3;
   ctx.strokeStyle = "#12171C";
   ctx.strokeText(texto, x, yy);
   ctx.fillStyle = fill;
   ctx.fillText(texto, x, yy);
-  etiquetasVivas.push(boxDe(yy));
+  etiquetasVivas.push({ ...base, y: top });
   ctx.restore();
 }
 
@@ -4081,10 +4092,6 @@ function soltarEtiquetas(ctx: CanvasRenderingContext2D) {
   ctx.save();
   ctx.font = "15px 'Patrick Hand', cursive";
   for (const e of colaEti) {
-    const tw = ctx.measureText(e.texto).width;
-    const box = { x: e.x - tw / 2 - 4, y: e.y - 16, w: tw + 8, h: 20 };
-    const toca = etiquetasVivas.some((m) => box.x < m.x + m.w && box.x + box.w > m.x && box.y < m.y + m.h && box.y + box.h > m.y);
-    if (toca) continue;
     pintarEtiqueta(ctx, e.x, e.y, e.texto, e.alpha, e.fill);
   }
   colaEti.length = 0;

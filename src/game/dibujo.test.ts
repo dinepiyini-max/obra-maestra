@@ -10,6 +10,7 @@ import {
   intentosTerreno,
   medidaTerreno,
   proyectar,
+  subirEtiqueta,
   zoomDe,
 } from "./dibujo.ts";
 
@@ -119,6 +120,24 @@ describe("canvas de la pantalla", () => {
     assert.ok(g.bw <= TOPE_LADO_CANVAS && g.bh <= TOPE_LADO_CANVAS, `${g.bw}×${g.bh}`);
     assert.ok(g.dpr < 2);
     assert.equal(g.bw, 4096);
+  });
+});
+
+describe("etiquetas de la oficina no se montan", () => {
+  it("Oficina, Doña Carmen y Guardalmacén que nacen juntas se separan", () => {
+    const caja = (nombre: string) => ({ x: 100 - nombre.length * 4, y: 200, w: nombre.length * 8, h: 22 });
+    const nombres = ["Oficina", "Doña Carmen", "Guardalmacén"];
+    const vivas: { x: number; y: number; w: number; h: number }[] = [];
+    const ys: number[] = [];
+    for (const n of nombres) {
+      const b = caja(n);
+      const y = subirEtiqueta(b, vivas);
+      ys.push(y);
+      vivas.push({ ...b, y });
+    }
+    assert.equal(ys[0], 200);
+    assert.ok(ys[1]! <= 200 - 18, `Doña ${ys[1]}`);
+    assert.ok(ys[2]! <= ys[1]! - 18, `Guardalmacén ${ys[2]}`);
   });
 });
 
