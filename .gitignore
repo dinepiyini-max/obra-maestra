@@ -6,3 +6,7 @@ artifacts
 screenshots
 dist
 .project_id
+
+# Secretos locales. Un ejemplo sin claves (`.env.example`) sí se puede guardar.
+.env*
+!.env.example
