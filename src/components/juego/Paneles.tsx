@@ -105,12 +105,12 @@ import {
   fiarPedido,
 } from "@/game/motor";
 import { Icono, Retrato, alToque, sonidoUi } from "./Hud";
-import type { Ajustes } from "@/game/guardar";
+import { hayGuardado, type Ajustes } from "@/game/guardar";
 
 const btn =
   "min-h-11 min-w-11 rounded-md border-2 border-block-sombra bg-cemento px-3 py-2 font-ui text-base font-bold text-tinta hover:bg-varilla-brillo disabled:opacity-40";
 const btnPri =
-  "min-h-11 min-w-11 rounded-md border-2 border-tinta bg-colmado-amarillo px-4 py-2 font-ui text-base font-bold text-tinta shadow-[3px_3px_0_#1B1F23] hover:bg-varilla-brillo disabled:opacity-40";
+  "min-h-11 min-w-11 rounded-md border-2 border-tinta bg-colmado-amarillo px-3 py-2 font-ui text-base font-bold text-tinta shadow-[3px_3px_0_#1B1F23] hover:bg-varilla-brillo disabled:opacity-40";
 const btnPeligro =
   "min-h-11 min-w-11 rounded-md border-2 border-tinta bg-colmado-rojo px-4 py-2 font-ui text-base font-bold text-white shadow-[3px_3px_0_#1B1F23] disabled:opacity-40";
 const ALTO_OFICINA = "h-[min(88dvh,40rem)] max-h-[min(88dvh,40rem)]";
@@ -250,7 +250,7 @@ function Marco({
             </button>
           ) : null}
         </header>
-        <div className={`relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-3 sm:p-5 ${hoja ? "hoja-libreta pl-8" : ""}`}>
+        <div className={`relative min-h-0 flex-1 overflow-auto overscroll-contain p-3 [scrollbar-gutter:stable] sm:p-5 ${hoja ? "hoja-libreta pl-8" : ""}`}>
         {hoja ? (
           <span className="pointer-events-none absolute top-6 bottom-6 left-2 flex w-3 flex-col justify-between" aria-hidden="true">
             <i className="h-3 w-3 rounded-full border-2 border-tinta bg-noche" />
@@ -313,7 +313,7 @@ function TablaContratar({ s, onTomar }: { s: Estado; onTomar: (id: string) => vo
   } else grupos.push({ titulo: "", filas: gente });
   const th = (col: ColContrata, label: string, numero = false) => (
     <th className={"bg-cemento-claro px-2 text-left font-hand font-normal whitespace-nowrap " + (numero ? "text-right" : "")}>
-      <button type="button" className="min-h-8 underline" onClick={() => tocar(col)}>
+      <button type="button" className="min-h-11 min-w-11 underline" onClick={() => tocar(col)}>
         {label}
         {orden?.col === col ? (orden.dir < 0 ? " ↓" : " ↑") : ""}
       </button>
@@ -360,7 +360,7 @@ function TablaContratar({ s, onTomar }: { s: Estado; onTomar: (id: string) => vo
             <thead>
               <tr className="h-8 border-b border-tinta/40">
                 <th className="sticky left-0 z-20 bg-cemento-claro px-2 text-left font-hand font-normal shadow-[6px_0_8px_-6px_rgba(27,31,35,0.35)]">
-                  <button type="button" className="min-h-8 underline" onClick={() => tocar("nombre")}>
+                  <button type="button" className="min-h-11 min-w-11 underline" onClick={() => tocar("nombre")}>
                     Nombre{orden?.col === "nombre" ? (orden.dir < 0 ? " ↓" : " ↑") : ""}
                   </button>
                 </th>
@@ -757,10 +757,7 @@ export function Paneles({
       st.panel = "oficina";
     });
 
-  const hayPartida =
-    seguir ||
-    s.firmado ||
-    (typeof localStorage !== "undefined" && localStorage.getItem("obra-maestra-v1") != null);
+  const hayPartida = seguir || s.firmado || hayGuardado();
   const quiereNueva = () => {
     // v27: tras «Obra perdida» no hay nada que perder: se empieza otra sin preguntar.
     if (hayPartida && !obraPerdida(s)) setHoja("confirmar");
@@ -912,7 +909,6 @@ export function Paneles({
             <button type="button" className={btn} onClick={() => setHoja("creditos")}>
               Créditos
             </button>
-            <p className="mt-1 font-hand text-base text-tinta">Próximamente: jugar como ingeniero.</p>
           </div>
         </section>
         </div>
@@ -1140,9 +1136,9 @@ export function Paneles({
                   <div className="font-hand">
                     {g.nombre} {g.apellido} · {OFICIO_NOMBRE[g.oficio]}
                     {manana ? " · entra mañana" : ""}
-                    {g.libre ? <span data-libre-marca>{" · libre mañana (no cobra)"}</span> : ""}
-                    {g.falto ? " · no vino" : ""}
-                    {g.fuera ? " · ya se fue" : ""}
+                  </div>
+                  <div className="min-h-5 font-hand text-sm" data-estado-obrero>
+                    {g.libre ? <span data-libre-marca>Libre mañana (no cobra)</span> : g.falto ? "No vino" : g.fuera ? "Ya se fue" : "\u00a0"}
                   </div>
                   <div className="min-h-5 font-hand text-sm">{lineaFicha(s, g) ?? "\u00a0"}</div>
                   <div className="font-hand text-sm text-mar">
@@ -1963,12 +1959,12 @@ export function Paneles({
               <li>Desplomes <span className="font-ui font-medium tabular-nums" data-cifra>{s.desplomes}</span></li>
               <li>Ingeniera: {notaIng}</li>
             </ul>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button type="button" className={btnPri} onClick={() => act((st) => abrirPanel(st, "libreta"))}>
-                Ver Libreta
+            <div className="mt-4 flex flex-col gap-2">
+              <button type="button" className={`${btnPri} w-full`} data-volver-a-jugar onClick={quiereNueva}>
+                Volver a jugar
               </button>
-              <button type="button" className={btn} onClick={quiereNueva}>
-                Otra obra
+              <button type="button" className={`${btn} w-full`} onClick={() => act((st) => abrirPanel(st, "libreta"))}>
+                Ver Libreta
               </button>
             </div>
           </section>
@@ -2046,7 +2042,7 @@ export function Paneles({
           ) : null}
           <li>Fletes: {inf.fletes} contra 4 del presupuesto</li>
         </ul>
-        <div className="mt-3 overflow-x-auto">
+        <div className="mt-3 overflow-x-auto overscroll-x-contain touch-pan-x">
           <table className="w-full min-w-[28rem] border-collapse font-hand text-sm">
             <thead>
               <tr className="border-b border-tinta text-left">
@@ -2072,8 +2068,8 @@ export function Paneles({
           </table>
         </div>
         <p className="mt-4 font-hand text-mar">Próxima obra: Losa de concreto (bloqueada)</p>
-        <button type="button" className={`${btn} mt-3`} onClick={quiereNueva}>
-          {perdida ? "Obra nueva" : "Otra caseta"}
+        <button type="button" className={`${btnPri} mt-3 w-full`} data-volver-a-jugar onClick={quiereNueva}>
+          Volver a jugar
         </button>
       </Marco>
     );

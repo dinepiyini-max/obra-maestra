@@ -8,17 +8,26 @@ function huellaDinero(s: Estado): string {
 
 // si otra pestaña tiene una partida más nueva, esta deja de guardar y lo dice una vez.
 let avisoVieja = false;
+let avisoNoGuarda = false;
 function guardar(s: Estado) {
   const ok = guardarCaja(s);
-  if (!ok && pestanaVieja() && !avisoVieja) {
+  if (ok) return;
+  if (pestanaVieja() && !avisoVieja) {
     avisoVieja = true;
     const id = (s.avisoSeq ?? 0) + 1;
     s.avisoSeq = id;
     s.avisos.push({ id, texto: "Otra pestaña guardó una partida más nueva. Esta ya no guarda: recarga para seguir aquella." });
+  } else if (!pestanaVieja() && !obraPerdida(s) && !avisoNoGuarda) {
+    avisoNoGuarda = true;
+    const id = (s.avisoSeq ?? 0) + 1;
+    s.avisoSeq = id;
+    s.avisos.push({ id, texto: "Esta partida no se está guardando en este teléfono." });
   }
 }
 import { VEL_MAESTRO, CONTRATO, ETAPAS, MAPA, MATERIALES, SITIOS, peso } from "@/game/datos";
-import { dibujar, mundoDesde, puntoEnPantalla, type Floater, type Vis } from "@/game/dibujo";
+import { backingSeguro, dibujar, mundoDesde, puntoEnPantalla, type Floater, type Vis } from "@/game/dibujo";
+import { pasoAudio } from "@/game/audio";
+import { TOQUE_CAMINAR_PX, esToqueDeCaminar } from "@/game/toque";
 import { reiniciarGuia } from "@/game/guia";
 import {
   abrirDespacho,
@@ -144,6 +153,14 @@ type Sonido =
 
 function sonar(ctx: AudioContext | null, tipo: Sonido, callado: boolean) {
   if (!ctx || callado || (typeof document !== "undefined" && document.hidden)) return;
+  try {
+  sonarCuerpo(ctx, tipo);
+  } catch {
+    /* un audio interrumpido no puede congelar el reloj */
+  }
+}
+
+function sonarCuerpo(ctx: AudioContext, tipo: Sonido) {
   const nota = (freq: number, t: number, dur: number, gain = 0.04, onda: OscillatorType = "triangle") => {
     const o = ctx.createOscillator();
     const g = ctx.createGain();
@@ -279,8 +296,14 @@ function Palanca({ on, compacto, oculto }: { on: (ax: number, ay: number) => voi
   return (
     <div
       ref={ref}
-      className={"absolute bottom-3 left-3 z-20 touch-manipulation rounded-full border-4 border-block bg-block-sombra/50 " + (compacto ? "h-16 w-16" : "h-28 w-28")}
-      style={{ touchAction: "none", visibility: oculto ? "hidden" : undefined, pointerEvents: oculto ? "none" : undefined }}
+      className={"absolute z-20 touch-manipulation rounded-full border-4 border-block bg-block-sombra/50 " + (compacto ? "h-16 w-16" : "h-28 w-28")}
+      style={{
+        touchAction: "none",
+        visibility: oculto ? "hidden" : undefined,
+        pointerEvents: oculto ? "none" : undefined,
+        left: "max(0.75rem, env(safe-area-inset-left))",
+        bottom: "max(0.75rem, env(safe-area-inset-bottom))",
+      }}
       data-palanca
       onContextMenu={(e) => e.preventDefault()}
       onPointerDown={(e) => {
@@ -380,11 +403,11 @@ export function Juego() {
   );
 
   const desbloquear = useCallback(() => {
-    if (audio.current) return;
     const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctx) return;
-    audio.current = new Ctx();
-    void audio.current.resume();
+    const paso = pasoAudio(audio.current?.state ?? "sin");
+    if (paso === "crear") audio.current = new Ctx();
+    if (paso !== "listo") void audio.current?.resume().catch(() => {});
   }, []);
 
   const aplicarMando = useCallback(() => {
@@ -551,6 +574,7 @@ export function Juego() {
     let ultimoColmado = 0;
     let prevLluvia = estado.current.lluviaOn;
     let prevDia = estado.current.dia;
+    let prevNomina = estado.current.nominaPagada;
     let prevBlock = 0;
     let prevAcero = 0;
     let prevVac = 0;
@@ -632,8 +656,11 @@ export function Juego() {
       else if (!congelado) tick(estado.current, Math.min(0.1, dt), ajustesRef.current.vel);
       if (!prevLluvia && estado.current.lluviaOn) sonar(audio.current, "trueno", callado);
       prevLluvia = estado.current.lluviaOn;
+      // El día y la nómina se escriben en el acto: si Safari cierra la pestaña, no se pierde esa hora.
+      if (estado.current.firmado && (estado.current.dia !== prevDia || estado.current.nominaPagada !== prevNomina)) guardado = 20;
       if (estado.current.dia !== prevDia) sonar(audio.current, "silbato", callado);
       prevDia = estado.current.dia;
+      prevNomina = estado.current.nominaPagada;
       if (
         estado.current.firmado &&
         !estado.current.entregada &&
@@ -686,15 +713,14 @@ export function Juego() {
       v.floaters = v.floaters.filter((f) => f.vida > 0);
       const w = canvas.clientWidth || 1;
       const h = canvas.clientHeight || 1;
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const bw = Math.max(1, Math.floor(w * dpr));
-      const bh = Math.max(1, Math.floor(h * dpr));
-      if (canvas.width !== bw || canvas.height !== bh) {
-        canvas.width = bw;
-        canvas.height = bh;
+      // El suelo cacheado y este bitmap comparten el tope de Safari (4096 px de lado).
+      const pantalla = backingSeguro(w, h, window.devicePixelRatio || 1);
+      if (canvas.width !== pantalla.bw || canvas.height !== pantalla.bh) {
+        canvas.width = pantalla.bw;
+        canvas.height = pantalla.bh;
       }
       try {
-        pintar.current(ctx, w, h, estado.current, v, dpr);
+        pintar.current(ctx, w, h, estado.current, v, pantalla.dpr);
       } catch (err) {
         if (!dibujoAviso) {
           dibujoAviso = true;
@@ -828,15 +854,23 @@ export function Juego() {
   };
 
   return (
-    <main className="juego-root relative h-full w-full overflow-hidden bg-noche text-cemento-claro select-none">
+    <main
+      className="juego-root relative h-full w-full overflow-hidden bg-noche text-cemento-claro select-none"
+      onPointerDown={() => desbloquear()}
+    >
       <canvas
         ref={canvasRef}
         className="absolute inset-0 h-full w-full"
         onPointerDown={(e) => {
           if (e.pointerType === "mouse" ? e.button !== 0 : e.button > 0) return;
-          if (dedoId.current != null && dedoId.current !== e.pointerId) return;
+          // Si Safari no cerró el toque anterior, este (a veces el primero) se perdía.
+          if (dedoId.current != null && dedoId.current !== e.pointerId) {
+            dedoId.current = null;
+            toque.current = null;
+          }
           dedoId.current = e.pointerId;
           toque.current = { x: e.clientX, y: e.clientY };
+          if (e.pointerType !== "mouse") e.preventDefault();
           if (e.pointerType === "mouse") {
             const rect = e.currentTarget.getBoundingClientRect();
             vis.current.mira = mundoDesde(e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height, vis.current);
@@ -854,7 +888,7 @@ export function Juego() {
             vis.current.mira = mundoDesde(e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height, vis.current);
           }
           const inicio = toque.current;
-          const movido = !!inicio && Math.hypot(e.clientX - inicio.x, e.clientY - inicio.y) >= 18;
+          const movido = !!inicio && Math.hypot(e.clientX - inicio.x, e.clientY - inicio.y) >= TOQUE_CAMINAR_PX;
           if (ajustes.control === "arrastre" && movido && e.currentTarget.hasPointerCapture(e.pointerId)) dedo.current = mundoDe(e);
         }}
         onPointerUp={(e) => {
@@ -862,14 +896,24 @@ export function Juego() {
           dedoId.current = null;
           const inicio = toque.current;
           toque.current = null;
-          const corto = !!inicio && Math.hypot(e.clientX - inicio.x, e.clientY - inicio.y) < 18;
+          const dx = inicio ? e.clientX - inicio.x : 99;
+          const dy = inicio ? e.clientY - inicio.y : 99;
           if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
           if (dedo.current) {
             dedo.current = null;
             seguirDedo(estado.current, estado.current.jugador.x, estado.current.jugador.y, true);
           }
           const s = estado.current;
-          if (corto && !s.panel && !s.pausa && !s.entregada && palancaDedo.id == null) {
+          if (
+            esToqueDeCaminar({
+              dx,
+              dy,
+              panel: !!s.panel,
+              pausa: s.pausa,
+              entregada: s.entregada,
+              palanca: palancaDedo.id != null,
+            })
+          ) {
             const m = mundoDe(e);
             s.destino = { x: m.x, y: m.y };
             s.mando.ax = 0;
@@ -879,11 +923,36 @@ export function Juego() {
         }}
         onPointerCancel={(e) => {
           if (dedoId.current != null && e.pointerId !== dedoId.current) return;
+          const inicio = toque.current;
           dedoId.current = null;
           toque.current = null;
           if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
           dedo.current = null;
           seguirDedo(estado.current, estado.current.jugador.x, estado.current.jugador.y, true);
+          // En el iPhone el primer toque a veces llega como cancel, no como up.
+          if (!inicio) return;
+          const s = estado.current;
+          const dx = e.clientX ? e.clientX - inicio.x : 0;
+          const dy = e.clientY ? e.clientY - inicio.y : 0;
+          if (
+            !esToqueDeCaminar({
+              dx,
+              dy,
+              panel: !!s.panel,
+              pausa: s.pausa,
+              entregada: s.entregada,
+              palanca: palancaDedo.id != null,
+            })
+          )
+            return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const m = mundoDesde(inicio.x - rect.left, inicio.y - rect.top, rect.width, rect.height, vis.current);
+          m.x = Math.max(MAPA.x0, Math.min(MAPA.x1, m.x));
+          m.y = Math.max(MAPA.y0, Math.min(MAPA.y1, m.y));
+          s.destino = { x: m.x, y: m.y };
+          s.mando.ax = 0;
+          s.mando.ay = 0;
+          joy.current = { ax: 0, ay: 0 };
         }}
         onPointerLeave={() => {
           vis.current.mira = null;
@@ -957,8 +1026,12 @@ export function Juego() {
       {movil && !snap.panel ? (
         <button
           type="button"
-          className={"absolute right-3 bottom-3 z-20 touch-manipulation rounded-md border-2 border-tinta bg-colmado-amarillo font-display text-tinta shadow-[3px_3px_0_#1B1F23] " + (bajo ? "min-h-11 min-w-16 px-2 text-xl" : "min-h-16 min-w-24 px-4 text-3xl")}
-          style={{ touchAction: "manipulation" }}
+          className={"absolute z-20 touch-manipulation rounded-md border-2 border-tinta bg-colmado-amarillo font-display text-tinta shadow-[3px_3px_0_#1B1F23] " + (bajo ? "min-h-11 min-w-16 px-2 text-xl" : "min-h-16 min-w-24 px-4 text-3xl")}
+          style={{
+            touchAction: "manipulation",
+            right: "max(0.75rem, env(safe-area-inset-right))",
+            bottom: "max(0.75rem, env(safe-area-inset-bottom))",
+          }}
           onClick={() => {
             desbloquear();
             intentarGolpe(vis.current.t);

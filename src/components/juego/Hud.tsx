@@ -288,6 +288,7 @@ export function Hud({
           : "inset-x-0 bottom-3 max-w-xl py-1.5 text-sm");
     return (
       <div className="pointer-events-none absolute inset-0 z-10">
+        <div style={{ paddingTop: "env(safe-area-inset-top)" }}>
         <div className="flex items-start justify-end px-2 pt-1.5 min-[900px]:pt-[52px]">
           <button type="button" onClick={onPausa} className={"pointer-events-auto border border-cemento-claro/40 bg-noche/90 px-3 font-hand text-cemento-claro " + (chico ? "min-h-11 min-w-11 text-base" : "min-h-11 text-xl")}>
             Pausa
@@ -303,6 +304,7 @@ export function Hud({
           </div>
         )}
         {pista0 ? <p className={pistaCls}>{[movil ? "¡Dale!" : acc0.tecla, acc0.verbo, acc0.detalle].filter(Boolean).join(" · ")}</p> : null}
+        </div>
       </div>
     );
   }
@@ -324,6 +326,7 @@ export function Hud({
   const guiaOn = quiereGuia && !urgente && guiaVisible(paso, true);
   const avisoOn = mundo && !guiaOn && avisos.length > 0;
   const etapaNombre = ETAPAS[s.etapa]?.nombre ?? "Entrega";
+  const seFueron = cartel.startsWith("Se fueron a las");
 
   function abrirReporte() {
     setAvisoReporte(null);
@@ -356,7 +359,10 @@ export function Hud({
   return (
     <div className={"pointer-events-none absolute inset-0 text-cemento-claro " + (reporte ? "z-50" : "z-10")}>
       {bajo ? (
-        <div className="flex flex-wrap items-center gap-1 px-2 py-1 min-[900px]:mt-[52px]">
+        <div
+          className="flex flex-wrap items-center gap-1 px-2 py-1 min-[900px]:mt-[52px]"
+          style={{ paddingTop: "max(0.25rem, env(safe-area-inset-top))" }}
+        >
           <div className={"max-w-[70%] rounded-md px-2 py-1 font-ui text-sm font-bold leading-tight " + (s.lluviaOn ? "bg-block-sombra text-cemento-claro" : "bg-cielo text-tinta")}>
             {r.hora} {cortoDia(s.dia)} {s.dia}
             {relojParado(s) && s.firmado && !s.entregada ? <span data-reloj-parado> · reloj parado</span> : null}
@@ -391,6 +397,7 @@ export function Hud({
           </button>
         </div>
       ) : (
+        <div style={{ paddingTop: "env(safe-area-inset-top)" }}>
         <div className="px-2 pt-1.5 min-[900px]:pt-[52px]">
           <div className="flex items-start justify-between gap-2">
             <div className={"max-w-full rounded-md px-2.5 py-1.5 " + (s.lluviaOn ? "bg-block-sombra text-cemento-claro" : "bg-cielo text-tinta")}>
@@ -441,7 +448,7 @@ export function Hud({
             <button
               type="button"
               onClick={onCuadrilla}
-              className={btn + (faltaPuesto ? " ring-2 ring-colmado-amarillo ring-offset-2 ring-offset-noche" : "")}
+              className={btn + (faltaPuesto ? " ring-2 ring-colmado-amarillo" : "")}
             >
               Cuadrilla
             </button>
@@ -450,18 +457,27 @@ export function Hud({
             </button>
           </div>
         </div>
+        </div>
       )}
 
       {s.panel ? null : (
       <div className={"mx-auto w-full max-w-xl px-2 " + (bajo ? "mt-1" : "mt-1 px-3 min-[900px]:mt-2")}>
-        {guiaOn ? (
+        {seFueron ? (
+          <p
+            data-se-fueron
+            role="status"
+            className="border-2 border-colmado-rojo bg-cemento-claro px-3 py-2 text-center font-hand text-base leading-snug text-tinta"
+          >
+            {cartel} A las 3 se van solos y el día se paga. Para irte antes, pulsa Despachar.
+          </p>
+        ) : guiaOn ? (
           <LineaGuia paso={paso} mostrar />
         ) : avisoOn ? (
           <div className="pointer-events-auto flex justify-center">
             <button
               type="button"
               onClick={() => onQuitar(avisos[0]!.id)}
-              className="max-w-xl border border-tinta/80 bg-cemento-claro/90 px-3 py-1 text-center font-hand text-sm text-tinta"
+              className="min-h-11 max-w-xl border border-tinta/80 bg-cemento-claro/90 px-3 py-1 text-center font-hand text-base text-tinta"
             >
               {avisos[0]!.texto}
             </button>
@@ -525,7 +541,7 @@ export function Hud({
                 value={versionReporte}
                 onChange={(e) => setVersionReporte(e.target.value)}
                 maxLength={40}
-                className="mt-0.5 w-full border border-tinta bg-cemento px-1 py-1"
+                className="mt-0.5 min-h-11 w-full border border-tinta bg-cemento px-2 py-1 text-base"
               />
             </label>
             <p className="pt-4">Día {s.dia}</p>
@@ -563,8 +579,22 @@ export function Hud({
       ) : null}
 
       {faltaNomina ? (
-        // el aviso de la nómina de las 3 siempre se ve completo.
-        <div className="pointer-events-auto mx-auto mt-1 w-full max-w-md border-2 border-colmado-rojo bg-cemento-claro/95 font-hand text-tinta" data-nomina-linea data-nomina-visible>
+        // el aviso de la nómina de las 3 siempre se ve completo, y en el teléfono no tapa la palanca.
+        <div
+          className="pointer-events-auto w-full max-w-md border-2 border-colmado-rojo bg-cemento-claro/95 font-hand text-tinta max-h-36 overflow-y-auto"
+          data-nomina-linea
+          data-nomina-visible
+          style={
+            movil
+              ? {
+                  position: "absolute",
+                  left: "calc(env(safe-area-inset-left, 0px) + 7.75rem)",
+                  right: "max(0.75rem, env(safe-area-inset-right, 0px))",
+                  bottom: "calc(env(safe-area-inset-bottom, 0px) + 8.75rem)",
+                }
+              : { margin: "0.25rem auto 0" }
+          }
+        >
           <p className="px-3 pt-1 text-sm font-bold" role="alert">{faltaNomina}</p>
           {faltaNomina ? (
             <div className="px-3 pb-2 text-sm">
